@@ -7,6 +7,9 @@ from datetime import datetime, timedelta, timezone
 from .parser import HookEvent, UsageRecord
 from .pricing import PricingTable
 
+BLOCK_DURATION = timedelta(hours=5)
+LONG_WINDOW = timedelta(days=7)
+
 
 @dataclass
 class TokenSums:
@@ -65,6 +68,24 @@ class ToolSpan:
     sums: TokenSums = field(default_factory=TokenSums)
 
 
+@dataclass
+class BlockInfo:
+    """Snapshot of the current 5-hour Anthropic session block."""
+    start: datetime
+    end: datetime  # start + 5h
+    sums: TokenSums
+    minutes_elapsed: float
+    minutes_remaining: float
+    burn_tokens_per_min: float
+    burn_cost_per_min: float
+    eta_to_token_limit_min: float | None = None
+    eta_to_cost_limit_min: float | None = None
+    token_limit: int | None = None
+    cost_limit: float | None = None
+    pct_tokens: float | None = None
+    pct_cost: float | None = None
+
+
 class Aggregator:
     """In-memory state. Single-threaded — only mutated from the asyncio loop."""
 
@@ -80,9 +101,12 @@ class Aggregator:
         # Aggregations per skill / agent name.
         self.by_skill: dict[str, TokenSums] = defaultdict(TokenSums)
         self.by_agent: dict[str, TokenSums] = defaultdict(TokenSums)
-        # 5h block tracking.
-        self.block_start: datetime | None = None
-        self.block_sums: TokenSums = TokenSums()
+        # Long-window record archive (7 days) for rolling sums and 5h-block
+        # detection. Each entry is (rec_ts, rec, cost). Kept sorted by rec_ts.
+        self._long_window: deque[tuple[datetime, UsageRecord, float]] = deque()
+        # Optional plan limits for the active 5h block.
+        self.token_limit: int | None = None
+        self.cost_limit: float | None = None
 
     # ----- ingest -----
 
@@ -110,7 +134,7 @@ class Aggregator:
             sess.sums_main.add(rec, cost)
         sess.by_model[rec.model or "unknown"].add(rec, cost)
 
-        self._update_block(rec, cost)
+        self._update_long_window(rec, cost)
         self._update_recent(rec, cost)
         self._try_attribute_to_span(rec, cost)
 
@@ -150,11 +174,31 @@ class Aggregator:
 
     # ----- helpers -----
 
-    def _update_block(self, rec: UsageRecord, cost: float) -> None:
-        if self.block_start is None or rec.ts - self.block_start >= timedelta(hours=5):
-            self.block_start = rec.ts
-            self.block_sums = TokenSums()
-        self.block_sums.add(rec, cost)
+    def _update_long_window(self, rec: UsageRecord, cost: float) -> None:
+        """Append rec to the 7d archive (kept sorted by rec.ts) and prune
+        anything older than now - 7d."""
+        rec_ts = rec.ts if rec.ts.tzinfo else rec.ts.replace(tzinfo=timezone.utc)
+        now = datetime.now(tz=timezone.utc)
+        if now - rec_ts > LONG_WINDOW:
+            return  # too old to matter
+        # Insert keeping order. Records typically arrive in order during tail
+        # mode, but --from-start replay walks files in glob order so we may
+        # need to insert in the middle. Linear-scan from the right is fine
+        # for ~10k entries.
+        if not self._long_window or self._long_window[-1][0] <= rec_ts:
+            self._long_window.append((rec_ts, rec, cost))
+        else:
+            # Find insertion point from the right.
+            arr = list(self._long_window)
+            i = len(arr)
+            while i > 0 and arr[i - 1][0] > rec_ts:
+                i -= 1
+            arr.insert(i, (rec_ts, rec, cost))
+            self._long_window = deque(arr)
+        # Prune stale entries.
+        cutoff = now - LONG_WINDOW
+        while self._long_window and self._long_window[0][0] < cutoff:
+            self._long_window.popleft()
 
     def _update_recent(self, rec: UsageRecord, cost: float) -> None:
         # Rate measures "tokens flowing right now". A record qualifies only if
@@ -206,6 +250,81 @@ class Aggregator:
                 sess.sums_from_agents.add(rec, cost)
 
     # ----- read API for TUI -----
+
+    def sums_in_window(self, window: timedelta) -> TokenSums:
+        """Aggregate tokens/cost for records whose ts is within `window`
+        of now. Cheap because it walks the 7d deque, which is bounded."""
+        cutoff = datetime.now(tz=timezone.utc) - window
+        sums = TokenSums()
+        for ts, rec, cost in self._long_window:
+            if ts >= cutoff:
+                sums.add(rec, cost)
+        return sums
+
+    def block_info(self) -> BlockInfo | None:
+        """Compute the current 5-hour block from the long-window archive.
+
+        A block starts at the first record after a >=5h gap (or at the very
+        first record). The "current" block is the latest such span that
+        contains the most recent record. Returns None if no record is
+        within the last 5 hours.
+        """
+        if not self._long_window:
+            return None
+
+        # Walk forward and identify block_start of the most recent block.
+        sorted_records = list(self._long_window)  # already sorted
+        block_start = sorted_records[0][0]
+        prev_ts = sorted_records[0][0]
+        for ts, _rec, _cost in sorted_records[1:]:
+            if ts - prev_ts >= BLOCK_DURATION:
+                block_start = ts
+            prev_ts = ts
+
+        now = datetime.now(tz=timezone.utc)
+        block_end = block_start + BLOCK_DURATION
+        # If the latest record is older than block_end, the block has elapsed
+        # already — no active block.
+        latest_ts = sorted_records[-1][0]
+        if now - latest_ts > BLOCK_DURATION and now > block_end:
+            return None
+
+        sums = TokenSums()
+        for ts, rec, cost in sorted_records:
+            if ts >= block_start:
+                sums.add(rec, cost)
+
+        elapsed_min = max(1.0, (now - block_start).total_seconds() / 60.0)
+        remaining_min = max(0.0, (block_end - now).total_seconds() / 60.0)
+        burn_tokens = sums.total_tokens / elapsed_min
+        burn_cost = sums.cost_usd / elapsed_min
+
+        info = BlockInfo(
+            start=block_start,
+            end=block_end,
+            sums=sums,
+            minutes_elapsed=elapsed_min,
+            minutes_remaining=remaining_min,
+            burn_tokens_per_min=burn_tokens,
+            burn_cost_per_min=burn_cost,
+            token_limit=self.token_limit,
+            cost_limit=self.cost_limit,
+        )
+
+        if self.token_limit:
+            info.pct_tokens = sums.total_tokens / self.token_limit * 100
+            remaining_tokens = max(0, self.token_limit - sums.total_tokens)
+            info.eta_to_token_limit_min = (
+                remaining_tokens / burn_tokens if burn_tokens > 0 else None
+            )
+        if self.cost_limit:
+            info.pct_cost = sums.cost_usd / self.cost_limit * 100
+            remaining_cost = max(0.0, self.cost_limit - sums.cost_usd)
+            info.eta_to_cost_limit_min = (
+                remaining_cost / burn_cost if burn_cost > 0 else None
+            )
+
+        return info
 
     def recent_token_rate_per_min(self) -> float:
         return self._scale_to_per_min(sum(t for _, t, _ in self.recent_usage))
