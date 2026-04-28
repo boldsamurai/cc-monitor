@@ -358,7 +358,6 @@ class SessionDetailScreen(Screen):
         p.hist(token_series, bins=20, color="orange")
         p.title("Turn-size distribution (how many turns by token count)")
         p.xlabel("Turn size (K tokens)")
-        p.ylabel("# of turns")
         # Force integer x-ticks. plotext's auto-tick prefers float values
         # like '362.1' which look like turn numbers and confuse readers.
         if token_series:
