@@ -5,6 +5,7 @@ description = "Real-time token usage monitor for Claude Code sessions"
 requires-python = ">=3.11"
 dependencies = [
     "textual>=0.86",
+    "keyring>=24.0",
 ]
 
 [project.scripts]

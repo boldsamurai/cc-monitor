@@ -13,6 +13,7 @@ from textual.reactive import reactive
 from textual.widgets import DataTable, Header, Static, TabbedContent, TabPane
 
 from .aggregator import Aggregator, BlockInfo, TokenSums
+from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
 from .pricing import PricingTable
 from .project_slug import decode_project_slug
@@ -146,77 +147,126 @@ class SummaryPanel(Static):
 
 
 class BlockPanel(Static):
-    """Live status of the current 5-hour Anthropic session block."""
+    """Live status of the current 5-hour Anthropic session block.
+
+    Prefers authoritative utilization data from Anthropic's /api/oauth/usage
+    when available (set via .api_usage); otherwise falls back to a local
+    estimate based on parsed JSONL records and a configured token/cost limit.
+    """
 
     info: reactive[BlockInfo | None] = reactive(None, layout=True)
+    api_usage: reactive[UsageData | None] = reactive(None, layout=True)
 
     BAR_W = 30
 
     def render(self) -> RenderableType:
+        api = self.api_usage
         info = self.info
+
+        # Path A: authoritative API data.
+        if api is not None and not api.api_unavailable and api.five_hour is not None:
+            return self._render_api_view(api, info)
+
+        # Path B: fallback to local estimate.
+        return self._render_local_view(info, api)
+
+    def _render_api_view(self, api: UsageData, info: BlockInfo | None) -> RenderableType:
+        five = api.five_hour
+        seven = api.seven_day
+        # five is guaranteed non-None by the caller's gate
+        assert five is not None
+        now = datetime.now(tz=timezone.utc)
+        resets_local = five.resets_at.astimezone()
+        remaining = (five.resets_at - now).total_seconds() / 60.0
+
+        plan_str = f" · plan: [b]{api.plan_name}[/b]" if api.plan_name else ""
+        header = Text.from_markup(
+            f"[b]⏱  5h block (Anthropic API)[/b]{plan_str}  ·  "
+            f"resets [b]{resets_local.strftime('%H:%M')}[/b] (in [b]{_fmt_minutes(remaining)}[/b])"
+        )
+
+        lines: list[Text] = [header]
+        lines.append(self._progress_line("5h ", five.utilization, ""))
+        if seven is not None:
+            seven_resets_local = seven.resets_at.astimezone()
+            seven_remaining = (seven.resets_at - now).total_seconds() / 60.0
+            seven_remaining_str = _fmt_duration_minutes(seven_remaining)
+            seven_suffix = f"resets {seven_resets_local.strftime('%d-%m %H:%M')} (in {seven_remaining_str})"
+            lines.append(self._progress_line("7d ", seven.utilization, seven_suffix))
+
+        # Local sums for context (burn rate, raw counts).
+        if info is not None:
+            sums = info.sums
+            lines.append(Text.from_markup(
+                f"[b]Local[/b]   tokens={_human(sums.total_tokens)}  ·  "
+                f"cost=${sums.cost_usd:,.2f}  ·  "
+                f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
+                f"${info.burn_cost_per_min:,.2f}/min"
+            ))
+        return Group(*lines)
+
+    def _render_local_view(
+        self, info: BlockInfo | None, api: UsageData | None
+    ) -> RenderableType:
         if info is None:
-            return Group(
-                Text("⏱  5h block", style="bold"),
-                Text("No active block (no records in the last 5h)", style="dim italic"),
-            )
+            warning: list[Text] = [Text("⏱  5h block", style="bold")]
+            if api is not None and api.api_unavailable:
+                warning.append(Text(
+                    f"Anthropic API unavailable ({api.error}). No local block records yet.",
+                    style="yellow",
+                ))
+            else:
+                warning.append(Text(
+                    "No active block (no records in the last 5h)", style="dim italic"
+                ))
+            return Group(*warning)
 
         start_local = info.start.astimezone()
         end_local = info.end.astimezone()
         elapsed_str = _fmt_minutes(info.minutes_elapsed)
         remaining_str = _fmt_minutes(info.minutes_remaining)
 
+        api_note = ""
+        if api is not None and api.api_unavailable:
+            api_note = f"  ·  [yellow]API: {api.error}[/yellow]"
+
         header = Text.from_markup(
-            f"[b]⏱  5h block[/b]   "
+            f"[b]⏱  5h block (local estimate)[/b]   "
             f"started [b]{start_local.strftime('%H:%M')}[/b]  ·  "
             f"ends [b]{end_local.strftime('%H:%M')}[/b]  ·  "
             f"elapsed [b]{elapsed_str}[/b]  ·  "
-            f"remaining [b]{remaining_str}[/b]"
+            f"remaining [b]{remaining_str}[/b]{api_note}"
         )
 
         lines: list[Text] = [header]
 
-        # Tokens line
         sums = info.sums
         if info.token_limit:
-            lines.append(self._progress_line("Tokens", info.pct_tokens or 0.0,
-                f"{_human(sums.total_tokens)} / {_human(info.token_limit)}"))
+            lines.append(self._progress_line(
+                "Tokens", info.pct_tokens or 0.0,
+                f"{_human(sums.total_tokens)} / {_human(info.token_limit)}",
+            ))
         else:
             lines.append(Text.from_markup(
-                f"[b]Tokens[/b]   {_human(sums.total_tokens)}  "
-                f"[dim](no limit set; pass --plan or --max-5h-tokens)[/dim]"
+                f"[b]Tokens[/b]  {_human(sums.total_tokens)}  "
+                f"[dim](no limit; pass --plan or --max-5h-tokens)[/dim]"
             ))
 
-        # Cost line
         if info.cost_limit:
-            lines.append(self._progress_line("Cost  ", info.pct_cost or 0.0,
-                f"${sums.cost_usd:,.2f} / ${info.cost_limit:,.2f}"))
+            lines.append(self._progress_line(
+                "Cost  ", info.pct_cost or 0.0,
+                f"${sums.cost_usd:,.2f} / ${info.cost_limit:,.2f}",
+            ))
         else:
             lines.append(Text.from_markup(
-                f"[b]Cost  [/b]   ${sums.cost_usd:,.2f}  "
-                f"[dim](no limit set; pass --plan or --max-5h-cost)[/dim]"
+                f"[b]Cost  [/b]  ${sums.cost_usd:,.2f}  "
+                f"[dim](no limit; pass --plan or --max-5h-cost)[/dim]"
             ))
 
-        # Burn + ETA
-        burn_line = Text.from_markup(
+        lines.append(Text.from_markup(
             f"[b]Burn[/b]    {_human(int(info.burn_tokens_per_min))} tok/min  ·  "
             f"${info.burn_cost_per_min:,.2f}/min"
-        )
-        lines.append(burn_line)
-
-        eta_parts = []
-        if info.eta_to_token_limit_min is not None:
-            t_label, t_color = self._eta_verdict(info.eta_to_token_limit_min, info.minutes_remaining)
-            eta_parts.append(
-                f"tokens limit in [{t_color}]{_fmt_minutes(info.eta_to_token_limit_min)}[/{t_color}] {t_label}"
-            )
-        if info.eta_to_cost_limit_min is not None:
-            c_label, c_color = self._eta_verdict(info.eta_to_cost_limit_min, info.minutes_remaining)
-            eta_parts.append(
-                f"cost limit in [{c_color}]{_fmt_minutes(info.eta_to_cost_limit_min)}[/{c_color}] {c_label}"
-            )
-        if eta_parts:
-            lines.append(Text.from_markup("[b]ETA[/b]     " + "  ·  ".join(eta_parts)))
-
+        ))
         return Group(*lines)
 
     def _progress_line(self, label: str, pct: float, suffix: str) -> Text:
@@ -239,7 +289,10 @@ class BlockPanel(Static):
             pct_str = f"{pct:.1f}%"
         else:
             pct_str = f"{pct/1000:.1f}K%"
-        line.append(f"  {suffix}  ({pct_str})")
+        if suffix:
+            line.append(f"  {suffix}  ({pct_str})")
+        else:
+            line.append(f"  ({pct_str})")
         return line
 
     @staticmethod
@@ -260,6 +313,20 @@ def _fmt_minutes(m: float) -> str:
         return f"{int(m)}m"
     h, mm = divmod(int(m), 60)
     return f"{h}h {mm}m" if mm else f"{h}h"
+
+
+def _fmt_duration_minutes(m: float) -> str:
+    """Like _fmt_minutes but spans up to days (used for 7d reset countdown)."""
+    if m < 0:
+        return "0m"
+    if m < 60:
+        return f"{int(m)}m"
+    if m < 60 * 24:
+        h, mm = divmod(int(m), 60)
+        return f"{h}h {mm}m" if mm else f"{h}h"
+    d, rem = divmod(int(m), 60 * 24)
+    h = rem // 60
+    return f"{d}d {h}h" if h else f"{d}d"
 
 
 class BarChart(Static):
@@ -351,12 +418,14 @@ class UsageMonitorApp(App):
         tailer: Tailer,
         queue: asyncio.Queue,
         auto_limits: bool = False,
+        use_api: bool = True,
     ):
         super().__init__()
         self.aggregator = aggregator
         self.tailer = tailer
         self.queue = queue
         self.auto_limits = auto_limits
+        self.use_api = use_api
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -400,6 +469,25 @@ class UsageMonitorApp(App):
             # 8-day window of historical blocks evolves.
             self.set_interval(30.0, self._recompute_auto_limits)
             self._recompute_auto_limits()
+
+        if self.use_api:
+            # Poll Anthropic /api/oauth/usage every 60s (matches the
+            # endpoint's cache TTL). Initial fetch right away.
+            self.set_interval(60.0, self._poll_api_usage)
+            self.run_worker(self._poll_api_usage_async, exclusive=False)
+
+    async def _poll_api_usage_async(self) -> None:
+        """Initial fetch in a worker — keeps startup non-blocking."""
+        try:
+            data = await asyncio.to_thread(get_usage, force_refresh=False)
+        except Exception:
+            return
+        self.aggregator.api_usage = data
+
+    def _poll_api_usage(self) -> None:
+        """Periodic refresh — schedules a thread call so the UI doesn't
+        block on the HTTP request."""
+        self.run_worker(self._poll_api_usage_async, exclusive=False)
 
     def _recompute_auto_limits(self) -> None:
         result = self.aggregator.auto_detect_limits_p90()
@@ -519,6 +607,7 @@ class UsageMonitorApp(App):
 
         block_panel = self.query_one("#block", BlockPanel)
         block_panel.info = agg.block_info()
+        block_panel.api_usage = agg.api_usage
         block_panel.refresh()
 
         # Refresh only the visible tab — keeps the UI responsive even at
@@ -740,5 +829,10 @@ def run_app(
     tailer: Tailer,
     queue: asyncio.Queue,
     auto_limits: bool = False,
+    use_api: bool = True,
 ) -> None:
-    UsageMonitorApp(aggregator, tailer, queue, auto_limits=auto_limits).run()
+    UsageMonitorApp(
+        aggregator, tailer, queue,
+        auto_limits=auto_limits,
+        use_api=use_api,
+    ).run()

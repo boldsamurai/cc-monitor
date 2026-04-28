@@ -4,6 +4,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+from .anthropic_usage import UsageData
 from .parser import HookEvent, UsageRecord
 from .pricing import PricingTable
 
@@ -120,6 +121,9 @@ class Aggregator:
         # Optional plan limits for the active 5h block.
         self.token_limit: int | None = None
         self.cost_limit: float | None = None
+        # Authoritative usage data from Anthropic /api/oauth/usage. When
+        # populated, the TUI prefers it over local-only token/cost limits.
+        self.api_usage: UsageData | None = None
 
     # ----- ingest -----
 

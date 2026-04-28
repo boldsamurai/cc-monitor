@@ -59,6 +59,17 @@ def main() -> None:
         default=None,
         help="Override 5h-block USD cost limit.",
     )
+    parser.add_argument(
+        "--no-api",
+        action="store_true",
+        help=(
+            "Disable Anthropic /api/oauth/usage polling. By default the "
+            "monitor reads OAuth credentials from the system keychain or "
+            "Claude Code's .credentials.json and queries the API every 60s "
+            "for authoritative 5h/7d utilization. Use this flag to stay "
+            "fully offline (falls back to local --plan limits or P90)."
+        ),
+    )
     args = parser.parse_args()
 
     pricing = PricingTable()
@@ -77,7 +88,11 @@ def main() -> None:
 
     tailer = Tailer(queue, poll_interval=args.poll, from_start=args.from_start)
 
-    run_app(aggregator, tailer, queue, auto_limits=auto_limits)
+    run_app(
+        aggregator, tailer, queue,
+        auto_limits=auto_limits,
+        use_api=not args.no_api,
+    )
 
 
 if __name__ == "__main__":
