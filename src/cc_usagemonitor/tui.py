@@ -426,8 +426,8 @@ class UsageMonitorApp(App):
         Binding("q", "quit", "Quit"),
         Binding("r", "refresh", "Refresh"),
         Binding("1", "show_tab('sessions')", "Sessions"),
-        Binding("2", "show_tab('models')", "Models"),
-        Binding("3", "show_tab('projects')", "Projects"),
+        Binding("2", "show_tab('projects')", "Projects"),
+        Binding("3", "show_tab('models')", "Models"),
     ]
 
     def __init__(
@@ -452,16 +452,16 @@ class UsageMonitorApp(App):
         with TabbedContent(initial="sessions"):
             with TabPane("Sessions [1]", id="sessions"):
                 yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
-            with TabPane("Models [2]", id="models"):
+            with TabPane("Projects [2]", id="projects"):
+                yield DataTable(id="t-projects", cursor_type="row", zebra_stripes=True)
+            with TabPane("Models [3]", id="models"):
                 yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
                 with Horizontal(id="models-charts"):
                     yield BarChart(id="chart-cost")
                     yield BarChart(id="chart-cache")
-            with TabPane("Projects [3]", id="projects"):
-                yield DataTable(id="t-projects", cursor_type="row", zebra_stripes=True)
         with Horizontal(id="status-bar"):
             yield Static(
-                "[b]1[/b] Sessions  [b]2[/b] Models  [b]3[/b] Projects",
+                "[b]1[/b] Sessions  [b]2[/b] Projects  [b]3[/b] Models",
                 id="status-left",
             )
             yield Static("[b]r[/b] Refresh  [b]q[/b] Quit", id="status-right")
@@ -571,10 +571,12 @@ class UsageMonitorApp(App):
     PROJECTS_COLS = [
         ("Project", "project"),
         ("Sessions", "sessions"),
+        ("First seen", "first"),
         ("Last activity", "last"),
         ("Cost", "cost"),
+        ("Last 7d", "last_7d"),
         ("$/session", "per_session"),
-        ("Turns", "turns"),
+        ("Tokens", "tokens"),
     ]
 
     def _setup_tables(self) -> None:
@@ -808,25 +810,47 @@ class UsageMonitorApp(App):
             pass
 
     def _refresh_projects_table(self) -> None:
-        """Aggregate every session by its project_slug. Each row sums
-        cost / turns / session-count for the project; sorted by most
-        recent session activity desc — same convention as Sessions."""
+        """Aggregate every session by its project_slug. Sums cost /
+        tokens / session-count, tracks first/last activity, computes
+        last-7d cost from the long_window archive. Sorted by last
+        activity desc — same convention as Sessions."""
         from collections import defaultdict
 
         agg: dict[str, dict] = defaultdict(
-            lambda: {"sessions": 0, "cost": 0.0, "turns": 0, "last_seen": None}
+            lambda: {
+                "sessions": 0,
+                "cost": 0.0,
+                "tokens": 0,
+                "last_seen": None,
+                "first_seen": None,
+            }
         )
         for sess in self.aggregator.sessions.values():
             entry = agg[sess.project_slug]
             entry["sessions"] += 1
             entry["cost"] += sess.sums.cost_usd
-            entry["turns"] += sess.sums.turns
-            ts = sess.last_seen
-            if ts is not None:
-                if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
-                if entry["last_seen"] is None or ts > entry["last_seen"]:
-                    entry["last_seen"] = ts
+            entry["tokens"] += sess.sums.total_tokens
+            for ts_attr, key, cmp in (
+                (sess.last_seen, "last_seen", lambda a, b: a > b),
+                (sess.first_seen, "first_seen", lambda a, b: a < b),
+            ):
+                if ts_attr is None:
+                    continue
+                ts = ts_attr if ts_attr.tzinfo else ts_attr.replace(tzinfo=timezone.utc)
+                if entry[key] is None or cmp(ts, entry[key]):
+                    entry[key] = ts
+
+        # Cost in the last 7 days, derived from the long_window archive.
+        # Walk once, group by the session's project_slug.
+        seven_days_ago = datetime.now(tz=timezone.utc) - timedelta(days=7)
+        last_7d: dict[str, float] = defaultdict(float)
+        for ts, rec, cost in self.aggregator._long_window:
+            if ts < seven_days_ago:
+                continue
+            sess = self.aggregator.sessions.get(rec.session_id)
+            if sess is None:
+                continue
+            last_7d[sess.project_slug] += cost
 
         rows: list[tuple[str, tuple[str, ...]]] = []
         epoch = datetime.min.replace(tzinfo=timezone.utc)
@@ -838,21 +862,23 @@ class UsageMonitorApp(App):
         for slug, entry in ordered:
             sessions_n = entry["sessions"]
             per_session = entry["cost"] / sessions_n if sessions_n else 0.0
-            last_str = (
-                entry["last_seen"].astimezone().strftime("%d-%m-%Y %H:%M")
-                if entry["last_seen"]
-                else "-"
-            )
             cells = (
                 decode_project_slug(slug),
                 _human(sessions_n),
-                last_str,
+                self._fmt_dt(entry["first_seen"]),
+                self._fmt_dt(entry["last_seen"]),
                 _fmt_usd(entry["cost"]),
+                _fmt_usd(last_7d.get(slug, 0.0)),
                 f"${per_session:.2f}" if per_session >= 1 else f"${per_session:.4f}",
-                _human(entry["turns"]),
+                _human(entry["tokens"]),
             )
             rows.append((slug, cells))
         self._apply_rows("#t-projects", self.PROJECTS_COLS, rows)
+
+    def _fmt_dt(self, ts: datetime | None) -> str:
+        if ts is None:
+            return "-"
+        return ts.astimezone().strftime("%d-%m-%Y %H:%M")
 
     def action_show_tab(self, tab_id: str) -> None:
         self.query_one(TabbedContent).active = tab_id
