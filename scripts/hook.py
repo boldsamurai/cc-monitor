@@ -41,6 +41,13 @@ def main() -> int:
         event = {"ts": now, "event": "stop", "session_id": session_id}
     elif kind in ("pre", "post"):
         tool = payload.get("tool_name") or ""
+        # Only Skill and Agent tools matter for usage attribution. The
+        # matcher in settings.json may be widened to "*" / ".*" to dodge
+        # Claude Code's regex-matcher quirks across versions; filter at
+        # the script level so the event log doesn't fill up with every
+        # Bash/Read/Edit invocation.
+        if tool not in ("Skill", "Agent"):
+            return 0
         tool_input = payload.get("tool_input") or {}
         span_id = payload.get("tool_use_id") or str(uuid.uuid4())
         event = {
