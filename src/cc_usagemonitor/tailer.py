@@ -55,7 +55,15 @@ class Tailer:
     async def _scan_sessions(self) -> None:
         if not self.projects_dir.exists():
             return
+        # Top-level session JSONLs.
         for jsonl in self.projects_dir.glob("*/*.jsonl"):
+            await self._read_session_file(jsonl)
+        # Subagent JSONLs live at projects/<slug>/<session_id>/subagents/
+        # — Claude Code spawns each subagent in its own file with
+        # isSidechain=True and the parent session_id. Reading these is
+        # how we recover real Agent attribution; without it the parent
+        # JSONL only shows the tool_use stub and the resulting tool_result.
+        for jsonl in self.projects_dir.glob("*/*/subagents/*.jsonl"):
             await self._read_session_file(jsonl)
 
     async def _read_session_file(self, path: Path) -> None:

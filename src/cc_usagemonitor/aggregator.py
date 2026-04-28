@@ -481,22 +481,35 @@ class Aggregator:
         path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
         if not path.is_file():
             return []
-        try:
-            text = path.read_text()
-        except OSError:
-            return []
+
+        # Pull in subagent JSONLs too — they record the actual API calls
+        # the agents made (with sessionId pointing at this parent and
+        # isSidechain=True). Without these the chart undercounts cost
+        # for sessions that delegate heavy work to agents.
+        subagent_dir = (
+            PROJECTS_DIR / sess.project_slug / session_id / "subagents"
+        )
+        files_to_read = [path]
+        if subagent_dir.is_dir():
+            files_to_read.extend(sorted(subagent_dir.glob("*.jsonl")))
+
         turns: list[tuple[datetime, UsageRecord, float]] = []
-        for line in text.splitlines():
-            rec = parse_session_line(line, sess.project_slug)
-            if rec is None:
+        for f in files_to_read:
+            try:
+                text = f.read_text()
+            except OSError:
                 continue
-            cost = self.pricing.for_model(rec.model).cost(rec.raw_usage)
-            ts = (
-                rec.ts
-                if rec.ts.tzinfo
-                else rec.ts.replace(tzinfo=timezone.utc)
-            )
-            turns.append((ts, rec, cost))
+            for line in text.splitlines():
+                rec = parse_session_line(line, sess.project_slug)
+                if rec is None:
+                    continue
+                cost = self.pricing.for_model(rec.model).cost(rec.raw_usage)
+                ts = (
+                    rec.ts
+                    if rec.ts.tzinfo
+                    else rec.ts.replace(tzinfo=timezone.utc)
+                )
+                turns.append((ts, rec, cost))
         turns.sort(key=lambda x: x[0])
         return turns
 
