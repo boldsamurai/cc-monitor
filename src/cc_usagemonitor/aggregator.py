@@ -66,6 +66,11 @@ class SessionState:
     by_model: dict[str, TokenSums] = field(default_factory=lambda: defaultdict(TokenSums))
     last_seen: datetime | None = None
     first_seen: datetime | None = None
+    # Approximation of how full the model's context window was on the most
+    # recent assistant turn: input + cache_read + cache_write_5m + cache_write_1h.
+    # Updated on every ingest; final value = last seen turn for this session.
+    last_context_tokens: int = 0
+    last_context_model: str = ""
 
 
 @dataclass
@@ -144,6 +149,13 @@ class Aggregator:
             sess.first_seen = rec.ts
 
         sess.last_seen = rec.ts
+        sess.last_context_tokens = (
+            rec.input_tokens
+            + rec.cache_read_tokens
+            + rec.cache_write_5m_tokens
+            + rec.cache_write_1h_tokens
+        )
+        sess.last_context_model = rec.model
         sess.sums.add(rec, cost)
         if rec.is_sidechain:
             sess.sums_sidechain.add(rec, cost)
