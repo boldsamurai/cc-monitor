@@ -287,7 +287,6 @@ class SessionDetailScreen(Screen):
         p.plot(x_turns, ctx_series, marker="braille", color="cyan")
         p.title("Context % per turn")
         p.xlabel("turn")
-        p.ylabel("%")
         p.xticks(tick_positions, tick_labels)
 
         # Cumulative cost line chart.
@@ -338,7 +337,6 @@ class SessionDetailScreen(Screen):
         p.plot(times_secs, ctx_series, marker="braille", color="cyan")
         p.title("Context % over time")
         p.xlabel("time")
-        p.ylabel("%")
         p.xticks(time_tick_secs, time_tick_labels)
 
         # Cumulative cost over time.
