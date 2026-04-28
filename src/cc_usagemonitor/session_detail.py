@@ -632,12 +632,12 @@ class SessionDetailScreen(Screen):
             tokens = _fmt_int(span.sums.total_tokens)
             cost = f"${span.sums.cost_usd:.4f}"
             pct_session = (
-                f"{span.sums.cost_usd / session_cost * 100:.2f}%"
+                self._fmt_pct(span.sums.cost_usd / session_cost * 100)
                 if session_cost > 0
                 else "—"
             )
             pct_5h = (
-                f"{span.sums.cost_usd / budget_5h * 100:.2f}%"
+                self._fmt_pct(span.sums.cost_usd / budget_5h * 100)
                 if budget_5h is not None and budget_5h > 0
                 else "—"
             )
@@ -690,6 +690,16 @@ class SessionDetailScreen(Screen):
                 f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
             )
             table.add_row(display, str(stats["reads"]), tokens_str)
+
+    def _fmt_pct(self, pct: float) -> str:
+        """Render a percentage. Anything that rounds to >=0.01% with two
+        decimals stays as 'X.XX%'; smaller-but-positive falls through to
+        '<0.01%' so it doesn't collapse to a confusing '0.00%'."""
+        if pct >= 0.005:  # rounds to 0.01 or more
+            return f"{pct:.2f}%"
+        if pct > 0:
+            return "<0.01%"
+        return "0%"
 
     def _fmt_span_duration(self, span) -> str:
         if span.duration_ms is not None:
