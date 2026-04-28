@@ -37,6 +37,7 @@ API_BETA_HEADER = "oauth-2025-04-20"
 
 CACHE_TTL_SUCCESS_S = 60
 CACHE_TTL_FAILURE_S = 15
+CACHE_TTL_FAILURE_MAX_S = 300  # cap exponential backoff at 5 minutes
 KEYCHAIN_BACKOFF_S = 60
 
 
@@ -204,6 +205,12 @@ class UsageData:
     fetched_at: float  # epoch seconds
     api_unavailable: bool = False
     error: str | None = None
+    # When the API tells us when to retry (e.g. Retry-After on 429), or when
+    # we apply exponential backoff to repeated failures, this is the absolute
+    # epoch second to wait until before the next call.
+    retry_after_epoch: float | None = None
+    # How many consecutive failures we've seen — drives exponential backoff.
+    failure_count: int = 0
 
 
 def _parse_iso8601(value: str) -> datetime | None:
@@ -241,8 +248,12 @@ def _parse_usage_response(data: dict[str, Any]) -> tuple[UsageWindow | None, Usa
     return parse_window(data.get("five_hour")), parse_window(data.get("seven_day"))
 
 
-def fetch_usage(access_token: str) -> tuple[UsageData | None, str | None]:
-    """Make the API call. Returns (usage, error). Never raises."""
+def fetch_usage(access_token: str) -> tuple[UsageData | None, str | None, float | None]:
+    """Make the API call. Returns (usage, error, retry_after_seconds).
+
+    retry_after_seconds is non-None only when the server explicitly told us
+    to wait (Retry-After header on 429 / 503).
+    """
     url = f"https://{API_HOST}{API_PATH}"
     req = urllib.request.Request(
         url,
@@ -257,17 +268,19 @@ def fetch_usage(access_token: str) -> tuple[UsageData | None, str | None]:
     try:
         with urllib.request.urlopen(req, timeout=API_TIMEOUT) as resp:
             if resp.status != 200:
-                return None, f"http-{resp.status}"
+                retry = _retry_after(resp.headers)
+                return None, f"http-{resp.status}", retry
             body = resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
-        return None, f"http-{e.code}"
+        retry = _retry_after(e.headers)
+        return None, f"http-{e.code}", retry
     except (urllib.error.URLError, TimeoutError, OSError):
-        return None, "network"
+        return None, "network", None
 
     try:
         parsed = json.loads(body)
     except json.JSONDecodeError:
-        return None, "parse"
+        return None, "parse", None
 
     five_hour, seven_day = _parse_usage_response(parsed)
     return (
@@ -278,7 +291,32 @@ def fetch_usage(access_token: str) -> tuple[UsageData | None, str | None]:
             fetched_at=time.time(),
         ),
         None,
+        None,
     )
+
+
+def _retry_after(headers: Any) -> float | None:
+    """Parse a Retry-After header (RFC 7231: either delta-seconds or a
+    HTTP-date). Returns the wait in seconds, or None."""
+    if headers is None:
+        return None
+    raw = headers.get("Retry-After") or headers.get("retry-after")
+    if not raw:
+        return None
+    raw = str(raw).strip()
+    # Numeric form first (most common).
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    # HTTP-date form: parse with email.utils.
+    try:
+        from email.utils import parsedate_to_datetime
+        dt = parsedate_to_datetime(raw)
+        delta = (dt - datetime.now(tz=timezone.utc)).total_seconds()
+        return max(0.0, delta)
+    except (TypeError, ValueError):
+        return None
 
 
 def _plan_name_from_subscription(subscription: str | None) -> str | None:
@@ -310,10 +348,26 @@ def _read_cache() -> UsageData | None:
         return None
 
     fetched_at = raw.get("fetched_at", 0)
-    age = time.time() - fetched_at
-    ttl = CACHE_TTL_FAILURE_S if raw.get("api_unavailable") else CACHE_TTL_SUCCESS_S
-    if age >= ttl:
-        return None
+    failure_count = int(raw.get("failure_count", 0))
+    api_unavailable = bool(raw.get("api_unavailable"))
+
+    # Honor an explicit Retry-After if the server gave us one.
+    retry_at = raw.get("retry_after_epoch")
+    if api_unavailable and retry_at is not None:
+        if time.time() < retry_at:
+            ttl_remaining = float(retry_at) - time.time()
+        else:
+            return None  # we've waited long enough; let the caller refresh
+    elif api_unavailable:
+        # Exponential backoff: 15s * 2^(failure_count-1), capped at 5min.
+        backoff = CACHE_TTL_FAILURE_S * (2 ** max(0, failure_count - 1))
+        ttl_remaining = min(backoff, CACHE_TTL_FAILURE_MAX_S) - (time.time() - fetched_at)
+        if ttl_remaining <= 0:
+            return None
+    else:
+        age = time.time() - fetched_at
+        if age >= CACHE_TTL_SUCCESS_S:
+            return None
 
     def _to_window(d: Any) -> UsageWindow | None:
         if not isinstance(d, dict):
@@ -331,8 +385,10 @@ def _read_cache() -> UsageData | None:
         seven_day=_to_window(raw.get("seven_day")),
         plan_name=raw.get("plan_name"),
         fetched_at=fetched_at,
-        api_unavailable=bool(raw.get("api_unavailable")),
+        api_unavailable=api_unavailable,
         error=raw.get("error"),
+        retry_after_epoch=retry_at,
+        failure_count=failure_count,
     )
 
 
@@ -345,6 +401,8 @@ def _write_cache(data: UsageData) -> None:
             "plan_name": data.plan_name,
             "api_unavailable": data.api_unavailable,
             "error": data.error,
+            "retry_after_epoch": data.retry_after_epoch,
+            "failure_count": data.failure_count,
         }
         if data.five_hour:
             payload["five_hour"] = {
@@ -372,10 +430,19 @@ def get_usage(force_refresh: bool = False) -> UsageData | None:
     api_unavailable=True when the API call failed but we want callers to
     surface a warning.
     """
-    if not force_refresh:
-        cached = _read_cache()
-        if cached is not None:
-            return cached
+    cached = _read_cache()
+    if cached is not None and not force_refresh:
+        return cached
+
+    # Track running failure count across calls so exponential backoff has
+    # something to anchor to. We read the most recent cache entry even when
+    # it has 'expired' (TTL-wise) just to learn the streak length.
+    prev_failures = 0
+    try:
+        raw = json.loads(_cache_path().read_text())
+        prev_failures = int(raw.get("failure_count", 0))
+    except (OSError, ValueError):
+        pass
 
     creds = read_credentials()
     if creds is None:
@@ -390,12 +457,14 @@ def get_usage(force_refresh: bool = False) -> UsageData | None:
             fetched_at=time.time(),
             api_unavailable=True,
             error="token-expired",
+            failure_count=prev_failures + 1,
         )
         _write_cache(result)
         return result
 
-    data, err = fetch_usage(creds.access_token)
+    data, err, retry_after = fetch_usage(creds.access_token)
     if data is None:
+        retry_at = (time.time() + retry_after) if retry_after else None
         result = UsageData(
             five_hour=None,
             seven_day=None,
@@ -403,10 +472,13 @@ def get_usage(force_refresh: bool = False) -> UsageData | None:
             fetched_at=time.time(),
             api_unavailable=True,
             error=err,
+            retry_after_epoch=retry_at,
+            failure_count=prev_failures + 1,
         )
         _write_cache(result)
         return result
 
     data.plan_name = _plan_name_from_subscription(creds.subscription_type)
+    data.failure_count = 0  # reset on success
     _write_cache(data)
     return data
