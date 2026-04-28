@@ -80,6 +80,39 @@ def _human(n: int) -> str:
     return f"{n/1_000_000_000_000:.2f}T"
 
 
+def _context_limit_for(model: str) -> int:
+    """Approximate context window size for a Claude model id.
+
+    Claude Code uses the '[1m]' suffix on a model id to indicate the 1M
+    context variant; everything else defaults to the standard 200K.
+    """
+    if not model:
+        return 200_000
+    if "[1m]" in model:
+        return 1_000_000
+    return 200_000
+
+
+def _ctx_cell(used: int, limit: int) -> Text:
+    """Render '████░░░░ 22%' as a styled rich Text cell for DataTable."""
+    if limit <= 0 or used <= 0:
+        return Text("-", style="dim")
+    pct = used / limit * 100
+    bar_w = 8
+    filled = min(int(round(min(pct, 100.0) / 100 * bar_w)), bar_w)
+    if pct < 60:
+        color = "green"
+    elif pct < 85:
+        color = "yellow"
+    else:
+        color = "red"
+    cell = Text()
+    cell.append("█" * filled, style=color)
+    cell.append("░" * (bar_w - filled), style="grey50")
+    cell.append(f" {pct:.0f}%")
+    return cell
+
+
 def _human_usd(v: float) -> str:
     if v < 10:
         return f"${v:.4f}"
@@ -492,6 +525,7 @@ class UsageMonitorApp(App):
         ("Cost", "cost"),
         ("Turns", "turns"),
         ("$/turn", "per_turn"),
+        ("Ctx%", "ctx"),
         ("In", "in"),
         ("Out", "out"),
         ("CacheR", "cache_r"),
@@ -673,6 +707,7 @@ class UsageMonitorApp(App):
             cache_pct = (s.sums.cache_read / total_in * 100) if total_in else 0.0
             per_turn = (s.sums.cost_usd / s.sums.turns) if s.sums.turns else 0.0
             project_name = decode_project_slug(s.project_slug)
+            ctx_limit = _context_limit_for(s.last_context_model)
             cells = (
                 s.session_id[:8],
                 project_name[-30:] if len(project_name) > 30 else project_name,
@@ -681,6 +716,7 @@ class UsageMonitorApp(App):
                 _fmt_usd(s.sums.cost_usd),
                 _human(s.sums.turns),
                 f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}",
+                _ctx_cell(s.last_context_tokens, ctx_limit),
                 _human(s.sums.input),
                 _human(s.sums.output),
                 _human(s.sums.cache_read),
