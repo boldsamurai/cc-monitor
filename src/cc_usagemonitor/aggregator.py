@@ -71,6 +71,11 @@ class SessionState:
     # Updated on every ingest; final value = last seen turn for this session.
     last_context_tokens: int = 0
     last_context_model: str = ""
+    # Per-session high-water mark of prompt size — used to infer the true
+    # context window size when the model id alone doesn't tell us
+    # (Anthropic returns 'claude-opus-4-7' even when the user is running
+    # the 1M variant locally configured as 'opus[1m]').
+    max_context_tokens: int = 0
 
 
 @dataclass
@@ -149,13 +154,16 @@ class Aggregator:
             sess.first_seen = rec.ts
 
         sess.last_seen = rec.ts
-        sess.last_context_tokens = (
+        ctx = (
             rec.input_tokens
             + rec.cache_read_tokens
             + rec.cache_write_5m_tokens
             + rec.cache_write_1h_tokens
         )
+        sess.last_context_tokens = ctx
         sess.last_context_model = rec.model
+        if ctx > sess.max_context_tokens:
+            sess.max_context_tokens = ctx
         sess.sums.add(rec, cost)
         if rec.is_sidechain:
             sess.sums_sidechain.add(rec, cost)

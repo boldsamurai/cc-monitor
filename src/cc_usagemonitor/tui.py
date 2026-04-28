@@ -80,36 +80,48 @@ def _human(n: int) -> str:
     return f"{n/1_000_000_000_000:.2f}T"
 
 
-def _context_limit_for(model: str) -> int:
-    """Approximate context window size for a Claude model id.
+def _context_limit_for(model: str, observed_max: int = 0) -> int:
+    """Best-effort context window size for a Claude session.
 
-    Claude Code uses the '[1m]' suffix on a model id to indicate the 1M
-    context variant; everything else defaults to the standard 200K.
+    The Anthropic API only returns the canonical model id (e.g.
+    'claude-opus-4-7') even when the user is running the 1M-context
+    variant; the '[1m]' suffix is purely a Claude Code local marker.
+    Strategy:
+      - explicit '[1m]' in the model string -> 1M
+      - we've observed a single turn larger than 200K in this session
+        -> must be the 1M variant -> 1M
+      - otherwise fall back to the standard 200K window
     """
-    if not model:
-        return 200_000
-    if "[1m]" in model:
+    if model and "[1m]" in model:
+        return 1_000_000
+    if observed_max > 200_000:
         return 1_000_000
     return 200_000
 
 
 def _ctx_cell(used: int, limit: int) -> Text:
-    """Render '████░░░░ 22%' as a styled rich Text cell for DataTable."""
+    """Render '████░░░░ 22%' as a Text cell for DataTable.
+
+    Bar uses unstyled solid/light blocks so the contrast survives the
+    inverted style applied to the selected row in DataTable. Color is
+    applied only to the percentage suffix (red/yellow/green).
+    """
     if limit <= 0 or used <= 0:
         return Text("-", style="dim")
     pct = used / limit * 100
     bar_w = 8
     filled = min(int(round(min(pct, 100.0) / 100 * bar_w)), bar_w)
     if pct < 60:
-        color = "green"
+        pct_style = "green"
     elif pct < 85:
-        color = "yellow"
+        pct_style = "yellow"
     else:
-        color = "red"
+        pct_style = "red"
     cell = Text()
-    cell.append("█" * filled, style=color)
-    cell.append("░" * (bar_w - filled), style="grey50")
-    cell.append(f" {pct:.0f}%")
+    cell.append("█" * filled)
+    cell.append("░" * (bar_w - filled))
+    cell.append(" ")
+    cell.append(f"{pct:.0f}%", style=pct_style)
     return cell
 
 
@@ -525,7 +537,7 @@ class UsageMonitorApp(App):
         ("Cost", "cost"),
         ("Turns", "turns"),
         ("$/turn", "per_turn"),
-        ("Ctx%", "ctx"),
+        ("Context", "ctx"),
         ("In", "in"),
         ("Out", "out"),
         ("CacheR", "cache_r"),
@@ -707,7 +719,7 @@ class UsageMonitorApp(App):
             cache_pct = (s.sums.cache_read / total_in * 100) if total_in else 0.0
             per_turn = (s.sums.cost_usd / s.sums.turns) if s.sums.turns else 0.0
             project_name = decode_project_slug(s.project_slug)
-            ctx_limit = _context_limit_for(s.last_context_model)
+            ctx_limit = _context_limit_for(s.last_context_model, s.max_context_tokens)
             cells = (
                 s.session_id[:8],
                 project_name[-30:] if len(project_name) > 30 else project_name,
