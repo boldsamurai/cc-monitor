@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-import plotext as plt
 from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
@@ -14,49 +13,10 @@ from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Static
+from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, SessionState, TokenSums
 from .project_slug import decode_project_path, decode_project_slug
-
-
-_SPARKLINE_BLOCKS = "▁▂▃▄▅▆▇█"
-
-
-def _sparkline(values: list[float], width: int = 40) -> str:
-    """Render a list of numbers as a one-line sparkline.
-
-    Resamples to `width` buckets so output is consistent regardless of
-    series length. Empty input returns an empty string.
-    """
-    if not values:
-        return ""
-    n = len(values)
-    if n > width:
-        bucket = n / width
-        sampled = [
-            max(values[int(i * bucket): max(int(i * bucket) + 1, int((i + 1) * bucket))])
-            for i in range(width)
-        ]
-    else:
-        sampled = values
-    lo = min(sampled)
-    hi = max(sampled)
-    if hi == lo:
-        return _SPARKLINE_BLOCKS[len(_SPARKLINE_BLOCKS) // 2] * len(sampled)
-    out = []
-    levels = len(_SPARKLINE_BLOCKS) - 1
-    for v in sampled:
-        idx = int(round((v - lo) / (hi - lo) * levels))
-        out.append(_SPARKLINE_BLOCKS[idx])
-    return "".join(out)
-
-
-def _plotext_to_str(width: int, height: int) -> str:
-    """Render the current plotext figure to a plain string and clear state."""
-    plt.plotsize(width, height)
-    rendered = plt.build()
-    plt.clear_figure()
-    return rendered
 
 
 def _fmt_int(n: int) -> str:
@@ -106,6 +66,10 @@ class SessionDetailScreen(Screen):
         padding: 1 2;
         background: $boost;
     }
+    .chart-plot {
+        height: 14;
+        margin: 1 0;
+    }
     #detail-footer {
         height: 1;
         dock: bottom;
@@ -122,13 +86,101 @@ class SessionDetailScreen(Screen):
         self.aggregator = aggregator
 
     def compose(self) -> ComposeResult:
+        sess = self.aggregator.sessions.get(self.session_id)
+        turns = (
+            self.aggregator.turns_for_session(self.session_id) if sess else []
+        )
+
         with VerticalScroll():
-            yield Static(self._build_content(), id="detail-body")
+            yield Static(self._build_text_content(), id="detail-body")
+            if turns:
+                yield Static(
+                    Text("Charts", style="bold underline"),
+                )
+                # 1. Context size per turn — proper line chart.
+                ctx_plot = PlotextPlot(classes="chart-plot")
+                ctx_plot.id = "chart-context"
+                yield ctx_plot
+                # 2. Cumulative cost.
+                cost_plot = PlotextPlot(classes="chart-plot")
+                cost_plot.id = "chart-cost"
+                yield cost_plot
+                # 3. Tokens per turn distribution.
+                hist_plot = PlotextPlot(classes="chart-plot")
+                hist_plot.id = "chart-hist"
+                yield hist_plot
+            else:
+                yield Static(
+                    Text(
+                        "Charts unavailable — turn-level data only kept for 8 days.",
+                        style="dim italic",
+                    )
+                )
         yield Static(
             "[b]Esc[/b] back   ·   "
             "[b]1[/b] copy session ID   ·   [b]2[/b] copy project path",
             id="detail-footer",
         )
+
+    def on_mount(self) -> None:
+        sess = self.aggregator.sessions.get(self.session_id)
+        if sess is None:
+            return
+        turns = self.aggregator.turns_for_session(self.session_id)
+        if not turns:
+            return
+        self._populate_charts(turns)
+
+    def _populate_charts(
+        self, turns: list[tuple[datetime, "object", float]]
+    ) -> None:
+        ctx_series: list[float] = []
+        cost_series: list[float] = []
+        token_series: list[int] = []
+        for _ts, rec, cost in turns:
+            ctx = (
+                rec.input_tokens
+                + rec.cache_read_tokens
+                + rec.cache_write_5m_tokens
+                + rec.cache_write_1h_tokens
+            )
+            ctx_series.append(ctx / 1000.0)  # K tokens
+            cost_series.append(cost)
+            token_series.append((ctx + rec.output_tokens) / 1000)
+
+        x_turns = list(range(1, len(turns) + 1))
+
+        # Context size line chart.
+        ctx_plot = self.query_one("#chart-context", PlotextPlot)
+        p = ctx_plot.plt
+        p.clear_data()
+        p.plot(x_turns, ctx_series, marker="braille", color="cyan")
+        p.title("Context size per turn (K tokens)")
+        p.xlabel("turn")
+        p.ylabel("K tokens")
+
+        # Cumulative cost line chart.
+        cumulative: list[float] = []
+        running = 0.0
+        for c in cost_series:
+            running += c
+            cumulative.append(running)
+        cost_plot = self.query_one("#chart-cost", PlotextPlot)
+        p = cost_plot.plt
+        p.clear_data()
+        p.plot(x_turns, cumulative, marker="braille", color="green")
+        p.title("Cumulative cost ($) over turns")
+        p.xlabel("turn")
+        p.ylabel("$")
+
+        # Tokens per turn histogram.
+        hist_plot = self.query_one("#chart-hist", PlotextPlot)
+        p = hist_plot.plt
+        p.clear_data()
+        p.hist(token_series, bins=20, color="orange")
+        p.title("Distribution of tokens per turn (K tokens)")
+        p.xlabel("K tokens per turn")
+        p.ylabel("count of turns")
 
     def action_copy_session_id(self) -> None:
         try:
@@ -151,7 +203,7 @@ class SessionDetailScreen(Screen):
             return
         self.app.notify(f"Copied {path}", timeout=2)
 
-    def _build_content(self) -> RenderableType:
+    def _build_text_content(self) -> RenderableType:
         sess = self.aggregator.sessions.get(self.session_id)
         if sess is None:
             return Text(f"Session {self.session_id} not found", style="bold red")
@@ -226,19 +278,6 @@ class SessionDetailScreen(Screen):
         skills_table = self._skills_table(sess)
         agents_table = self._agents_table(sess)
 
-        # Per-turn data drives the charts. Older sessions whose records
-        # have already aged out of the 8-day archive will have no data
-        # here; we surface a hint instead of an empty chart.
-        turns = self.aggregator.turns_for_session(self.session_id)
-        charts_block: list[RenderableType] = []
-        if turns:
-            charts_block = self._build_charts(turns)
-        else:
-            charts_block = [
-                Text("Charts unavailable — turn-level data only kept for 8 days.",
-                     style="dim italic"),
-            ]
-
         return Group(
             title,
             Text(""),
@@ -247,9 +286,6 @@ class SessionDetailScreen(Screen):
             Text("Totals", style="bold underline"),
             stats,
             Text(""),
-            Text("Charts", style="bold underline"),
-            *charts_block,
-            Text(""),
             Text("By model", style="bold underline"),
             model_table,
             *([Text(""), Text("Skills used in this session", style="bold underline"), skills_table]
@@ -257,61 +293,6 @@ class SessionDetailScreen(Screen):
             *([Text(""), Text("Agents used in this session", style="bold underline"), agents_table]
               if agents_table else []),
         )
-
-    def _build_charts(
-        self, turns: list[tuple[datetime, "object", float]]
-    ) -> list[RenderableType]:
-        """Three charts: context-size sparkline, cumulative cost line chart,
-        tokens-per-turn histogram."""
-        # Per-turn series.
-        ctx_series: list[float] = []
-        cost_series: list[float] = []
-        token_series: list[int] = []
-        for _ts, rec, cost in turns:
-            ctx = (
-                rec.input_tokens
-                + rec.cache_read_tokens
-                + rec.cache_write_5m_tokens
-                + rec.cache_write_1h_tokens
-            )
-            ctx_series.append(ctx)
-            cost_series.append(cost)
-            token_series.append(ctx + rec.output_tokens)
-
-        out: list[RenderableType] = []
-
-        # Sparkline of context size per turn.
-        spark = _sparkline(ctx_series, width=60)
-        ctx_max = max(ctx_series) if ctx_series else 0
-        out.append(Text.from_markup(
-            f"[b]Context size per turn[/b]  "
-            f"[cyan]{spark}[/cyan]  "
-            f"[dim]peak {ctx_max/1000:.0f}K · {len(ctx_series)} turns[/dim]"
-        ))
-
-        # Cumulative cost line chart.
-        cumulative_cost: list[float] = []
-        running = 0.0
-        for c in cost_series:
-            running += c
-            cumulative_cost.append(running)
-        plt.plot(list(range(1, len(cumulative_cost) + 1)), cumulative_cost,
-                 color="cyan", marker="braille")
-        plt.title("Cumulative cost ($) over turns")
-        plt.xlabel("turn")
-        plt.ylabel("cost ($)")
-        plt.theme("clear")
-        out.append(Text(_plotext_to_str(width=100, height=14), no_wrap=True))
-
-        # Histogram of tokens-per-turn.
-        plt.hist(token_series, bins=20, color="green", marker="hd")
-        plt.title("Tokens per turn distribution")
-        plt.xlabel("tokens")
-        plt.ylabel("turns")
-        plt.theme("clear")
-        out.append(Text(_plotext_to_str(width=100, height=12), no_wrap=True))
-
-        return out
 
     def _model_table(self, sess: SessionState) -> Table:
         t = Table(show_header=True, header_style="bold dim")
