@@ -156,6 +156,14 @@ class Aggregator:
         self.block_sums.add(rec, cost)
 
     def _update_recent(self, rec: UsageRecord, cost: float) -> None:
+        # Rate measures "tokens flowing right now". A record qualifies only if
+        # both its API-side timestamp AND ingest time fall in the window —
+        # this filters out --from-start replay of historical sessions while
+        # still tolerating tail-mode ingest of live sessions.
+        now = datetime.now(tz=timezone.utc)
+        rec_ts = rec.ts if rec.ts.tzinfo else rec.ts.replace(tzinfo=timezone.utc)
+        if now - rec_ts > self._recent_window:
+            return
         tokens = (
             rec.input_tokens
             + rec.output_tokens
@@ -163,16 +171,24 @@ class Aggregator:
             + rec.cache_write_5m_tokens
             + rec.cache_write_1h_tokens
         )
-        self.recent_usage.append((rec.ts, tokens, cost))
-        cutoff = self._now_tz(rec.ts) - self._recent_window
+        self.recent_usage.append((now, tokens, cost))
+        cutoff = now - self._recent_window
         while self.recent_usage and self.recent_usage[0][0] < cutoff:
             self.recent_usage.popleft()
 
-    @staticmethod
-    def _now_tz(reference: datetime) -> datetime:
-        if reference.tzinfo is None:
-            return datetime.now()
-        return datetime.now(tz=timezone.utc).astimezone(reference.tzinfo)
+    def active_session_count(self, max_idle: timedelta = timedelta(minutes=30)) -> int:
+        """Sessions whose last_seen is within max_idle of now."""
+        cutoff = datetime.now(tz=timezone.utc) - max_idle
+        n = 0
+        for s in self.sessions.values():
+            if s.last_seen is None:
+                continue
+            ts = s.last_seen
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts >= cutoff:
+                n += 1
+        return n
 
     def _try_attribute_to_span(self, rec: UsageRecord, cost: float) -> None:
         queue = self._pending_correlation.get(rec.session_id)

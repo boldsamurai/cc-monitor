@@ -38,6 +38,7 @@ class SummaryPanel(Static):
     block_sums: reactive[TokenSums] = reactive(TokenSums)
     block_start: reactive[datetime | None] = reactive(None)
     session_count: reactive[int] = reactive(0)
+    active_count: reactive[int] = reactive(0)
 
     def render(self) -> str:
         s = self.sums
@@ -50,13 +51,16 @@ class SummaryPanel(Static):
             block_age = f"  (started {_fmt_ts(self.block_start)}, {mins}m ago)"
 
         return (
-            f"[b]Sessions:[/b] {self.session_count}    "
-            f"[b]Rate:[/b] {self.rate:,.0f} tok/min\n"
-            f"[b]Total:[/b]  in={_fmt_int(s.input)}  out={_fmt_int(s.output)}  "
+            f"[b]Sessions:[/b] {self.session_count} "
+            f"([b green]{self.active_count} active[/b green], <30m idle)    "
+            f"[b]Rate:[/b] {self.rate:,.0f} tok/min  [dim](last 60s ingest)[/dim]\n"
+            f"[b]Total (all-time):[/b]  in={_fmt_int(s.input)}  out={_fmt_int(s.output)}  "
             f"cache_r={_fmt_int(s.cache_read)}  cache_w={_fmt_int(s.cache_write_5m + s.cache_write_1h)}  "
             f"cost={_fmt_usd(s.cost_usd)}  turns={s.turns}\n"
             f"[b]5h block:[/b] in={_fmt_int(b.input)}  out={_fmt_int(b.output)}  "
-            f"cache_r={_fmt_int(b.cache_read)}  cost={_fmt_usd(b.cost_usd)}{block_age}"
+            f"cache_r={_fmt_int(b.cache_read)}  cost={_fmt_usd(b.cost_usd)}{block_age}\n"
+            f"[dim]in=input · out=output · cache_r=cache reads · cache_w=cache writes (5m+1h) · "
+            f"cost=USD · turns=API calls[/dim]"
         )
 
 
@@ -64,7 +68,7 @@ class UsageMonitorApp(App):
     CSS = """
     Screen { layout: vertical; }
     SummaryPanel {
-        height: 5;
+        height: 6;
         padding: 1 2;
         background: $boost;
         border-bottom: solid $primary;
@@ -145,6 +149,7 @@ class UsageMonitorApp(App):
         summary.block_sums = agg.block_sums
         summary.block_start = agg.block_start
         summary.session_count = len(agg.sessions)
+        summary.active_count = agg.active_session_count()
         summary.refresh()
 
         self._refresh_sessions_table()
