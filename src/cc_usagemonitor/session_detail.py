@@ -56,6 +56,10 @@ class SessionDetailScreen(Screen):
 
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
+        # Override the App-level 'q'=quit while we're in the detail
+        # screen so users coming from the main view don't accidentally
+        # exit the program with muscle memory from the table view.
+        Binding("q", "app.pop_screen", "Back"),
         Binding("1", "copy_session_id", "Copy session ID"),
         Binding("2", "copy_project_path", "Copy project path"),
     ]
@@ -75,6 +79,7 @@ class SessionDetailScreen(Screen):
     .chart-plot {
         height: 14;
         margin: 1 2;
+        background: $boost;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -183,10 +188,10 @@ class SessionDetailScreen(Screen):
         ctx_plot = self.query_one("#chart-context", PlotextPlot)
         p = ctx_plot.plt
         p.clear_data()
+        p.theme("clear")  # transparent canvas — picks up Textual bg
         p.plot(x_turns, ctx_series, marker="braille", color="cyan")
         p.title("Context size per turn (K tokens)")
         p.xlabel("turn")
-        p.ylabel("K tokens")
 
         # Cumulative cost line chart.
         cumulative: list[float] = []
@@ -197,19 +202,19 @@ class SessionDetailScreen(Screen):
         cost_plot = self.query_one("#chart-cost", PlotextPlot)
         p = cost_plot.plt
         p.clear_data()
+        p.theme("clear")
         p.plot(x_turns, cumulative, marker="braille", color="green")
         p.title("Cumulative cost ($) over turns")
         p.xlabel("turn")
-        p.ylabel("$")
 
         # Tokens per turn histogram.
         hist_plot = self.query_one("#chart-hist", PlotextPlot)
         p = hist_plot.plt
         p.clear_data()
+        p.theme("clear")
         p.hist(token_series, bins=20, color="orange")
         p.title("Distribution of tokens per turn (K tokens)")
         p.xlabel("K tokens per turn")
-        p.ylabel("count of turns")
 
     def action_copy_session_id(self) -> None:
         try:
@@ -240,7 +245,7 @@ class SessionDetailScreen(Screen):
         project_path = decode_project_path(sess.project_slug) or "(not found on disk)"
 
         title = Text()
-        title.append("Session\n", style="bold underline")
+        title.append("ID: ", style="bold")
         title.append(self.session_id, style="bold cyan")
 
         sub = Text()
