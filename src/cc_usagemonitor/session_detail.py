@@ -3,7 +3,7 @@ hits Enter on a row in the Sessions tab."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from rich.console import Group, RenderableType
 from rich.table import Table
@@ -12,7 +12,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Static
+from textual.widgets import Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, SessionState, TokenSums
@@ -117,6 +117,12 @@ class SessionDetailScreen(Screen):
            match it exactly via _PANEL_RGB. */
         background: $panel-lighten-1;
     }
+    #charts-tabs {
+        height: auto;
+    }
+    #charts-tabs TabPane {
+        padding: 0;
+    }
     #section-skills, #section-agents {
         padding: 0 2;
     }
@@ -134,6 +140,12 @@ class SessionDetailScreen(Screen):
         super().__init__()
         self.session_id = session_id
         self.aggregator = aggregator
+
+    def _make_plot(self, plot_id: str) -> PlotextPlot:
+        p = PlotextPlot(classes="chart-plot")
+        p.id = plot_id
+        p.theme = _PLOTEXT_THEME_NAME
+        return p
 
     def compose(self) -> ComposeResult:
         sess = self.aggregator.sessions.get(self.session_id)
@@ -158,20 +170,18 @@ class SessionDetailScreen(Screen):
                 yield Static(self._build_models_block(sess), id="detail-models")
 
             if turns:
-                # Use our hand-registered theme so plotext's canvas color
-                # matches the widget CSS background exactly.
-                ctx_plot = PlotextPlot(classes="chart-plot")
-                ctx_plot.id = "chart-context"
-                ctx_plot.theme = _PLOTEXT_THEME_NAME
-                yield ctx_plot
-                cost_plot = PlotextPlot(classes="chart-plot")
-                cost_plot.id = "chart-cost"
-                cost_plot.theme = _PLOTEXT_THEME_NAME
-                yield cost_plot
-                hist_plot = PlotextPlot(classes="chart-plot")
-                hist_plot.id = "chart-hist"
-                hist_plot.theme = _PLOTEXT_THEME_NAME
-                yield hist_plot
+                # Charts grouped by what their x-axis depends on. All plots
+                # use the hand-registered theme so canvas matches widget bg.
+                with TabbedContent(id="charts-tabs"):
+                    with TabPane("Turn", id="tab-turn"):
+                        yield self._make_plot("chart-context")
+                        yield self._make_plot("chart-cost")
+                    with TabPane("Time", id="tab-time"):
+                        yield self._make_plot("chart-context-time")
+                        yield self._make_plot("chart-cost-time")
+                        yield self._make_plot("chart-turns-time")
+                    with TabPane("Distribution", id="tab-dist"):
+                        yield self._make_plot("chart-hist")
             else:
                 yield Static(
                     Text(
@@ -266,6 +276,61 @@ class SessionDetailScreen(Screen):
         p.xlabel("turn")
         p.xticks(tick_positions, tick_labels)
 
+        # ---- Time-axis charts (Tab "Time") ----
+        # Use seconds-since-first-turn as the numeric x value. Absolute
+        # epoch would also work but produces ugly tick numbers; relative
+        # seconds with formatted labels reads better.
+        first_ts = turns[0][0]
+        if first_ts.tzinfo is None:
+            first_ts = first_ts.replace(tzinfo=timezone.utc)
+
+        def _to_secs(ts: datetime) -> float:
+            t = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            return (t - first_ts).total_seconds()
+
+        times_secs = [_to_secs(ts) for ts, _, _ in turns]
+        total_secs = times_secs[-1] if times_secs else 0.0
+        time_tick_secs = sorted(
+            {0.0, total_secs / 4, total_secs / 2, 3 * total_secs / 4, total_secs}
+        )
+
+        def _fmt_time_tick(secs: float) -> str:
+            ts_local = (first_ts + timedelta(seconds=secs)).astimezone()
+            if total_secs > 86400 * 2:
+                return ts_local.strftime("%d-%m %H:%M")
+            if total_secs > 3600 * 2:
+                return ts_local.strftime("%H:%M")
+            return ts_local.strftime("%H:%M:%S")
+
+        time_tick_labels = [_fmt_time_tick(s) for s in time_tick_secs]
+
+        # Context size over time.
+        p = self.query_one("#chart-context-time", PlotextPlot).plt
+        p.clear_data()
+        p.plot(times_secs, ctx_series, marker="braille", color="cyan")
+        p.title("Context size over time (K tokens)")
+        p.xlabel("time")
+        p.xticks(time_tick_secs, time_tick_labels)
+
+        # Cumulative cost over time.
+        p = self.query_one("#chart-cost-time", PlotextPlot).plt
+        p.clear_data()
+        p.plot(times_secs, cumulative, marker="braille", color="green")
+        p.title("Cumulative cost over time ($)")
+        p.xlabel("time")
+        p.xticks(time_tick_secs, time_tick_labels)
+
+        # Cumulative turn count over time. Slope = pace of conversation;
+        # flat segments are gaps, steep segments are bursts.
+        p = self.query_one("#chart-turns-time", PlotextPlot).plt
+        p.clear_data()
+        p.plot(times_secs, x_turns, marker="braille", color="magenta")
+        p.title("Turns over time")
+        p.xlabel("time")
+        p.ylabel("# of turns")
+        p.xticks(time_tick_secs, time_tick_labels)
+
+        # ---- Distribution tab ----
         # Tokens-per-turn distribution (histogram). The x axis here is
         # the SIZE of a single turn in K tokens — NOT a turn counter; the
         # rightmost bucket holds the largest turn observed in the session.
