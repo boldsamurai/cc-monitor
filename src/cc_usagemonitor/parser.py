@@ -62,6 +62,12 @@ def parse_session_line(line: str, project_slug: str) -> UsageRecord | None:
     if not usage:
         return None
 
+    # Skip synthetic entries — Claude Code's placeholder for non-API events
+    # (interrupts, stop-hook firings without a turn, API errors). They carry
+    # zero-token usage but would otherwise inflate turn counts.
+    if msg.get("model") == "<synthetic>":
+        return None
+
     ts_str = d.get("timestamp")
     try:
         ts = _parse_ts(ts_str) if ts_str else datetime.now().astimezone()
