@@ -427,8 +427,7 @@ class UsageMonitorApp(App):
         Binding("r", "refresh", "Refresh"),
         Binding("1", "show_tab('sessions')", "Sessions"),
         Binding("2", "show_tab('models')", "Models"),
-        Binding("3", "show_tab('skills')", "Skills"),
-        Binding("4", "show_tab('agents')", "Agents"),
+        Binding("3", "show_tab('projects')", "Projects"),
     ]
 
     def __init__(
@@ -458,13 +457,11 @@ class UsageMonitorApp(App):
                 with Horizontal(id="models-charts"):
                     yield BarChart(id="chart-cost")
                     yield BarChart(id="chart-cache")
-            with TabPane("Skills [3]", id="skills"):
-                yield DataTable(id="t-skills", cursor_type="row", zebra_stripes=True)
-            with TabPane("Agents [4]", id="agents"):
-                yield DataTable(id="t-agents", cursor_type="row", zebra_stripes=True)
+            with TabPane("Projects [3]", id="projects"):
+                yield DataTable(id="t-projects", cursor_type="row", zebra_stripes=True)
         with Horizontal(id="status-bar"):
             yield Static(
-                "[b]1[/b] Sessions  [b]2[/b] Models  [b]3[/b] Skills  [b]4[/b] Agents",
+                "[b]1[/b] Sessions  [b]2[/b] Models  [b]3[/b] Projects",
                 id="status-left",
             )
             yield Static("[b]r[/b] Refresh  [b]q[/b] Quit", id="status-right")
@@ -571,29 +568,20 @@ class UsageMonitorApp(App):
         ("Cost", "cost"),
         ("Turns", "turns"),
     ]
-    SKILLS_COLS = [
-        ("Skill", "skill"),
-        ("In", "in"),
-        ("Out", "out"),
-        ("CacheR", "cache_r"),
+    PROJECTS_COLS = [
+        ("Project", "project"),
+        ("Sessions", "sessions"),
+        ("Last activity", "last"),
         ("Cost", "cost"),
-        ("Calls", "calls"),
-    ]
-    AGENTS_COLS = [
-        ("Agent (subagent_type)", "agent"),
-        ("In", "in"),
-        ("Out", "out"),
-        ("CacheR", "cache_r"),
-        ("Cost", "cost"),
-        ("Calls", "calls"),
+        ("$/session", "per_session"),
+        ("Turns", "turns"),
     ]
 
     def _setup_tables(self) -> None:
         for table_id, cols in (
             ("#t-sessions", self.SESSIONS_COLS),
             ("#t-models", self.MODELS_COLS),
-            ("#t-skills", self.SKILLS_COLS),
-            ("#t-agents", self.AGENTS_COLS),
+            ("#t-projects", self.PROJECTS_COLS),
         ):
             t = self.query_one(table_id, DataTable)
             for label, key in cols:
@@ -604,8 +592,7 @@ class UsageMonitorApp(App):
         self._row_cache: dict[str, dict[str, tuple[str, ...]]] = {
             "#t-sessions": {},
             "#t-models": {},
-            "#t-skills": {},
-            "#t-agents": {},
+            "#t-projects": {},
         }
 
     async def _tailer_runner(self) -> None:
@@ -649,10 +636,8 @@ class UsageMonitorApp(App):
             self._refresh_sessions_table()
         elif active == "models":
             self._refresh_models_table()
-        elif active == "skills":
-            self._refresh_skills_table()
-        elif active == "agents":
-            self._refresh_agents_table()
+        elif active == "projects":
+            self._refresh_projects_table()
 
     def _apply_rows(
         self,
@@ -822,33 +807,52 @@ class UsageMonitorApp(App):
         except Exception:
             pass
 
-    def _refresh_skills_table(self) -> None:
-        rows: list[tuple[str, tuple[str, ...]]] = []
-        for name, sums in sorted(self.aggregator.by_skill.items()):
-            cells = (
-                name,
-                _human(sums.input),
-                _human(sums.output),
-                _human(sums.cache_read),
-                _fmt_usd(sums.cost_usd),
-                _human(sums.turns),
-            )
-            rows.append((name, cells))
-        self._apply_rows("#t-skills", self.SKILLS_COLS, rows)
+    def _refresh_projects_table(self) -> None:
+        """Aggregate every session by its project_slug. Each row sums
+        cost / turns / session-count for the project; sorted by most
+        recent session activity desc — same convention as Sessions."""
+        from collections import defaultdict
 
-    def _refresh_agents_table(self) -> None:
+        agg: dict[str, dict] = defaultdict(
+            lambda: {"sessions": 0, "cost": 0.0, "turns": 0, "last_seen": None}
+        )
+        for sess in self.aggregator.sessions.values():
+            entry = agg[sess.project_slug]
+            entry["sessions"] += 1
+            entry["cost"] += sess.sums.cost_usd
+            entry["turns"] += sess.sums.turns
+            ts = sess.last_seen
+            if ts is not None:
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if entry["last_seen"] is None or ts > entry["last_seen"]:
+                    entry["last_seen"] = ts
+
         rows: list[tuple[str, tuple[str, ...]]] = []
-        for name, sums in sorted(self.aggregator.by_agent.items()):
-            cells = (
-                name,
-                _human(sums.input),
-                _human(sums.output),
-                _human(sums.cache_read),
-                _fmt_usd(sums.cost_usd),
-                _human(sums.turns),
+        epoch = datetime.min.replace(tzinfo=timezone.utc)
+        ordered = sorted(
+            agg.items(),
+            key=lambda kv: kv[1]["last_seen"] or epoch,
+            reverse=True,
+        )
+        for slug, entry in ordered:
+            sessions_n = entry["sessions"]
+            per_session = entry["cost"] / sessions_n if sessions_n else 0.0
+            last_str = (
+                entry["last_seen"].astimezone().strftime("%d-%m-%Y %H:%M")
+                if entry["last_seen"]
+                else "-"
             )
-            rows.append((name, cells))
-        self._apply_rows("#t-agents", self.AGENTS_COLS, rows)
+            cells = (
+                decode_project_slug(slug),
+                _human(sessions_n),
+                last_str,
+                _fmt_usd(entry["cost"]),
+                f"${per_session:.2f}" if per_session >= 1 else f"${per_session:.4f}",
+                _human(entry["turns"]),
+            )
+            rows.append((slug, cells))
+        self._apply_rows("#t-projects", self.PROJECTS_COLS, rows)
 
     def action_show_tab(self, tab_id: str) -> None:
         self.query_one(TabbedContent).active = tab_id
