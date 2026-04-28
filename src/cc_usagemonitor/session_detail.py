@@ -569,10 +569,10 @@ class SessionDetailScreen(Screen):
         # Sort by start time desc — most recent invocation first.
         spans.sort(key=lambda s: s.started_at, reverse=True)
         for span in spans:
-            ts_local = span.started_at
-            if ts_local.tzinfo is None:
-                ts_local = ts_local.replace(tzinfo=timezone.utc)
-            ts_str = ts_local.astimezone().strftime("%H:%M:%S %d-%m")
+            # Match the DD-MM-YYYY HH:MM:SS format used everywhere else
+            # in the app (info block, main session table) so the column
+            # reads consistently.
+            ts_str = _fmt_dt(span.started_at)
             duration = self._fmt_span_duration(span)
             tokens = _fmt_int(span.sums.total_tokens)
             cost = f"${span.sums.cost_usd:.4f}"
