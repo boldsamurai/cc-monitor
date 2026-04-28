@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 
 from rich.console import Group, RenderableType
@@ -163,38 +164,52 @@ class BlockPanel(Static):
         api = self.api_usage
         info = self.info
 
-        # Path A: authoritative API data.
-        if api is not None and not api.api_unavailable and api.five_hour is not None:
-            return self._render_api_view(api, info)
+        # No API data at all (likely API user without OAuth or first-startup
+        # before the initial fetch returns).
+        if api is None:
+            return Group(
+                Text("⏱  Anthropic API", style="bold"),
+                Text("Waiting for first API response…", style="dim italic"),
+            )
 
-        # Path B: fallback to local estimate.
-        return self._render_local_view(info, api)
-
-    def _render_api_view(self, api: UsageData, info: BlockInfo | None) -> RenderableType:
-        five = api.five_hour
-        seven = api.seven_day
-        # five is guaranteed non-None by the caller's gate
-        assert five is not None
-        now = datetime.now(tz=timezone.utc)
-        resets_local = five.resets_at.astimezone()
-        remaining = (five.resets_at - now).total_seconds() / 60.0
-
+        # We have *some* API data — either fresh or a cached failure marker.
+        # The header always shows plan + reset times so the user knows when
+        # the next window opens, even when we're temporarily rate-limited.
         plan_str = f" · plan: [b]{api.plan_name}[/b]" if api.plan_name else ""
-        header = Text.from_markup(
-            f"[b]⏱  5h block (Anthropic API)[/b]{plan_str}  ·  "
-            f"resets [b]{resets_local.strftime('%H:%M')}[/b] (in [b]{_fmt_minutes(remaining)}[/b])"
-        )
+
+        now = datetime.now(tz=timezone.utc)
+        reset_parts: list[str] = []
+        if api.five_hour is not None:
+            five_local = api.five_hour.resets_at.astimezone()
+            five_remaining = (api.five_hour.resets_at - now).total_seconds() / 60.0
+            reset_parts.append(
+                f"5h resets [b]{five_local.strftime('%H:%M')}[/b] (in {_fmt_minutes(five_remaining)})"
+            )
+        if api.seven_day is not None:
+            seven_local = api.seven_day.resets_at.astimezone()
+            seven_remaining = (api.seven_day.resets_at - now).total_seconds() / 60.0
+            reset_parts.append(
+                f"7d resets [b]{seven_local.strftime('%d-%m %H:%M')}[/b] "
+                f"(in {_fmt_duration_minutes(seven_remaining)})"
+            )
+
+        header_text = f"[b]⏱  Anthropic API[/b]{plan_str}"
+        if reset_parts:
+            header_text += "  ·  " + "  ·  ".join(reset_parts)
+        header = Text.from_markup(header_text)
 
         lines: list[Text] = [header]
-        lines.append(self._progress_line("5h ", five.utilization, ""))
-        if seven is not None:
-            seven_resets_local = seven.resets_at.astimezone()
-            seven_remaining = (seven.resets_at - now).total_seconds() / 60.0
-            seven_remaining_str = _fmt_duration_minutes(seven_remaining)
-            seven_suffix = f"resets {seven_resets_local.strftime('%d-%m %H:%M')} (in {seven_remaining_str})"
-            lines.append(self._progress_line("7d ", seven.utilization, seven_suffix))
 
-        # Local sums for context (burn rate, raw counts).
+        # Progress bars (only if we have actual values; empty cached failure
+        # without prior data leaves them out).
+        if api.five_hour is not None:
+            lines.append(self._progress_line("5h ", api.five_hour.utilization, ""))
+        if api.seven_day is not None:
+            lines.append(self._progress_line("7d ", api.seven_day.utilization, ""))
+
+        # Local context line: burn rate + raw tokens/cost from the JSONL
+        # archive. Useful even when the API is happy because the API does
+        # not give burn rate.
         if info is not None:
             sums = info.sums
             lines.append(Text.from_markup(
@@ -203,70 +218,21 @@ class BlockPanel(Static):
                 f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
                 f"${info.burn_cost_per_min:,.2f}/min"
             ))
-        return Group(*lines)
 
-    def _render_local_view(
-        self, info: BlockInfo | None, api: UsageData | None
-    ) -> RenderableType:
-        if info is None:
-            warning: list[Text] = [Text("⏱  5h block", style="bold")]
-            if api is not None and api.api_unavailable:
-                warning.append(Text(
-                    f"Anthropic API unavailable ({api.error}). No local block records yet.",
-                    style="yellow",
-                ))
+        # Surface API failures inline rather than dropping back to a
+        # local-only view.
+        if api.api_unavailable:
+            stale_age = max(0, int(time.time() - api.fetched_at))
+            if api.retry_after_epoch:
+                wait_s = max(0, int(api.retry_after_epoch - time.time()))
+                wait_str = f"retry in {_fmt_minutes(wait_s/60)}"
             else:
-                warning.append(Text(
-                    "No active block (no records in the last 5h)", style="dim italic"
-                ))
-            return Group(*warning)
-
-        start_local = info.start.astimezone()
-        end_local = info.end.astimezone()
-        elapsed_str = _fmt_minutes(info.minutes_elapsed)
-        remaining_str = _fmt_minutes(info.minutes_remaining)
-
-        api_note = ""
-        if api is not None and api.api_unavailable:
-            api_note = f"  ·  [yellow]API: {api.error}[/yellow]"
-
-        header = Text.from_markup(
-            f"[b]⏱  5h block (local estimate)[/b]   "
-            f"started [b]{start_local.strftime('%H:%M')}[/b]  ·  "
-            f"ends [b]{end_local.strftime('%H:%M')}[/b]  ·  "
-            f"elapsed [b]{elapsed_str}[/b]  ·  "
-            f"remaining [b]{remaining_str}[/b]{api_note}"
-        )
-
-        lines: list[Text] = [header]
-
-        sums = info.sums
-        if info.token_limit:
-            lines.append(self._progress_line(
-                "Tokens", info.pct_tokens or 0.0,
-                f"{_human(sums.total_tokens)} / {_human(info.token_limit)}",
-            ))
-        else:
+                wait_str = "retrying with backoff"
             lines.append(Text.from_markup(
-                f"[b]Tokens[/b]  {_human(sums.total_tokens)}  "
-                f"[dim](no limit; pass --plan or --max-5h-tokens)[/dim]"
+                f"[yellow]API: {api.error}[/yellow]  ·  "
+                f"last update {stale_age}s ago  ·  {wait_str}"
             ))
 
-        if info.cost_limit:
-            lines.append(self._progress_line(
-                "Cost  ", info.pct_cost or 0.0,
-                f"${sums.cost_usd:,.2f} / ${info.cost_limit:,.2f}",
-            ))
-        else:
-            lines.append(Text.from_markup(
-                f"[b]Cost  [/b]  ${sums.cost_usd:,.2f}  "
-                f"[dim](no limit; pass --plan or --max-5h-cost)[/dim]"
-            ))
-
-        lines.append(Text.from_markup(
-            f"[b]Burn[/b]    {_human(int(info.burn_tokens_per_min))} tok/min  ·  "
-            f"${info.burn_cost_per_min:,.2f}/min"
-        ))
         return Group(*lines)
 
     def _progress_line(self, label: str, pct: float, suffix: str) -> Text:
@@ -471,9 +437,10 @@ class UsageMonitorApp(App):
             self._recompute_auto_limits()
 
         if self.use_api:
-            # Poll Anthropic /api/oauth/usage every 60s (matches the
-            # endpoint's cache TTL). Initial fetch right away.
-            self.set_interval(60.0, self._poll_api_usage)
+            # Poll Anthropic /api/oauth/usage every 120s (matches the
+            # cache TTL). 1 call / 2min is safely under any reasonable
+            # account-level rate limit.
+            self.set_interval(120.0, self._poll_api_usage)
             self.run_worker(self._poll_api_usage_async, exclusive=False)
 
     async def _poll_api_usage_async(self) -> None:
