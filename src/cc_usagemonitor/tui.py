@@ -19,11 +19,11 @@ from .tailer import Tailer
 
 
 def _fmt_int(n: int) -> str:
-    return f"{n:>10,}"
+    return f"{n:,}"
 
 
 def _fmt_usd(v: float) -> str:
-    return f"${v:>8.4f}"
+    return f"${v:.4f}"
 
 
 def _fmt_ts(ts: datetime | None) -> str:
@@ -88,7 +88,7 @@ class SummaryPanel(Static):
         table = Table.grid(padding=(0, 2), pad_edge=False)
         table.add_column(justify="left", style="bold")
         for _ in range(7):
-            table.add_column(justify="right")
+            table.add_column(justify="left")
 
         table.add_row(
             "",
@@ -373,7 +373,7 @@ class UsageMonitorApp(App):
                 _fmt_int(s.sums.input),
                 _fmt_int(s.sums.output),
                 _fmt_int(s.sums.cache_read),
-                f"{side_pct:>5.1f}%",
+                f"{side_pct:.1f}%",
                 _fmt_usd(s.sums.cost_usd),
                 str(s.sums.turns),
             )
