@@ -4,6 +4,7 @@ import argparse
 import asyncio
 
 from .aggregator import Aggregator
+from .install_hook import ensure_installed as ensure_hook_installed
 from .pricing import PricingTable
 from .tailer import Tailer
 from .tui import run_app
@@ -71,6 +72,11 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+
+    # Make sure Claude Code is wired to feed us tool_start / tool_end
+    # events for Skill and Agent. Idempotent — skips silently when an
+    # existing cc-usagemonitor entry is already in settings.json.
+    ensure_hook_installed()
 
     pricing = PricingTable()
     queue: asyncio.Queue = asyncio.Queue()

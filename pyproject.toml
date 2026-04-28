@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 cc-usagemonitor = "cc_usagemonitor.__main__:main"
+cc-usagemonitor-hook = "cc_usagemonitor.hook:main"
 
 [build-system]
 requires = ["hatchling"]
