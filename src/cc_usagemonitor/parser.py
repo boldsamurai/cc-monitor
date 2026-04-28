@@ -40,6 +40,10 @@ class UsageRecord:
     raw_usage: dict = field(repr=False)
     uuid: str | None = None
     parent_uuid: str | None = None
+    # Real working directory captured by Claude Code on this turn — the
+    # ground-truth project path we can't reliably reconstruct from the
+    # slug alone (slug encoder collapses '/', '_', '.' all to '-').
+    cwd: str | None = None
 
 
 @dataclass
@@ -106,6 +110,7 @@ def parse_session_line(line: str, project_slug: str) -> UsageRecord | None:
         raw_usage=usage,
         uuid=d.get("uuid"),
         parent_uuid=d.get("parentUuid"),
+        cwd=d.get("cwd"),
     )
 
 

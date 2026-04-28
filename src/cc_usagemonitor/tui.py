@@ -827,6 +827,7 @@ class UsageMonitorApp(App):
                 "tokens": 0,
                 "last_seen": None,
                 "first_seen": None,
+                "cwd": None,
             }
         )
         for sess in self.aggregator.sessions.values():
@@ -834,6 +835,8 @@ class UsageMonitorApp(App):
             entry["sessions"] += 1
             entry["cost"] += sess.sums.cost_usd
             entry["tokens"] += sess.sums.total_tokens
+            if entry["cwd"] is None and sess.cwd:
+                entry["cwd"] = sess.cwd
             for ts_attr, key, cmp in (
                 (sess.last_seen, "last_seen", lambda a, b: a > b),
                 (sess.first_seen, "first_seen", lambda a, b: a < b),
@@ -856,14 +859,13 @@ class UsageMonitorApp(App):
                 continue
             last_7d[sess.project_slug] += cost
 
-        # Probe the filesystem once per slug. decode_project_path()
-        # synthesizes a 'best-effort' path even when no real match is
-        # found — so a follow-up is_dir() check distinguishes truly-
-        # existing projects from placeholders.
+        # Use the cwd captured from the session JSONL when available —
+        # that's ground truth. Fall back to slug-decode for sessions that
+        # haven't surfaced a cwd yet (early-life or hook-only state).
         existence: dict[str, bool] = {}
-        for slug in agg:
-            p = decode_project_path(slug)
-            existence[slug] = bool(p and Path(p).is_dir())
+        for slug, entry in agg.items():
+            real_path = entry["cwd"] or decode_project_path(slug)
+            existence[slug] = bool(real_path and Path(real_path).is_dir())
 
         rows: list[tuple[str, tuple[str, ...]]] = []
         epoch = datetime.min.replace(tzinfo=timezone.utc)
@@ -887,8 +889,14 @@ class UsageMonitorApp(App):
             style = "" if exists else "dim"
             def _styled(s: str) -> Text:
                 return Text(s, style=style) if style else Text(s)
+            # Prefer the basename of the captured cwd (ground-truth name)
+            # over the slug guess.
+            real_path = entry["cwd"]
+            project_name = (
+                real_path.rsplit("/", 1)[-1] if real_path else decode_project_slug(slug)
+            )
             cells = (
-                _styled(decode_project_slug(slug)),
+                _styled(project_name),
                 Text("✓", style="green") if exists else Text("✗", style="red dim"),
                 _styled(_human(sessions_n)),
                 _styled(self._fmt_dt(entry["first_seen"])),

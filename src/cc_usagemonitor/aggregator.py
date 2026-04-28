@@ -79,6 +79,11 @@ class SessionState:
     # Per-session breakdown for skill/agent calls correlated via hooks.
     skills: dict[str, TokenSums] = field(default_factory=dict)
     agents: dict[str, TokenSums] = field(default_factory=dict)
+    # Ground-truth project path captured from the JSONL ('cwd' field).
+    # Kept here once seen — the slug → path decode is lossy (slug
+    # encoder collapses '/', '_', '.' all to '-'), so the real cwd is
+    # the only fully reliable source.
+    cwd: str | None = None
 
 
 @dataclass
@@ -158,6 +163,11 @@ class Aggregator:
             sess = SessionState(session_id=rec.session_id, project_slug=rec.project_slug)
             self.sessions[rec.session_id] = sess
             sess.first_seen = rec.ts
+
+        # Latch the cwd the first time we see it. Lines without cwd
+        # (synthetic or early-session events) are ignored.
+        if sess.cwd is None and rec.cwd:
+            sess.cwd = rec.cwd
 
         sess.last_seen = rec.ts
         ctx = (
