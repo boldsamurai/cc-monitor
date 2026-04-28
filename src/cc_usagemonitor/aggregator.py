@@ -204,12 +204,19 @@ class Aggregator:
     # ----- read API for TUI -----
 
     def recent_token_rate_per_min(self) -> float:
+        return self._scale_to_per_min(sum(t for _, t, _ in self.recent_usage))
+
+    def recent_cost_per_min(self) -> float:
+        return self._scale_to_per_min(sum(c for _, _, c in self.recent_usage))
+
+    def recent_turns_per_min(self) -> float:
+        return self._scale_to_per_min(len(self.recent_usage))
+
+    def _scale_to_per_min(self, total: float) -> float:
         if not self.recent_usage:
             return 0.0
-        total_tokens = sum(t for _, t, _ in self.recent_usage)
-        # window is fixed seconds; rate = tokens / window * 60
         seconds = self._recent_window.total_seconds()
-        return total_tokens * 60.0 / seconds
+        return total * 60.0 / seconds
 
     def total_sums(self) -> TokenSums:
         agg = TokenSums()

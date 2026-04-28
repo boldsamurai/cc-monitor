@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
+from rich.console import Group, RenderableType
+from rich.table import Table
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -30,45 +33,102 @@ def _fmt_ts(ts: datetime | None) -> str:
     return ts.astimezone().strftime("%H:%M:%S")
 
 
+def _human(n: int) -> str:
+    """Compact integer formatting: 1234 -> 1.2K, 1_234_567 -> 1.23M, etc."""
+    if n < 1_000:
+        return f"{n:,}"
+    if n < 1_000_000:
+        return f"{n/1_000:.1f}K"
+    if n < 1_000_000_000:
+        return f"{n/1_000_000:.2f}M"
+    if n < 1_000_000_000_000:
+        return f"{n/1_000_000_000:.2f}B"
+    return f"{n/1_000_000_000_000:.2f}T"
+
+
+def _human_usd(v: float) -> str:
+    if v < 10:
+        return f"${v:.4f}"
+    if v < 1_000:
+        return f"${v:,.2f}"
+    return f"${v:,.0f}"
+
+
 class SummaryPanel(Static):
     """Top panel: totals, rate, current 5h block."""
 
     sums: reactive[TokenSums] = reactive(TokenSums)
-    rate: reactive[float] = reactive(0.0)
     block_sums: reactive[TokenSums] = reactive(TokenSums)
     block_start: reactive[datetime | None] = reactive(None)
     session_count: reactive[int] = reactive(0)
     active_count: reactive[int] = reactive(0)
+    rate_tokens: reactive[float] = reactive(0.0)
+    rate_cost: reactive[float] = reactive(0.0)
+    rate_turns: reactive[float] = reactive(0.0)
 
-    def render(self) -> str:
+    def render(self) -> RenderableType:
+        header = Text.from_markup(
+            f"[b]Sessions:[/b] {self.session_count} "
+            f"([b green]{self.active_count} active[/b green], <30m idle)    "
+            f"[b]Rate (last 60s):[/b] "
+            f"{self.rate_turns:.1f} turns/min · "
+            f"${self.rate_cost:,.2f}/min · "
+            f"{_human(int(self.rate_tokens))} tok/min"
+        )
+
+        table = Table.grid(padding=(0, 2), pad_edge=False)
+        table.add_column(justify="left", style="bold")
+        for _ in range(7):
+            table.add_column(justify="right")
+
+        table.add_row(
+            "",
+            Text("Input", style="dim"),
+            Text("Output", style="dim"),
+            Text("Cache R", style="dim"),
+            Text("Cache W", style="dim"),
+            Text("Cost", style="dim"),
+            Text("Turns", style="dim"),
+            Text("", style="dim"),
+        )
         s = self.sums
+        table.add_row(
+            "Total (all-time)",
+            _human(s.input),
+            _human(s.output),
+            _human(s.cache_read),
+            _human(s.cache_write_5m + s.cache_write_1h),
+            _human_usd(s.cost_usd),
+            f"{s.turns:,}",
+            "",
+        )
+
         b = self.block_sums
         block_age = ""
         if self.block_start is not None:
             now = datetime.now(tz=self.block_start.tzinfo or timezone.utc)
             delta = now - self.block_start
             mins = int(delta.total_seconds() // 60)
-            block_age = f"  (started {_fmt_ts(self.block_start)}, {mins}m ago)"
-
-        return (
-            f"[b]Sessions:[/b] {self.session_count} "
-            f"([b green]{self.active_count} active[/b green], <30m idle)    "
-            f"[b]Rate:[/b] {self.rate:,.0f} tok/min  [dim](last 60s ingest)[/dim]\n"
-            f"[b]Total (all-time):[/b]  in={_fmt_int(s.input)}  out={_fmt_int(s.output)}  "
-            f"cache_r={_fmt_int(s.cache_read)}  cache_w={_fmt_int(s.cache_write_5m + s.cache_write_1h)}  "
-            f"cost={_fmt_usd(s.cost_usd)}  turns={s.turns}\n"
-            f"[b]5h block:[/b] in={_fmt_int(b.input)}  out={_fmt_int(b.output)}  "
-            f"cache_r={_fmt_int(b.cache_read)}  cost={_fmt_usd(b.cost_usd)}{block_age}\n"
-            f"[dim]in=input · out=output · cache_r=cache reads · cache_w=cache writes (5m+1h) · "
-            f"cost=USD · turns=API calls[/dim]"
+            block_age = f"started {_fmt_ts(self.block_start)} ({mins}m ago)"
+        table.add_row(
+            "5h block",
+            _human(b.input),
+            _human(b.output),
+            _human(b.cache_read),
+            _human(b.cache_write_5m + b.cache_write_1h),
+            _human_usd(b.cost_usd),
+            f"{b.turns:,}",
+            Text(block_age, style="dim"),
         )
+
+        return Group(header, Text(""), table)
 
 
 class UsageMonitorApp(App):
     CSS = """
     Screen { layout: vertical; }
     SummaryPanel {
-        height: 6;
+        height: 7;
         padding: 1 2;
         background: $boost;
         border-bottom: solid $primary;
@@ -145,7 +205,9 @@ class UsageMonitorApp(App):
         agg = self.aggregator
         summary = self.query_one("#summary", SummaryPanel)
         summary.sums = agg.total_sums()
-        summary.rate = agg.recent_token_rate_per_min()
+        summary.rate_tokens = agg.recent_token_rate_per_min()
+        summary.rate_cost = agg.recent_cost_per_min()
+        summary.rate_turns = agg.recent_turns_per_min()
         summary.block_sums = agg.block_sums
         summary.block_start = agg.block_start
         summary.session_count = len(agg.sessions)
