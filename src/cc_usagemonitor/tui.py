@@ -345,11 +345,18 @@ class UsageMonitorApp(App):
         Binding("4", "show_tab('agents')", "Agents"),
     ]
 
-    def __init__(self, aggregator: Aggregator, tailer: Tailer, queue: asyncio.Queue):
+    def __init__(
+        self,
+        aggregator: Aggregator,
+        tailer: Tailer,
+        queue: asyncio.Queue,
+        auto_limits: bool = False,
+    ):
         super().__init__()
         self.aggregator = aggregator
         self.tailer = tailer
         self.queue = queue
+        self.auto_limits = auto_limits
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -388,6 +395,19 @@ class UsageMonitorApp(App):
         self.run_worker(self._consume_queue(), exclusive=False)
         self.run_worker(self._tailer_runner(), exclusive=False)
         self.set_interval(0.5, self._refresh_view)
+        if self.auto_limits:
+            # Recompute P90 limits every 30s — they shift as the rolling
+            # 8-day window of historical blocks evolves.
+            self.set_interval(30.0, self._recompute_auto_limits)
+            self._recompute_auto_limits()
+
+    def _recompute_auto_limits(self) -> None:
+        result = self.aggregator.auto_detect_limits_p90()
+        if result is None:
+            return
+        token_limit, cost_limit = result
+        self.aggregator.token_limit = token_limit
+        self.aggregator.cost_limit = cost_limit
 
     def _on_theme_change(self, new_theme: str) -> None:
         cfg = load_config()
@@ -715,5 +735,10 @@ class UsageMonitorApp(App):
         self._refresh_view()
 
 
-def run_app(aggregator: Aggregator, tailer: Tailer, queue: asyncio.Queue) -> None:
-    UsageMonitorApp(aggregator, tailer, queue).run()
+def run_app(
+    aggregator: Aggregator,
+    tailer: Tailer,
+    queue: asyncio.Queue,
+    auto_limits: bool = False,
+) -> None:
+    UsageMonitorApp(aggregator, tailer, queue, auto_limits=auto_limits).run()

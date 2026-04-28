@@ -8,7 +8,20 @@ from .parser import HookEvent, UsageRecord
 from .pricing import PricingTable
 
 BLOCK_DURATION = timedelta(hours=5)
-LONG_WINDOW = timedelta(days=7)
+LONG_WINDOW = timedelta(days=8)  # 192h, matches Maciek-roboblog's P90 window
+
+
+def _percentile(values: list[float], p: float) -> float:
+    """Linear interpolation percentile (NumPy's default behavior)."""
+    if not values:
+        return 0.0
+    sorted_vals = sorted(values)
+    k = (len(sorted_vals) - 1) * p / 100
+    f = int(k)
+    c = min(f + 1, len(sorted_vals) - 1)
+    if f == c:
+        return float(sorted_vals[f])
+    return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
 
 
 @dataclass
@@ -260,6 +273,50 @@ class Aggregator:
             if ts >= cutoff:
                 sums.add(rec, cost)
         return sums
+
+    def auto_detect_limits_p90(self) -> tuple[int, float] | None:
+        """Analyze the 8-day window and return (P90 token limit, P90 cost
+        limit) computed across historical 5h blocks. Used by --plan auto.
+
+        Returns None if there are fewer than 3 historical blocks (P90 of
+        a 1-2 element list is meaningless).
+        """
+        if not self._long_window:
+            return None
+        records = list(self._long_window)
+        # Identify block boundaries: a new block starts after a >=5h gap.
+        block_token_totals: list[int] = []
+        block_cost_totals: list[float] = []
+        cur_tokens = 0
+        cur_cost = 0.0
+        prev_ts: datetime | None = None
+        for ts, rec, cost in records:
+            if prev_ts is not None and ts - prev_ts >= BLOCK_DURATION:
+                block_token_totals.append(cur_tokens)
+                block_cost_totals.append(cur_cost)
+                cur_tokens = 0
+                cur_cost = 0.0
+            cur_tokens += (
+                rec.input_tokens
+                + rec.output_tokens
+                + rec.cache_read_tokens
+                + rec.cache_write_5m_tokens
+                + rec.cache_write_1h_tokens
+            )
+            cur_cost += cost
+            prev_ts = ts
+        if cur_tokens:
+            block_token_totals.append(cur_tokens)
+            block_cost_totals.append(cur_cost)
+
+        if len(block_token_totals) < 3:
+            return None
+
+        token_p90 = _percentile(block_token_totals, 90)
+        cost_p90 = _percentile(block_cost_totals, 90)
+        # Round token limit up to a clean number for nicer display.
+        token_p90 = int(round(token_p90))
+        return (token_p90, cost_p90)
 
     def block_info(self) -> BlockInfo | None:
         """Compute the current 5-hour block from the long-window archive.
