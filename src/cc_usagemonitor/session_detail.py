@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Static
 from textual_plotext import PlotextPlot
@@ -62,13 +62,22 @@ class SessionDetailScreen(Screen):
 
     CSS = """
     SessionDetailScreen { background: $background; }
-    #detail-body {
-        padding: 1 2;
+    #detail-top {
+        height: auto;
+        padding: 1 2 0 2;
         background: $boost;
     }
+    #detail-top > Static {
+        width: 1fr;
+        padding: 0 2;
+    }
+    #detail-info { width: 2fr; }
     .chart-plot {
         height: 14;
-        margin: 1 0;
+        margin: 1 2;
+    }
+    #section-skills, #section-agents {
+        padding: 0 2;
     }
     #detail-footer {
         height: 1;
@@ -92,20 +101,21 @@ class SessionDetailScreen(Screen):
         )
 
         with VerticalScroll():
-            yield Static(self._build_text_content(), id="detail-body")
+            # Top row: Session info, Totals, By model — three columns
+            # side by side so the screen feels like a dashboard rather
+            # than a long scroll of stacked sections.
+            with Horizontal(id="detail-top"):
+                yield Static(self._build_info_block(sess), id="detail-info")
+                yield Static(self._build_totals_block(sess), id="detail-totals")
+                yield Static(self._build_models_block(sess), id="detail-models")
+
             if turns:
-                yield Static(
-                    Text("Charts", style="bold underline"),
-                )
-                # 1. Context size per turn — proper line chart.
                 ctx_plot = PlotextPlot(classes="chart-plot")
                 ctx_plot.id = "chart-context"
                 yield ctx_plot
-                # 2. Cumulative cost.
                 cost_plot = PlotextPlot(classes="chart-plot")
                 cost_plot.id = "chart-cost"
                 yield cost_plot
-                # 3. Tokens per turn distribution.
                 hist_plot = PlotextPlot(classes="chart-plot")
                 hist_plot.id = "chart-hist"
                 yield hist_plot
@@ -116,6 +126,25 @@ class SessionDetailScreen(Screen):
                         style="dim italic",
                     )
                 )
+
+            # Skills / agents (full width, only when relevant).
+            if sess and sess.skills:
+                yield Static(
+                    Group(
+                        Text("Skills used in this session", style="bold underline"),
+                        self._skills_table(sess),
+                    ),
+                    id="section-skills",
+                )
+            if sess and sess.agents:
+                yield Static(
+                    Group(
+                        Text("Agents used in this session", style="bold underline"),
+                        self._agents_table(sess),
+                    ),
+                    id="section-agents",
+                )
+
         yield Static(
             "[b]Esc[/b] back   ·   "
             "[b]1[/b] copy session ID   ·   [b]2[/b] copy project path",
@@ -203,16 +232,15 @@ class SessionDetailScreen(Screen):
             return
         self.app.notify(f"Copied {path}", timeout=2)
 
-    def _build_text_content(self) -> RenderableType:
-        sess = self.aggregator.sessions.get(self.session_id)
+    def _build_info_block(self, sess: SessionState | None) -> RenderableType:
         if sess is None:
             return Text(f"Session {self.session_id} not found", style="bold red")
 
-        # Header.
         project_name = decode_project_slug(sess.project_slug)
         project_path = decode_project_path(sess.project_slug) or "(not found on disk)"
+
         title = Text()
-        title.append("Session ", style="bold")
+        title.append("Session\n", style="bold underline")
         title.append(self.session_id, style="bold cyan")
 
         sub = Text()
@@ -227,7 +255,11 @@ class SessionDetailScreen(Screen):
         sub.append("Duration: ", style="dim")
         sub.append(_fmt_duration(sess.first_seen, sess.last_seen))
 
-        # Top stats table.
+        return Group(title, Text(""), sub)
+
+    def _build_totals_block(self, sess: SessionState | None) -> RenderableType:
+        if sess is None:
+            return Text("")
         stats = Table.grid(padding=(0, 2))
         stats.add_column(style="bold")
         stats.add_column()
@@ -237,18 +269,15 @@ class SessionDetailScreen(Screen):
         per_turn_str = f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}"
         stats.add_row("$/turn", per_turn_str)
         stats.add_row("", "")
-        stats.add_row("Input tokens", _fmt_int(sess.sums.input))
-        stats.add_row("Output tokens", _fmt_int(sess.sums.output))
-        stats.add_row("Cache reads", _fmt_int(sess.sums.cache_read))
+        stats.add_row("Input", _fmt_int(sess.sums.input))
+        stats.add_row("Output", _fmt_int(sess.sums.output))
+        stats.add_row("Cache R", _fmt_int(sess.sums.cache_read))
         stats.add_row(
-            "Cache writes",
-            f"{_fmt_int(sess.sums.cache_write_5m + sess.sums.cache_write_1h)}  "
-            f"(5m: {_fmt_int(sess.sums.cache_write_5m)}, "
-            f"1h: {_fmt_int(sess.sums.cache_write_1h)})",
+            "Cache W",
+            _fmt_int(sess.sums.cache_write_5m + sess.sums.cache_write_1h),
         )
-        stats.add_row("Total tokens", _fmt_int(sess.sums.total_tokens))
+        stats.add_row("Total", _fmt_int(sess.sums.total_tokens))
 
-        # Cache hit ratio.
         total_in = (
             sess.sums.input
             + sess.sums.cache_read
@@ -257,41 +286,28 @@ class SessionDetailScreen(Screen):
         )
         cache_pct = (sess.sums.cache_read / total_in * 100) if total_in else 0
         stats.add_row("Cache hit %", f"{cache_pct:.1f}%")
+        stats.add_row("", "")
 
-        # Context info.
         from .tui import _context_limit_for
         ctx_limit = _context_limit_for(sess.last_context_model, sess.max_context_tokens)
-        stats.add_row("", "")
         stats.add_row(
-            "Context (last)",
-            f"{_fmt_int(sess.last_context_tokens)} / {_fmt_int(ctx_limit)} "
-            f"({sess.last_context_tokens/ctx_limit*100:.1f}%)",
+            "Ctx (last)",
+            f"{_fmt_int(sess.last_context_tokens)} ({sess.last_context_tokens/ctx_limit*100:.1f}%)",
         )
         stats.add_row(
-            "Context (peak)",
-            f"{_fmt_int(sess.max_context_tokens)} / {_fmt_int(ctx_limit)} "
-            f"({sess.max_context_tokens/ctx_limit*100:.1f}%)",
+            "Ctx (peak)",
+            f"{_fmt_int(sess.max_context_tokens)} ({sess.max_context_tokens/ctx_limit*100:.1f}%)",
         )
 
-        # Per-model + per-skill / agent.
-        model_table = self._model_table(sess)
-        skills_table = self._skills_table(sess)
-        agents_table = self._agents_table(sess)
+        return Group(Text("Totals", style="bold underline"), Text(""), stats)
 
+    def _build_models_block(self, sess: SessionState | None) -> RenderableType:
+        if sess is None:
+            return Text("")
         return Group(
-            title,
-            Text(""),
-            sub,
-            Text(""),
-            Text("Totals", style="bold underline"),
-            stats,
-            Text(""),
             Text("By model", style="bold underline"),
-            model_table,
-            *([Text(""), Text("Skills used in this session", style="bold underline"), skills_table]
-              if skills_table else []),
-            *([Text(""), Text("Agents used in this session", style="bold underline"), agents_table]
-              if agents_table else []),
+            Text(""),
+            self._model_table(sess),
         )
 
     def _model_table(self, sess: SessionState) -> Table:
