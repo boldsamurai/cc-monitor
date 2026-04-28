@@ -14,6 +14,7 @@ from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, Ta
 
 from .aggregator import Aggregator, TokenSums
 from .pricing import PricingTable
+from .project_slug import decode_project_slug
 from .tailer import Tailer
 
 
@@ -356,9 +357,10 @@ class UsageMonitorApp(App):
             total_side = s.sums_sidechain.total_tokens
             total = total_main + total_side
             side_pct = (total_side / total * 100) if total else 0.0
+            project_name = decode_project_slug(s.project_slug)
             cells = (
                 s.session_id[:8],
-                s.project_slug[-30:] if len(s.project_slug) > 30 else s.project_slug,
+                project_name[-30:] if len(project_name) > 30 else project_name,
                 _fmt_ts(s.last_seen),
                 _fmt_int(s.sums.input),
                 _fmt_int(s.sums.output),
