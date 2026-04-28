@@ -172,18 +172,63 @@ class UsageMonitorApp(App):
         self.run_worker(self._tailer_runner(), exclusive=False)
         self.set_interval(0.5, self._refresh_view)
 
+    def on_tabbed_content_tab_activated(
+        self, event: TabbedContent.TabActivated
+    ) -> None:
+        # The newly-shown tab may be stale (we only refresh the active tab on
+        # the timer). Force a refresh now so the user sees current numbers.
+        self._refresh_view()
+
+    SESSIONS_COLS = [
+        ("Session", "sid"),
+        ("Project", "proj"),
+        ("Last", "last"),
+        ("In", "in"),
+        ("Out", "out"),
+        ("CacheR", "cache_r"),
+        ("Sidechain%", "side"),
+        ("Cost", "cost"),
+        ("Turns", "turns"),
+    ]
+    MODELS_COLS = [
+        ("Model", "model"),
+        ("In", "in"),
+        ("Out", "out"),
+        ("CacheR", "cache_r"),
+        ("CacheW", "cache_w"),
+        ("Cost", "cost"),
+        ("Turns", "turns"),
+    ]
+    SKILLS_COLS = [
+        ("Skill", "skill"),
+        ("In", "in"),
+        ("Out", "out"),
+        ("CacheR", "cache_r"),
+        ("Cost", "cost"),
+        ("Calls", "calls"),
+    ]
+    AGENTS_COLS = [
+        ("Agent (subagent_type)", "agent"),
+        ("In", "in"),
+        ("Out", "out"),
+        ("CacheR", "cache_r"),
+        ("Cost", "cost"),
+        ("Calls", "calls"),
+    ]
+
     def _setup_tables(self) -> None:
-        sessions = self.query_one("#t-sessions", DataTable)
-        sessions.add_columns("Session", "Project", "Last", "In", "Out", "CacheR", "Sidechain%", "Cost", "Turns")
-
-        models = self.query_one("#t-models", DataTable)
-        models.add_columns("Model", "In", "Out", "CacheR", "CacheW", "Cost", "Turns")
-
-        skills = self.query_one("#t-skills", DataTable)
-        skills.add_columns("Skill", "In", "Out", "CacheR", "Cost", "Calls")
-
-        agents = self.query_one("#t-agents", DataTable)
-        agents.add_columns("Agent (subagent_type)", "In", "Out", "CacheR", "Cost", "Calls")
+        for table_id, cols in (
+            ("#t-sessions", self.SESSIONS_COLS),
+            ("#t-models", self.MODELS_COLS),
+            ("#t-skills", self.SKILLS_COLS),
+            ("#t-agents", self.AGENTS_COLS),
+        ):
+            t = self.query_one(table_id, DataTable)
+            for label, key in cols:
+                t.add_column(label, key=key)
+        # Cache last-rendered cell tuple per (table_id, row_key) to skip
+        # update_cell calls when nothing changed.
+        self._row_cache: dict[tuple[str, str], tuple[str, ...]] = {}
 
     async def _tailer_runner(self) -> None:
         try:
@@ -214,25 +259,81 @@ class UsageMonitorApp(App):
         summary.active_count = agg.active_session_count()
         summary.refresh()
 
-        self._refresh_sessions_table()
-        self._refresh_models_table()
-        self._refresh_skills_table()
-        self._refresh_agents_table()
+        # Refresh only the visible tab — keeps the UI responsive even at
+        # hundreds of rows. The other tables are still in-sync from previous
+        # refreshes; they'll catch up the moment the user switches tabs.
+        active = self.query_one(TabbedContent).active
+        if active == "sessions":
+            self._refresh_sessions_table()
+        elif active == "models":
+            self._refresh_models_table()
+        elif active == "skills":
+            self._refresh_skills_table()
+        elif active == "agents":
+            self._refresh_agents_table()
+
+    def _diff_update(
+        self,
+        table_id: str,
+        cols: list[tuple[str, str]],
+        rows: list[tuple[str, tuple[str, ...]]],
+    ) -> None:
+        """Apply (row_key, cell_tuple) list to a DataTable without clearing.
+
+        - Adds new rows (in given order, appended at the end)
+        - Updates only cells that changed
+        - Removes rows no longer present
+        - Preserves cursor position and scroll offset
+        """
+        table = self.query_one(table_id, DataTable)
+        col_keys = [k for _, k in cols]
+        desired: dict[str, tuple[str, ...]] = dict(rows)
+
+        # Remove rows that are gone.
+        existing_keys = [str(rk.value) for rk in list(table.rows.keys())]
+        for k in existing_keys:
+            if k not in desired:
+                try:
+                    table.remove_row(k)
+                except Exception:
+                    pass
+                self._row_cache.pop((table_id, k), None)
+
+        # Add or update.
+        existing_keys_set = {str(rk.value) for rk in table.rows.keys()}
+        for key, cells in rows:
+            cache_key = (table_id, key)
+            if key not in existing_keys_set:
+                table.add_row(*cells, key=key)
+                self._row_cache[cache_key] = cells
+                continue
+            prev = self._row_cache.get(cache_key)
+            if prev == cells:
+                continue
+            for col_key, new_val, old_val in zip(
+                col_keys, cells, prev or (None,) * len(cells)
+            ):
+                if new_val != old_val:
+                    try:
+                        table.update_cell(key, col_key, new_val)
+                    except Exception:
+                        pass
+            self._row_cache[cache_key] = cells
 
     def _refresh_sessions_table(self) -> None:
-        t = self.query_one("#t-sessions", DataTable)
-        t.clear()
-        rows = sorted(
+        # Stable order: oldest first by first_seen — keeps rows from jumping
+        # around under the cursor when last_seen ticks.
+        rows: list[tuple[str, tuple[str, ...]]] = []
+        sorted_sessions = sorted(
             self.aggregator.sessions.values(),
-            key=lambda s: s.last_seen or datetime.min.replace(tzinfo=timezone.utc),
-            reverse=True,
+            key=lambda s: s.first_seen or datetime.min.replace(tzinfo=timezone.utc),
         )
-        for s in rows:
+        for s in sorted_sessions:
             total_main = s.sums_main.total_tokens
             total_side = s.sums_sidechain.total_tokens
             total = total_main + total_side
             side_pct = (total_side / total * 100) if total else 0.0
-            t.add_row(
+            cells = (
                 s.session_id[:8],
                 s.project_slug[-30:] if len(s.project_slug) > 30 else s.project_slug,
                 _fmt_ts(s.last_seen),
@@ -242,12 +343,11 @@ class UsageMonitorApp(App):
                 f"{side_pct:>5.1f}%",
                 _fmt_usd(s.sums.cost_usd),
                 str(s.sums.turns),
-                key=s.session_id,
             )
+            rows.append((s.session_id, cells))
+        self._diff_update("#t-sessions", self.SESSIONS_COLS, rows)
 
     def _refresh_models_table(self) -> None:
-        t = self.query_one("#t-models", DataTable)
-        t.clear()
         per_model: dict[str, TokenSums] = {}
         for sess in self.aggregator.sessions.values():
             for model, sums in sess.by_model.items():
@@ -259,8 +359,9 @@ class UsageMonitorApp(App):
                 m.cache_write_1h += sums.cache_write_1h
                 m.cost_usd += sums.cost_usd
                 m.turns += sums.turns
-        for model, sums in sorted(per_model.items(), key=lambda kv: -kv[1].cost_usd):
-            t.add_row(
+        rows: list[tuple[str, tuple[str, ...]]] = []
+        for model, sums in sorted(per_model.items()):
+            cells = (
                 model or "(unknown)",
                 _fmt_int(sums.input),
                 _fmt_int(sums.output),
@@ -268,36 +369,37 @@ class UsageMonitorApp(App):
                 _fmt_int(sums.cache_write_5m + sums.cache_write_1h),
                 _fmt_usd(sums.cost_usd),
                 str(sums.turns),
-                key=model,
             )
+            rows.append((model or "(unknown)", cells))
+        self._diff_update("#t-models", self.MODELS_COLS, rows)
 
     def _refresh_skills_table(self) -> None:
-        t = self.query_one("#t-skills", DataTable)
-        t.clear()
-        for name, sums in sorted(self.aggregator.by_skill.items(), key=lambda kv: -kv[1].cost_usd):
-            t.add_row(
+        rows: list[tuple[str, tuple[str, ...]]] = []
+        for name, sums in sorted(self.aggregator.by_skill.items()):
+            cells = (
                 name,
                 _fmt_int(sums.input),
                 _fmt_int(sums.output),
                 _fmt_int(sums.cache_read),
                 _fmt_usd(sums.cost_usd),
                 str(sums.turns),
-                key=name,
             )
+            rows.append((name, cells))
+        self._diff_update("#t-skills", self.SKILLS_COLS, rows)
 
     def _refresh_agents_table(self) -> None:
-        t = self.query_one("#t-agents", DataTable)
-        t.clear()
-        for name, sums in sorted(self.aggregator.by_agent.items(), key=lambda kv: -kv[1].cost_usd):
-            t.add_row(
+        rows: list[tuple[str, tuple[str, ...]]] = []
+        for name, sums in sorted(self.aggregator.by_agent.items()):
+            cells = (
                 name,
                 _fmt_int(sums.input),
                 _fmt_int(sums.output),
                 _fmt_int(sums.cache_read),
                 _fmt_usd(sums.cost_usd),
                 str(sums.turns),
-                key=name,
             )
+            rows.append((name, cells))
+        self._diff_update("#t-agents", self.AGENTS_COLS, rows)
 
     def action_show_tab(self, tab_id: str) -> None:
         self.query_one(TabbedContent).active = tab_id
