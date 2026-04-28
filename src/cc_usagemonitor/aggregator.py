@@ -126,13 +126,6 @@ class Aggregator:
         # shows up on the parent's continuation, so 'next message wins'
         # is a reasonable approximation.
         self._pending_correlation: dict[str, deque[ToolSpan]] = defaultdict(deque)
-        # Currently-running Agent span per session. Set on tool_start,
-        # cleared on tool_end. Every sidechain UsageRecord that arrives
-        # while this is set gets summed into the agent — sidechains ARE
-        # the subagent's actual API calls, so this captures the real
-        # per-agent cost (parent continuation goes to nobody, which is
-        # correct: that's the parent's work, not the agent's).
-        self._active_agent: dict[str, ToolSpan] = {}
         self.recent_usage: deque[tuple[datetime, int, float]] = deque()
         self._recent_window = timedelta(seconds=recent_window_seconds)
         # Aggregations per skill / agent name.
@@ -199,10 +192,6 @@ class Aggregator:
             )
             self.spans_by_id[ev.span_id] = span
             self.spans_by_session[ev.session_id].append(span)
-            # Mark this Agent as active so subsequent sidechain records
-            # can be summed into it.
-            if span.tool == "Agent":
-                self._active_agent[ev.session_id] = span
         elif ev.event == "tool_end" and ev.span_id:
             span = self.spans_by_id.get(ev.span_id)
             if span is None:
@@ -218,16 +207,42 @@ class Aggregator:
                 self.spans_by_session[ev.session_id].append(span)
             span.ended_at = ev.ts
             span.duration_ms = ev.duration_ms
-            # Agents stop accepting sidechain attribution at tool_end.
+            # Agent: sweep the long-window archive for sidechain records
+            # in this span's [start, end] timestamp window and attribute
+            # them. This is robust regardless of ingest order — works for
+            # both live tail (records arrive between start/end) and
+            # --from-start replay (records arrive long before tool_end).
             if span.tool == "Agent":
-                if self._active_agent.get(ev.session_id) is span:
-                    self._active_agent.pop(ev.session_id, None)
+                self._attribute_sidechains_to_agent(span)
             # Skills don't spawn a subagent — queue for FIFO attribution
             # to the next non-sidechain turn (the parent's continuation
             # message includes the skill's injected instructions).
             if span.tool == "Skill":
                 self._pending_correlation[ev.session_id].append(span)
         # 'stop' currently has no aggregate state — useful for future per-turn buckets.
+
+    def _attribute_sidechains_to_agent(self, span: ToolSpan) -> None:
+        """Sum every sidechain UsageRecord that falls in this Agent
+        span's window. Idempotent: only attributes records once because
+        tool_end events arrive once per span_id."""
+        if span.ended_at is None:
+            return
+        sess = self.sessions.get(span.session_id)
+        for ts, rec, cost in self._long_window:
+            if rec.session_id != span.session_id:
+                continue
+            if not rec.is_sidechain:
+                continue
+            if ts < span.started_at or ts > span.ended_at:
+                continue
+            span.sums.add(rec, cost)
+            if span.name:
+                self.by_agent[span.name].add(rec, cost)
+                if sess is not None:
+                    sess.sums_from_agents.add(rec, cost)
+                    sess.agents.setdefault(span.name, TokenSums()).add(
+                        rec, cost
+                    )
 
     # ----- helpers -----
 
@@ -293,31 +308,19 @@ class Aggregator:
         return n
 
     def _try_attribute_to_span(self, rec: UsageRecord, cost: float) -> None:
-        sess_id = rec.session_id
-        sess = self.sessions.get(sess_id)
-        # Sidechain records ARE subagent API calls — sum them into the
-        # active Agent span. Skip the FIFO queue entirely; sidechain
-        # turns never belong to a Skill (those are non-sidechain).
+        # Agents are attributed retroactively at tool_end via
+        # _attribute_sidechains_to_agent, sweeping _long_window. Sidechain
+        # records arriving here have nothing to do — skip.
         if rec.is_sidechain:
-            agent_span = self._active_agent.get(sess_id)
-            if agent_span is None:
-                return
-            agent_span.sums.add(rec, cost)
-            if agent_span.name:
-                self.by_agent[agent_span.name].add(rec, cost)
-                if sess is not None:
-                    sess.sums_from_agents.add(rec, cost)
-                    sess.agents.setdefault(agent_span.name, TokenSums()).add(
-                        rec, cost
-                    )
             return
         # Non-sidechain: FIFO match against queued Skill spans.
-        queue = self._pending_correlation.get(sess_id)
+        queue = self._pending_correlation.get(rec.session_id)
         if not queue:
             return
         span = queue.popleft()
         span.sums.add(rec, cost)
         if span.tool == "Skill" and span.name:
+            sess = self.sessions.get(rec.session_id)
             self.by_skill[span.name].add(rec, cost)
             if sess is not None:
                 sess.skills.setdefault(span.name, TokenSums()).add(rec, cost)

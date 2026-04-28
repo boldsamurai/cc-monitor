@@ -497,17 +497,13 @@ class SessionDetailScreen(Screen):
         )
 
     def _tools_summary(self, sess: SessionState) -> str:
-        """Top 3-5 tools used in the session as 'Bash 47% · Edit 17% · …'."""
+        """Top 3 tools by frequency, fits on one info-block line."""
         counts = self.aggregator.count_tools_in_session(self.session_id)
         if not counts:
             return "(no tool calls recorded)"
         total = sum(counts.values())
-        top = sorted(counts.items(), key=lambda kv: -kv[1])[:5]
+        top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
         parts = [f"{name} {n / total * 100:.0f}%" for name, n in top]
-        # If more than 5 tools were used, hint how much was lumped together.
-        leftover = total - sum(n for _, n in top)
-        if leftover > 0:
-            parts.append(f"… +{leftover}")
         return " · ".join(parts) + f"  ({total} calls)"
 
     def _build_totals_block(self, sess: SessionState | None) -> RenderableType:
@@ -653,17 +649,26 @@ class SessionDetailScreen(Screen):
             return
 
         empty.update("")
+        # Strip the project-root prefix so paths read like
+        # 'src/cc_usagemonitor/aggregator.py' instead of the absolute
+        # '/home/.../Projekty/cc-usagemonitor/src/...' that overflows
+        # the column.
+        sess = self.aggregator.sessions.get(self.session_id)
+        project_root = decode_project_path(sess.project_slug) if sess else None
         # Order: biggest tokens first — that's the actionable signal
         # ('which file is bloating my context the most').
         ordered = sorted(
             files.items(), key=lambda kv: -kv[1]["tokens_est"]
         )
         for fp, stats in ordered:
+            display = fp
+            if project_root and fp.startswith(project_root + "/"):
+                display = fp[len(project_root) + 1:]
             tokens = stats["tokens_est"]
             tokens_str = (
                 f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
             )
-            table.add_row(fp, str(stats["reads"]), tokens_str)
+            table.add_row(display, str(stats["reads"]), tokens_str)
 
     def _fmt_span_duration(self, span) -> str:
         if span.duration_ms is not None:
