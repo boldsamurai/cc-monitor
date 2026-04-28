@@ -81,10 +81,10 @@ class SessionDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with VerticalScroll():
-            yield Static(self._render(), id="detail-body")
+            yield Static(self._build_content(), id="detail-body")
         yield Static("[b]Esc[/b] / [b]q[/b] back", id="detail-footer")
 
-    def _render(self) -> RenderableType:
+    def _build_content(self) -> RenderableType:
         sess = self.aggregator.sessions.get(self.session_id)
         if sess is None:
             return Text(f"Session {self.session_id} not found", style="bold red")
