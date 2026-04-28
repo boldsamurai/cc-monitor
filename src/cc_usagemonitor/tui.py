@@ -156,6 +156,46 @@ class SummaryPanel(Static):
         return Group(header, Text(""), table)
 
 
+class BarChart(Static):
+    """Horizontal bar chart with one row per item.
+
+    items: list of (label, value, suffix) tuples. Bars are scaled to the
+    largest value in the list. Suffix is a free-form string shown to the
+    right of the bar (e.g. '$4,197  38%').
+    """
+
+    title: reactive[str] = reactive("", layout=True)
+    items: reactive[list[tuple[str, float, str]]] = reactive(list, layout=True)
+
+    BAR_CHAR = "█"
+    EMPTY_CHAR = "·"
+    LABEL_W = 24
+    SUFFIX_W = 18
+
+    def render(self) -> RenderableType:
+        title = Text(self.title, style="bold")
+        if not self.items:
+            return Group(title, Text("No data yet", style="dim italic"))
+
+        max_val = max((v for _, v, _ in self.items), default=0.0) or 1.0
+        total_w = self.size.width or 60
+        # Reserve space for borders/padding handled by CSS.
+        bar_w = max(8, total_w - self.LABEL_W - self.SUFFIX_W - 2)
+
+        lines: list[Text] = [title]
+        for label, value, suffix in self.items:
+            ratio = max(0.0, value / max_val)
+            n = int(round(ratio * bar_w))
+            bar_str = self.BAR_CHAR * n + self.EMPTY_CHAR * (bar_w - n)
+            label_str = label[: self.LABEL_W - 1].ljust(self.LABEL_W)
+            line = Text()
+            line.append(label_str)
+            line.append(bar_str, style="cyan")
+            line.append(" " + suffix.rjust(self.SUFFIX_W - 1))
+            lines.append(line)
+        return Group(*lines)
+
+
 class UsageMonitorApp(App):
     CSS = """
     Screen { layout: vertical; }
@@ -167,6 +207,13 @@ class UsageMonitorApp(App):
     }
     TabbedContent { height: 1fr; }
     DataTable { height: 1fr; }
+    #t-models { height: 1fr; }
+    #models-charts { height: 50%; }
+    #models-charts > BarChart {
+        width: 1fr;
+        padding: 1 1;
+        border: round $primary;
+    }
     #status-bar {
         height: 1;
         dock: bottom;
@@ -200,6 +247,9 @@ class UsageMonitorApp(App):
                 yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
             with TabPane("Models [2]", id="models"):
                 yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
+                with Horizontal(id="models-charts"):
+                    yield BarChart(id="chart-cost")
+                    yield BarChart(id="chart-cache")
             with TabPane("Skills [3]", id="skills"):
                 yield DataTable(id="t-skills", cursor_type="row", zebra_stripes=True)
             with TabPane("Agents [4]", id="agents"):
@@ -477,6 +527,42 @@ class UsageMonitorApp(App):
             )
             rows.append((model or "(unknown)", cells))
         self._apply_rows("#t-models", self.MODELS_COLS, rows)
+        self._refresh_models_charts(per_model)
+
+    def _refresh_models_charts(self, per_model: dict[str, TokenSums]) -> None:
+        total_cost = sum(s.cost_usd for s in per_model.values()) or 1.0
+
+        cost_items: list[tuple[str, float, str]] = []
+        cache_items: list[tuple[str, float, str]] = []
+        for model, sums in per_model.items():
+            label = model or "(unknown)"
+            pct_cost = sums.cost_usd / total_cost * 100
+            cost_suffix = f"${sums.cost_usd:,.0f} ({pct_cost:.0f}%)"
+            cost_items.append((label, sums.cost_usd, cost_suffix))
+
+            input_total = (
+                sums.input
+                + sums.cache_read
+                + sums.cache_write_5m
+                + sums.cache_write_1h
+            )
+            cache_pct = (
+                sums.cache_read / input_total * 100 if input_total else 0.0
+            )
+            cache_items.append((label, cache_pct, f"{cache_pct:.1f}%"))
+
+        cost_items.sort(key=lambda t: -t[1])
+        cache_items.sort(key=lambda t: -t[1])
+
+        try:
+            chart_cost = self.query_one("#chart-cost", BarChart)
+            chart_cost.title = "Cost share"
+            chart_cost.items = cost_items
+            chart_cache = self.query_one("#chart-cache", BarChart)
+            chart_cache.title = "Cache hit %"
+            chart_cache.items = cache_items
+        except Exception:
+            pass
 
     def _refresh_skills_table(self) -> None:
         rows: list[tuple[str, tuple[str, ...]]] = []
