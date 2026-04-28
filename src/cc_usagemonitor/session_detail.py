@@ -94,8 +94,13 @@ class SessionDetailScreen(Screen):
         # screen so users coming from the main view don't accidentally
         # exit the program with muscle memory from the table view.
         Binding("q", "app.pop_screen", "Back"),
-        Binding("1", "copy_session_id", "Copy session ID"),
-        Binding("2", "copy_project_path", "Copy project path"),
+        # Digit keys switch chart tabs (mirrors the main view's pattern).
+        Binding("1", "show_tab('tab-turn')", "Turn"),
+        Binding("2", "show_tab('tab-time')", "Time"),
+        Binding("3", "show_tab('tab-dist')", "Distribution"),
+        # Copy actions moved to function keys so the digits stay free.
+        Binding("f1", "copy_session_id", "Copy session ID"),
+        Binding("f2", "copy_project_path", "Copy project path"),
     ]
 
     CSS = """
@@ -210,7 +215,8 @@ class SessionDetailScreen(Screen):
 
         yield Static(
             "[b]Esc[/b] back   ·   "
-            "[b]1[/b] copy session ID   ·   [b]2[/b] copy project path",
+            "[b]1[/b] Turn   ·   [b]2[/b] Time   ·   [b]3[/b] Distribution"
+            "   ·   [b]F1[/b] copy session ID   ·   [b]F2[/b] copy project path",
             id="detail-footer",
         )
 
@@ -349,6 +355,13 @@ class SessionDetailScreen(Screen):
             step = max(1, int(round(top / 5 / 50) * 50))  # round to nice 50K
             xt = list(range(0, int(top) + step, step))
             p.xticks(xt, [str(v) for v in xt])
+
+    def action_show_tab(self, tab_id: str) -> None:
+        try:
+            self.query_one(TabbedContent).active = tab_id
+        except Exception:
+            # No tabs yet (e.g. session has no turns -> charts skipped).
+            pass
 
     def action_copy_session_id(self) -> None:
         try:
