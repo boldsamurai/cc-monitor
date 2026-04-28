@@ -384,29 +384,33 @@ class BarChart(Static):
 
 class UsageMonitorApp(App):
     CSS = """
-    Screen { layout: vertical; }
+    /* Whole main view painted with $panel — same approach as the detail
+       screen, so summary, block panel, tabs, table content, and status
+       bar all read as one unified surface. */
+    Screen { layout: vertical; background: $panel; }
     SummaryPanel {
         height: 8;
         padding: 1 2;
-        background: $boost;
+        background: $panel;
         border-bottom: solid $primary;
     }
     BlockPanel {
         height: 7;
         padding: 1 2;
-        background: $boost;
+        background: $panel;
         border-bottom: solid $primary;
     }
-    TabbedContent { height: 1fr; background: $boost; }
-    TabbedContent Tabs { background: $boost; }
-    TabbedContent TabPane { background: $boost; }
-    DataTable { height: 1fr; }
+    TabbedContent { height: 1fr; background: $panel; }
+    TabbedContent Tabs { background: $panel; }
+    TabbedContent TabPane { background: $panel; }
+    DataTable { height: 1fr; background: $panel; }
     #t-models { height: 1fr; }
     #models-charts { height: 50%; }
     #models-charts > BarChart {
         width: 1fr;
         padding: 1 1;
         border: round $primary;
+        background: $panel;
     }
     #status-bar {
         height: 1;
