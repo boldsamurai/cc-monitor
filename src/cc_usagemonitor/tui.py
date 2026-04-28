@@ -226,9 +226,15 @@ class UsageMonitorApp(App):
             t = self.query_one(table_id, DataTable)
             for label, key in cols:
                 t.add_column(label, key=key)
-        # Cache last-rendered cell tuple per (table_id, row_key) to skip
-        # update_cell calls when nothing changed.
-        self._row_cache: dict[tuple[str, str], tuple[str, ...]] = {}
+        # Cache last-rendered cell tuple per row, indexed by table_id then
+        # row_key, so we can skip update_cell calls for unchanged rows and
+        # drop the whole table's cache on rebuild.
+        self._row_cache: dict[str, dict[str, tuple[str, ...]]] = {
+            "#t-sessions": {},
+            "#t-models": {},
+            "#t-skills": {},
+            "#t-agents": {},
+        }
 
     async def _tailer_runner(self) -> None:
         try:
@@ -272,61 +278,78 @@ class UsageMonitorApp(App):
         elif active == "agents":
             self._refresh_agents_table()
 
-    def _diff_update(
+    def _apply_rows(
         self,
         table_id: str,
         cols: list[tuple[str, str]],
         rows: list[tuple[str, tuple[str, ...]]],
     ) -> None:
-        """Apply (row_key, cell_tuple) list to a DataTable without clearing.
+        """Reconcile a DataTable to the desired (ordered) row list.
 
-        - Adds new rows (in given order, appended at the end)
-        - Updates only cells that changed
-        - Removes rows no longer present
-        - Preserves cursor position and scroll offset
+        If the desired order matches the current physical order, only
+        cells that changed are written — cursor and scroll stay put.
+        If the order differs (rare: new session, ranking change), the
+        table is rebuilt and the cursor is restored to the same row_key.
         """
         table = self.query_one(table_id, DataTable)
+        cache = self._row_cache[table_id]
         col_keys = [k for _, k in cols]
-        desired: dict[str, tuple[str, ...]] = dict(rows)
 
-        # Remove rows that are gone.
-        existing_keys = [str(rk.value) for rk in list(table.rows.keys())]
-        for k in existing_keys:
-            if k not in desired:
-                try:
-                    table.remove_row(k)
-                except Exception:
-                    pass
-                self._row_cache.pop((table_id, k), None)
+        desired_order = [k for k, _ in rows]
+        desired_cells = dict(rows)
+        current_order = [str(rk.value) for rk in table.rows.keys()]
 
-        # Add or update.
-        existing_keys_set = {str(rk.value) for rk in table.rows.keys()}
+        if current_order == desired_order:
+            for key, cells in rows:
+                prev = cache.get(key)
+                if prev == cells:
+                    continue
+                for col_key, new_val, old_val in zip(
+                    col_keys, cells, prev or (None,) * len(cells)
+                ):
+                    if new_val != old_val:
+                        try:
+                            table.update_cell(key, col_key, new_val)
+                        except Exception:
+                            pass
+                cache[key] = cells
+            return
+
+        # Order differs — rebuild and restore cursor by row_key.
+        saved_key: str | None = None
+        try:
+            cur_row = table.cursor_coordinate.row
+            if 0 <= cur_row < len(current_order):
+                saved_key = current_order[cur_row]
+        except Exception:
+            saved_key = None
+        saved_col = table.cursor_coordinate.column if table.row_count else 0
+
+        table.clear()
+        cache.clear()
         for key, cells in rows:
-            cache_key = (table_id, key)
-            if key not in existing_keys_set:
-                table.add_row(*cells, key=key)
-                self._row_cache[cache_key] = cells
-                continue
-            prev = self._row_cache.get(cache_key)
-            if prev == cells:
-                continue
-            for col_key, new_val, old_val in zip(
-                col_keys, cells, prev or (None,) * len(cells)
-            ):
-                if new_val != old_val:
-                    try:
-                        table.update_cell(key, col_key, new_val)
-                    except Exception:
-                        pass
-            self._row_cache[cache_key] = cells
+            table.add_row(*cells, key=key)
+            cache[key] = cells
+
+        if saved_key is not None and saved_key in desired_cells:
+            try:
+                new_idx = desired_order.index(saved_key)
+                table.move_cursor(row=new_idx, column=saved_col)
+            except Exception:
+                pass
 
     def _refresh_sessions_table(self) -> None:
-        # Stable order: oldest first by first_seen — keeps rows from jumping
-        # around under the cursor when last_seen ticks.
+        # Sort by last_seen DESC (newest activity on top). The active session
+        # naturally stays pinned to row 0 — its last_seen ticks but it's
+        # already the largest, so the order doesn't change and cursor doesn't
+        # jump. Reorder only happens when ranking truly shifts (new session,
+        # different session becomes most-recent); _apply_rows preserves the
+        # cursor's row_key across that rebuild.
         rows: list[tuple[str, tuple[str, ...]]] = []
         sorted_sessions = sorted(
             self.aggregator.sessions.values(),
-            key=lambda s: s.first_seen or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda s: s.last_seen or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
         )
         for s in sorted_sessions:
             total_main = s.sums_main.total_tokens
@@ -345,7 +368,7 @@ class UsageMonitorApp(App):
                 str(s.sums.turns),
             )
             rows.append((s.session_id, cells))
-        self._diff_update("#t-sessions", self.SESSIONS_COLS, rows)
+        self._apply_rows("#t-sessions", self.SESSIONS_COLS, rows)
 
     def _refresh_models_table(self) -> None:
         per_model: dict[str, TokenSums] = {}
@@ -371,7 +394,7 @@ class UsageMonitorApp(App):
                 str(sums.turns),
             )
             rows.append((model or "(unknown)", cells))
-        self._diff_update("#t-models", self.MODELS_COLS, rows)
+        self._apply_rows("#t-models", self.MODELS_COLS, rows)
 
     def _refresh_skills_table(self) -> None:
         rows: list[tuple[str, tuple[str, ...]]] = []
@@ -385,7 +408,7 @@ class UsageMonitorApp(App):
                 str(sums.turns),
             )
             rows.append((name, cells))
-        self._diff_update("#t-skills", self.SKILLS_COLS, rows)
+        self._apply_rows("#t-skills", self.SKILLS_COLS, rows)
 
     def _refresh_agents_table(self) -> None:
         rows: list[tuple[str, tuple[str, ...]]] = []
@@ -399,7 +422,7 @@ class UsageMonitorApp(App):
                 str(sums.turns),
             )
             rows.append((name, cells))
-        self._diff_update("#t-agents", self.AGENTS_COLS, rows)
+        self._apply_rows("#t-agents", self.AGENTS_COLS, rows)
 
     def action_show_tab(self, tab_id: str) -> None:
         self.query_one(TabbedContent).active = tab_id
