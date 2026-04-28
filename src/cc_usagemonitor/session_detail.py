@@ -88,10 +88,7 @@ class SessionDetailScreen(Screen):
     .chart-plot {
         height: 14;
         margin: 1 2;
-        /* textual-plotext's auto theme paints the canvas with $surface, so
-           match the widget background to it; otherwise the panel and the
-           plot canvas render as two visibly different shades of dark. */
-        background: $surface;
+        background: $boost;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -133,14 +130,22 @@ class SessionDetailScreen(Screen):
                 yield Static(self._build_models_block(sess), id="detail-models")
 
             if turns:
+                # theme='clear' makes plotext emit no canvas background, so
+                # the widget's $boost CSS bg shows through. The auto theme
+                # paints canvas cells with an explicit color that ends up
+                # visibly darker than the surrounding panel — letting the
+                # CSS show through is the only way to get a seamless match.
                 ctx_plot = PlotextPlot(classes="chart-plot")
                 ctx_plot.id = "chart-context"
+                ctx_plot.theme = "clear"
                 yield ctx_plot
                 cost_plot = PlotextPlot(classes="chart-plot")
                 cost_plot.id = "chart-cost"
+                cost_plot.theme = "clear"
                 yield cost_plot
                 hist_plot = PlotextPlot(classes="chart-plot")
                 hist_plot.id = "chart-hist"
+                hist_plot.theme = "clear"
                 yield hist_plot
             else:
                 yield Static(
