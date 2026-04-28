@@ -121,8 +121,18 @@ class Aggregator:
         self.sessions: dict[str, SessionState] = {}
         self.spans_by_id: dict[str, ToolSpan] = {}
         self.spans_by_session: dict[str, list[ToolSpan]] = defaultdict(list)
-        # Track recently-ended tool spans per session, FIFO. Oldest first.
+        # Skill spans waiting for the next non-sidechain assistant turn
+        # to attribute (FIFO). Skills don't spawn a subagent — the cost
+        # shows up on the parent's continuation, so 'next message wins'
+        # is a reasonable approximation.
         self._pending_correlation: dict[str, deque[ToolSpan]] = defaultdict(deque)
+        # Currently-running Agent span per session. Set on tool_start,
+        # cleared on tool_end. Every sidechain UsageRecord that arrives
+        # while this is set gets summed into the agent — sidechains ARE
+        # the subagent's actual API calls, so this captures the real
+        # per-agent cost (parent continuation goes to nobody, which is
+        # correct: that's the parent's work, not the agent's).
+        self._active_agent: dict[str, ToolSpan] = {}
         self.recent_usage: deque[tuple[datetime, int, float]] = deque()
         self._recent_window = timedelta(seconds=recent_window_seconds)
         # Aggregations per skill / agent name.
@@ -189,6 +199,10 @@ class Aggregator:
             )
             self.spans_by_id[ev.span_id] = span
             self.spans_by_session[ev.session_id].append(span)
+            # Mark this Agent as active so subsequent sidechain records
+            # can be summed into it.
+            if span.tool == "Agent":
+                self._active_agent[ev.session_id] = span
         elif ev.event == "tool_end" and ev.span_id:
             span = self.spans_by_id.get(ev.span_id)
             if span is None:
@@ -204,11 +218,14 @@ class Aggregator:
                 self.spans_by_session[ev.session_id].append(span)
             span.ended_at = ev.ts
             span.duration_ms = ev.duration_ms
-            # Skill / Agent spans are eligible for usage attribution: usage
-            # records that arrive AFTER tool_end belong to the turn that
-            # contained the tool call. We FIFO-attribute the next usage in
-            # this session to this span.
-            if span.tool in ("Skill", "Agent"):
+            # Agents stop accepting sidechain attribution at tool_end.
+            if span.tool == "Agent":
+                if self._active_agent.get(ev.session_id) is span:
+                    self._active_agent.pop(ev.session_id, None)
+            # Skills don't spawn a subagent — queue for FIFO attribution
+            # to the next non-sidechain turn (the parent's continuation
+            # message includes the skill's injected instructions).
+            if span.tool == "Skill":
                 self._pending_correlation[ev.session_id].append(span)
         # 'stop' currently has no aggregate state — useful for future per-turn buckets.
 
@@ -276,21 +293,34 @@ class Aggregator:
         return n
 
     def _try_attribute_to_span(self, rec: UsageRecord, cost: float) -> None:
-        queue = self._pending_correlation.get(rec.session_id)
+        sess_id = rec.session_id
+        sess = self.sessions.get(sess_id)
+        # Sidechain records ARE subagent API calls — sum them into the
+        # active Agent span. Skip the FIFO queue entirely; sidechain
+        # turns never belong to a Skill (those are non-sidechain).
+        if rec.is_sidechain:
+            agent_span = self._active_agent.get(sess_id)
+            if agent_span is None:
+                return
+            agent_span.sums.add(rec, cost)
+            if agent_span.name:
+                self.by_agent[agent_span.name].add(rec, cost)
+                if sess is not None:
+                    sess.sums_from_agents.add(rec, cost)
+                    sess.agents.setdefault(agent_span.name, TokenSums()).add(
+                        rec, cost
+                    )
+            return
+        # Non-sidechain: FIFO match against queued Skill spans.
+        queue = self._pending_correlation.get(sess_id)
         if not queue:
             return
         span = queue.popleft()
         span.sums.add(rec, cost)
-        sess = self.sessions.get(rec.session_id)
         if span.tool == "Skill" and span.name:
             self.by_skill[span.name].add(rec, cost)
             if sess is not None:
                 sess.skills.setdefault(span.name, TokenSums()).add(rec, cost)
-        elif span.tool == "Agent" and span.name:
-            self.by_agent[span.name].add(rec, cost)
-            if sess is not None:
-                sess.sums_from_agents.add(rec, cost)
-                sess.agents.setdefault(span.name, TokenSums()).add(rec, cost)
 
     # ----- read API for TUI -----
 
@@ -314,6 +344,44 @@ class Aggregator:
             for ts, rec, cost in self._long_window
             if rec.session_id == session_id
         ]
+
+    def count_tools_in_session(self, session_id: str) -> dict[str, int]:
+        """Count tool_use blocks per tool name in a session's JSONL file.
+
+        Independent of the hook pipeline — reads tool_use entries directly
+        from the conversation log so it works retroactively for sessions
+        that predate the hook setup. Returns name -> count, e.g.
+        {'Bash': 287, 'Edit': 142, 'Read': 89}.
+        """
+        from pathlib import Path
+        from .paths import PROJECTS_DIR
+        import json
+
+        sess = self.sessions.get(session_id)
+        if sess is None:
+            return {}
+        path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
+        if not path.is_file():
+            return {}
+        counts: dict[str, int] = {}
+        try:
+            text = path.read_text()
+        except OSError:
+            return {}
+        for line in text.splitlines():
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            msg = obj.get("message") or {}
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "tool_use":
+                    name = item.get("name") or "?"
+                    counts[name] = counts.get(name, 0) + 1
+        return counts
 
     def load_full_session_turns(
         self, session_id: str

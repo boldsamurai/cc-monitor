@@ -12,7 +12,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Static, TabbedContent, TabPane
+from textual.widgets import DataTable, Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, SessionState, TokenSums
@@ -92,10 +92,10 @@ class SessionDetailScreen(Screen):
         # exit the program with muscle memory from the table view.
         Binding("q", "app.pop_screen", "Back"),
         # Digit keys switch chart tabs (mirrors the main view's pattern).
-        Binding("1", "show_tab('tab-time')", "Time"),
-        Binding("2", "show_tab('tab-turn')", "Turn"),
-        Binding("3", "show_tab('tab-dist')", "Distribution"),
-        Binding("4", "show_tab('tab-usage')", "Usage"),
+        Binding("1", "show_tab('tab-usage')", "Usage"),
+        Binding("2", "show_tab('tab-time')", "Time"),
+        Binding("3", "show_tab('tab-turn')", "Turn"),
+        Binding("4", "show_tab('tab-dist')", "Distribution"),
         # Copy actions moved to function keys so the digits stay free.
         Binding("f1", "copy_session_id", "Copy session ID"),
         Binding("f2", "copy_project_path", "Copy project path"),
@@ -132,8 +132,14 @@ class SessionDetailScreen(Screen):
         padding: 0;
         background: $panel;
     }
-    #usage-content {
+    #usage-table {
+        height: auto;
+        max-height: 30;
+        background: $panel;
+    }
+    .usage-hint {
         padding: 1 2;
+        color: $text-muted;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -192,20 +198,30 @@ class SessionDetailScreen(Screen):
                 # Charts grouped by what their x-axis depends on. All plots
                 # use the hand-registered theme so canvas matches widget bg.
                 with TabbedContent(id="charts-tabs"):
-                    with TabPane("Time [1]", id="tab-time"):
+                    with TabPane("Usage [1]", id="tab-usage"):
+                        usage_table = DataTable(
+                            id="usage-table", cursor_type="row"
+                        )
+                        usage_table.add_columns(
+                            "Time", "Type", "Name",
+                            "Duration", "Tokens", "Cost",
+                            "% session", "% 5h",
+                        )
+                        yield usage_table
+                        yield Static(
+                            "",
+                            id="usage-empty",
+                            classes="usage-hint",
+                        )
+                    with TabPane("Time [2]", id="tab-time"):
                         yield self._make_plot("chart-context-time")
                         yield self._make_plot("chart-cost-time")
-                    with TabPane("Turn [2]", id="tab-turn"):
+                    with TabPane("Turn [3]", id="tab-turn"):
                         yield self._make_plot("chart-context")
                         yield self._make_plot("chart-cost")
-                    with TabPane("Distribution [3]", id="tab-dist"):
+                    with TabPane("Distribution [4]", id="tab-dist"):
                         yield self._make_plot("chart-hist")
                         yield self._make_plot("chart-gap")
-                    with TabPane("Usage [4]", id="tab-usage"):
-                        yield Static(
-                            self._build_usage_block(sess),
-                            id="usage-content",
-                        )
             else:
                 yield Static(
                     Text(
@@ -219,8 +235,8 @@ class SessionDetailScreen(Screen):
 
         with Horizontal(id="detail-footer"):
             yield Static(
-                "[b]1[/b] Time   [b]2[/b] Turn   [b]3[/b] Distribution"
-                "   [b]4[/b] Usage",
+                "[b]1[/b] Usage   [b]2[/b] Time   [b]3[/b] Turn"
+                "   [b]4[/b] Distribution",
                 id="footer-left",
             )
             yield Static(
@@ -233,6 +249,7 @@ class SessionDetailScreen(Screen):
         sess = self.aggregator.sessions.get(self.session_id)
         if sess is None:
             return
+        self._populate_usage_table(sess)
         turns = self.aggregator.load_full_session_turns(self.session_id)
         if not turns:
             return
@@ -435,9 +452,25 @@ class SessionDetailScreen(Screen):
         sub.append("Last:     ", style="dim")
         sub.append(f"{_fmt_dt(sess.last_seen)}\n")
         sub.append("Duration: ", style="dim")
-        sub.append(_fmt_duration(sess.first_seen, sess.last_seen))
+        sub.append(f"{_fmt_duration(sess.first_seen, sess.last_seen)}\n")
+        sub.append("Tools:    ", style="dim")
+        sub.append(self._tools_summary(sess))
 
         return Group(title, Text(""), sub)
+
+    def _tools_summary(self, sess: SessionState) -> str:
+        """Top 3-5 tools used in the session as 'Bash 47% · Edit 17% · …'."""
+        counts = self.aggregator.count_tools_in_session(self.session_id)
+        if not counts:
+            return "(no tool calls recorded)"
+        total = sum(counts.values())
+        top = sorted(counts.items(), key=lambda kv: -kv[1])[:5]
+        parts = [f"{name} {n / total * 100:.0f}%" for name, n in top]
+        # If more than 5 tools were used, hint how much was lumped together.
+        leftover = total - sum(n for _, n in top)
+        if leftover > 0:
+            parts.append(f"… +{leftover}")
+        return " · ".join(parts) + f"  ({total} calls)"
 
     def _build_totals_block(self, sess: SessionState | None) -> RenderableType:
         if sess is None:
@@ -507,29 +540,96 @@ class SessionDetailScreen(Screen):
             )
         return t
 
-    def _build_usage_block(self, sess: SessionState | None) -> RenderableType:
-        """Skills + agents tables stacked. Empty state explains the
-        hook-dependency so the user knows it's not a bug."""
-        if sess is None:
-            return Text("")
-        parts: list = []
-        if sess.skills:
-            parts.append(Text("Skills", style="bold underline"))
-            parts.append(self._skills_table(sess))
-            parts.append(Text(""))
-        if sess.agents:
-            parts.append(Text("Agents", style="bold underline"))
-            parts.append(self._agents_table(sess))
-            parts.append(Text(""))
-        if not parts:
-            return Text(
-                "No skill/agent usage recorded for this session.\n\n"
-                "This data comes from the Claude Code hook script. If the "
-                "session predates the hook setup, or if the session never "
-                "called any Skill/Agent tools, this view stays empty.",
-                style="dim italic",
+    def _populate_usage_table(self, sess: SessionState) -> None:
+        """Fill the Usage tab DataTable with one row per Skill/Agent span.
+
+        Each row carries timestamp, duration, token count, USD cost, % of
+        session cost, and % of derived 5h budget (from API utilization).
+        """
+        try:
+            table = self.query_one("#usage-table", DataTable)
+            empty = self.query_one("#usage-empty", Static)
+        except Exception:
+            return
+
+        spans = list(self.aggregator.spans_by_session.get(self.session_id, ()))
+        if not spans:
+            empty.update(
+                "No skill/agent usage recorded for this session.\n"
+                "This data comes from the Claude Code hook script — sessions "
+                "that predate the hook setup, or that never invoked Skill or "
+                "Agent tools, stay empty here."
             )
-        return Group(*parts)
+            return
+
+        empty.update("")
+        budget_5h = self._derive_5h_budget()
+        session_cost = sess.sums.cost_usd or 0.0
+
+        # Sort by start time desc — most recent invocation first.
+        spans.sort(key=lambda s: s.started_at, reverse=True)
+        for span in spans:
+            ts_local = span.started_at
+            if ts_local.tzinfo is None:
+                ts_local = ts_local.replace(tzinfo=timezone.utc)
+            ts_str = ts_local.astimezone().strftime("%H:%M:%S %d-%m")
+            duration = self._fmt_span_duration(span)
+            tokens = _fmt_int(span.sums.total_tokens)
+            cost = f"${span.sums.cost_usd:.4f}"
+            pct_session = (
+                f"{span.sums.cost_usd / session_cost * 100:.2f}%"
+                if session_cost > 0
+                else "—"
+            )
+            pct_5h = (
+                f"{span.sums.cost_usd / budget_5h * 100:.2f}%"
+                if budget_5h is not None and budget_5h > 0
+                else "—"
+            )
+            table.add_row(
+                ts_str,
+                span.tool,
+                span.name or "(?)",
+                duration,
+                tokens,
+                cost,
+                pct_session,
+                pct_5h,
+            )
+
+    def _fmt_span_duration(self, span) -> str:
+        if span.duration_ms is not None:
+            ms = span.duration_ms
+        elif span.ended_at is not None:
+            ms = int((span.ended_at - span.started_at).total_seconds() * 1000)
+        else:
+            return "—"
+        if ms < 1000:
+            return f"{ms}ms"
+        if ms < 60_000:
+            return f"{ms / 1000:.1f}s"
+        return f"{ms // 60_000}m {(ms % 60_000) // 1000}s"
+
+    def _derive_5h_budget(self) -> float | None:
+        """Reverse-engineer the user's 5h dollar budget from API utilization.
+
+        Anthropic doesn't publish exact plan caps, but it returns
+        utilization % of the active 5h block. Pairing that with our
+        block-local cost gives a derived ceiling: cap = local / (util/100).
+        Fall back to the static plan limit on the aggregator if either
+        side is missing or zero.
+        """
+        api = self.aggregator.api_usage
+        block = self.aggregator.block_info()
+        if (
+            api is not None
+            and api.five_hour is not None
+            and block is not None
+            and api.five_hour.utilization > 0
+            and block.sums.cost_usd > 0
+        ):
+            return block.sums.cost_usd / (api.five_hour.utilization / 100.0)
+        return self.aggregator.cost_limit  # may itself be None
 
     def _skills_table(self, sess: SessionState) -> Table | None:
         if not sess.skills:
