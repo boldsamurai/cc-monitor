@@ -101,9 +101,15 @@ class SessionDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         sess = self.aggregator.sessions.get(self.session_id)
+        # Fast path: the 8-day rolling archive. If the session is older,
+        # re-read its JSONL from disk so the user always gets charts.
         turns = (
-            self.aggregator.turns_for_session(self.session_id) if sess else []
+            self.aggregator.turns_for_session(self.session_id)
+            if sess
+            else []
         )
+        if sess and not turns:
+            turns = self.aggregator.load_full_session_turns(self.session_id)
 
         with VerticalScroll():
             # Top row: Session info, Totals, By model — three columns
@@ -127,7 +133,7 @@ class SessionDetailScreen(Screen):
             else:
                 yield Static(
                     Text(
-                        "Charts unavailable — turn-level data only kept for 8 days.",
+                        "Charts unavailable — session JSONL not found on disk.",
                         style="dim italic",
                     )
                 )
@@ -161,6 +167,8 @@ class SessionDetailScreen(Screen):
         if sess is None:
             return
         turns = self.aggregator.turns_for_session(self.session_id)
+        if not turns:
+            turns = self.aggregator.load_full_session_turns(self.session_id)
         if not turns:
             return
         self._populate_charts(turns)
