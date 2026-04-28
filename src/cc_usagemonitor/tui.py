@@ -169,7 +169,7 @@ class UsageMonitorApp(App):
     #status-bar {
         height: 1;
         dock: bottom;
-        background: $accent;
+        background: $panel;
         color: $text;
     }
     #status-left { width: 1fr; padding: 0 1; content-align: left middle; }
