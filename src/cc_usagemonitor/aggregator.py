@@ -345,6 +345,82 @@ class Aggregator:
             if rec.session_id == session_id
         ]
 
+    def count_file_reads_in_session(
+        self, session_id: str
+    ) -> dict[str, dict[str, int]]:
+        """Per-file Read tool stats for a session.
+
+        Returns a {file_path: {'reads': N, 'chars': total, 'tokens_est': T}}
+        dict where chars is the cumulative size of the tool_result content
+        and tokens_est is a rough chars/4 approximation. Useful for
+        spotting files that are read repeatedly and bloat the context.
+        """
+        from pathlib import Path
+        from .paths import PROJECTS_DIR
+        import json
+
+        sess = self.sessions.get(session_id)
+        if sess is None:
+            return {}
+        path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
+        if not path.is_file():
+            return {}
+        try:
+            text = path.read_text()
+        except OSError:
+            return {}
+
+        # Two-pass: collect tool_use_id -> file_path on the way down,
+        # then accumulate result chars as tool_result blocks reference
+        # back to those ids.
+        pending: dict[str, str] = {}
+        files: dict[str, dict[str, int]] = {}
+        for line in text.splitlines():
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            msg = obj.get("message") or {}
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                itype = item.get("type")
+                if itype == "tool_use" and item.get("name") == "Read":
+                    fp = (item.get("input") or {}).get("file_path") or "?"
+                    tool_id = item.get("id") or ""
+                    pending[tool_id] = fp
+                    bucket = files.setdefault(
+                        fp, {"reads": 0, "chars": 0, "tokens_est": 0}
+                    )
+                    bucket["reads"] += 1
+                elif itype == "tool_result":
+                    tool_id = item.get("tool_use_id") or ""
+                    fp = pending.get(tool_id)
+                    if fp is None:
+                        continue
+                    result_content = item.get("content")
+                    if isinstance(result_content, list):
+                        chars = sum(
+                            len(c.get("text") or "")
+                            for c in result_content
+                            if isinstance(c, dict)
+                        )
+                    elif isinstance(result_content, str):
+                        chars = len(result_content)
+                    else:
+                        chars = 0
+                    files[fp]["chars"] += chars
+
+        # Rough estimate: 1 token ~ 4 chars for code/text. Anthropic
+        # tokenizer is closer to ~3.5 for English prose, ~4-5 for code,
+        # so this is within ~20% — fine for "is this file expensive".
+        for stats in files.values():
+            stats["tokens_est"] = stats["chars"] // 4
+        return files
+
     def count_tools_in_session(self, session_id: str) -> dict[str, int]:
         """Count tool_use blocks per tool name in a session's JSONL file.
 

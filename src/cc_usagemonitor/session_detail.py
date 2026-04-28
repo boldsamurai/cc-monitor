@@ -132,14 +132,18 @@ class SessionDetailScreen(Screen):
         padding: 0;
         background: $panel;
     }
-    #usage-table {
+    #usage-table, #files-table {
         height: auto;
-        max-height: 30;
+        max-height: 20;
         background: $panel;
     }
     .usage-hint {
         padding: 1 2;
         color: $text-muted;
+    }
+    .usage-section-heading {
+        padding: 1 2 0 2;
+        text-style: bold underline;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -199,6 +203,10 @@ class SessionDetailScreen(Screen):
                 # use the hand-registered theme so canvas matches widget bg.
                 with TabbedContent(id="charts-tabs"):
                     with TabPane("Usage [1]", id="tab-usage"):
+                        yield Static(
+                            "Skill / Agent invocations",
+                            classes="usage-section-heading",
+                        )
                         usage_table = DataTable(
                             id="usage-table", cursor_type="row"
                         )
@@ -211,6 +219,22 @@ class SessionDetailScreen(Screen):
                         yield Static(
                             "",
                             id="usage-empty",
+                            classes="usage-hint",
+                        )
+                        yield Static(
+                            "Files read",
+                            classes="usage-section-heading",
+                        )
+                        files_table = DataTable(
+                            id="files-table", cursor_type="row"
+                        )
+                        files_table.add_columns(
+                            "File", "Reads", "Tokens (~est)",
+                        )
+                        yield files_table
+                        yield Static(
+                            "",
+                            id="files-empty",
                             classes="usage-hint",
                         )
                     with TabPane("Time [2]", id="tab-time"):
@@ -250,6 +274,7 @@ class SessionDetailScreen(Screen):
         if sess is None:
             return
         self._populate_usage_table(sess)
+        self._populate_files_table()
         turns = self.aggregator.load_full_session_turns(self.session_id)
         if not turns:
             return
@@ -454,9 +479,22 @@ class SessionDetailScreen(Screen):
         sub.append("Duration: ", style="dim")
         sub.append(f"{_fmt_duration(sess.first_seen, sess.last_seen)}\n")
         sub.append("Tools:    ", style="dim")
-        sub.append(self._tools_summary(sess))
+        sub.append(f"{self._tools_summary(sess)}\n")
+        sub.append("Top reads:", style="dim")
+        sub.append(f" {self._top_reads_summary(sess)}")
 
         return Group(title, Text(""), sub)
+
+    def _top_reads_summary(self, sess: SessionState) -> str:
+        """Top 3 files by read count, basename only ('foo.py (12)')."""
+        from pathlib import Path as _Path
+        files = self.aggregator.count_file_reads_in_session(self.session_id)
+        if not files:
+            return "(no Read tool calls)"
+        top = sorted(files.items(), key=lambda kv: -kv[1]["reads"])[:3]
+        return " · ".join(
+            f"{_Path(fp).name} ({stats['reads']})" for fp, stats in top
+        )
 
     def _tools_summary(self, sess: SessionState) -> str:
         """Top 3-5 tools used in the session as 'Bash 47% · Edit 17% · …'."""
@@ -596,6 +634,36 @@ class SessionDetailScreen(Screen):
                 pct_session,
                 pct_5h,
             )
+
+    def _populate_files_table(self) -> None:
+        """Fill the Files-read DataTable with one row per unique file path
+        Read'd in the session, sorted by estimated tokens desc."""
+        try:
+            table = self.query_one("#files-table", DataTable)
+            empty = self.query_one("#files-empty", Static)
+        except Exception:
+            return
+
+        files = self.aggregator.count_file_reads_in_session(self.session_id)
+        if not files:
+            empty.update(
+                "No file reads recorded for this session — either the "
+                "session never used the Read tool or the JSONL file is gone."
+            )
+            return
+
+        empty.update("")
+        # Order: biggest tokens first — that's the actionable signal
+        # ('which file is bloating my context the most').
+        ordered = sorted(
+            files.items(), key=lambda kv: -kv[1]["tokens_est"]
+        )
+        for fp, stats in ordered:
+            tokens = stats["tokens_est"]
+            tokens_str = (
+                f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
+            )
+            table.add_row(fp, str(stats["reads"]), tokens_str)
 
     def _fmt_span_duration(self, span) -> str:
         if span.duration_ms is not None:
