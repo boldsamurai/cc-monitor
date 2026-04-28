@@ -56,6 +56,7 @@ class SessionDetailScreen(Screen):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
         Binding("q", "app.pop_screen", "Back"),
+        Binding("c", "copy_session_id", "Copy session ID"),
     ]
 
     CSS = """
@@ -82,7 +83,18 @@ class SessionDetailScreen(Screen):
     def compose(self) -> ComposeResult:
         with VerticalScroll():
             yield Static(self._build_content(), id="detail-body")
-        yield Static("[b]Esc[/b] / [b]q[/b] back", id="detail-footer")
+        yield Static(
+            "[b]Esc[/b] / [b]q[/b] back   ·   [b]c[/b] copy session ID",
+            id="detail-footer",
+        )
+
+    def action_copy_session_id(self) -> None:
+        try:
+            self.app.copy_to_clipboard(self.session_id)
+        except Exception as e:
+            self.app.notify(f"Copy failed: {e}", severity="error")
+            return
+        self.app.notify(f"Copied {self.session_id}", timeout=2)
 
     def _build_content(self) -> RenderableType:
         sess = self.aggregator.sessions.get(self.session_id)
