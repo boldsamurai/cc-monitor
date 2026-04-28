@@ -304,6 +304,17 @@ class Aggregator:
                 sums.add(rec, cost)
         return sums
 
+    def turns_for_session(
+        self, session_id: str
+    ) -> list[tuple[datetime, UsageRecord, float]]:
+        """Return chronological per-turn records for a session, limited to
+        what's still in the 8-day archive. Empty if the session is older."""
+        return [
+            (ts, rec, cost)
+            for ts, rec, cost in self._long_window
+            if rec.session_id == session_id
+        ]
+
     def auto_detect_limits_p90(self) -> tuple[int, float] | None:
         """Analyze the 8-day window and return (P90 token limit, P90 cost
         limit) computed across historical 5h blocks. Used by --plan auto.
