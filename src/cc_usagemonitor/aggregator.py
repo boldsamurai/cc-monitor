@@ -45,6 +45,7 @@ class SessionState:
     sums: TokenSums = field(default_factory=TokenSums)
     sums_main: TokenSums = field(default_factory=TokenSums)
     sums_sidechain: TokenSums = field(default_factory=TokenSums)
+    sums_from_agents: TokenSums = field(default_factory=TokenSums)
     by_model: dict[str, TokenSums] = field(default_factory=lambda: defaultdict(TokenSums))
     last_seen: datetime | None = None
     first_seen: datetime | None = None
@@ -139,11 +140,11 @@ class Aggregator:
                 self.spans_by_session[ev.session_id].append(span)
             span.ended_at = ev.ts
             span.duration_ms = ev.duration_ms
-            # Skill / Task spans are eligible for usage attribution: usage
+            # Skill / Agent spans are eligible for usage attribution: usage
             # records that arrive AFTER tool_end belong to the turn that
             # contained the tool call. We FIFO-attribute the next usage in
             # this session to this span.
-            if span.tool in ("Skill", "Task"):
+            if span.tool in ("Skill", "Agent"):
                 self._pending_correlation[ev.session_id].append(span)
         # 'stop' currently has no aggregate state — useful for future per-turn buckets.
 
@@ -198,8 +199,11 @@ class Aggregator:
         span.sums.add(rec, cost)
         if span.tool == "Skill" and span.name:
             self.by_skill[span.name].add(rec, cost)
-        elif span.tool == "Task" and span.name:
+        elif span.tool == "Agent" and span.name:
             self.by_agent[span.name].add(rec, cost)
+            sess = self.sessions.get(rec.session_id)
+            if sess is not None:
+                sess.sums_from_agents.add(rec, cost)
 
     # ----- read API for TUI -----
 
