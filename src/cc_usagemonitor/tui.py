@@ -215,13 +215,13 @@ class UsageMonitorApp(App):
         ("Project", "proj"),
         ("Last", "last"),
         ("Duration", "dur"),
-        ("In", "in"),
-        ("Out", "out"),
-        ("CacheR", "cache_r"),
         ("Cache%", "cache_pct"),
         ("Cost", "cost"),
         ("Turns", "turns"),
         ("$/turn", "per_turn"),
+        ("In", "in"),
+        ("Out", "out"),
+        ("CacheR", "cache_r"),
     ]
     MODELS_COLS = [
         ("Model", "model"),
@@ -399,13 +399,13 @@ class UsageMonitorApp(App):
                 project_name[-30:] if len(project_name) > 30 else project_name,
                 _fmt_datetime(s.last_seen),
                 _fmt_duration(s.first_seen, s.last_seen),
-                _fmt_int(s.sums.input),
-                _fmt_int(s.sums.output),
-                _fmt_int(s.sums.cache_read),
                 f"{cache_pct:.1f}%",
                 _fmt_usd(s.sums.cost_usd),
                 str(s.sums.turns),
                 f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}",
+                _fmt_int(s.sums.input),
+                _fmt_int(s.sums.output),
+                _fmt_int(s.sums.cache_read),
             )
             rows.append((s.session_id, cells))
         self._apply_rows("#t-sessions", self.SESSIONS_COLS, rows)
