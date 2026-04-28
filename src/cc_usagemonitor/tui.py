@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from rich.console import Group, RenderableType
 from rich.table import Table
@@ -12,7 +12,7 @@ from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
 from textual.widgets import DataTable, Header, Static, TabbedContent, TabPane
 
-from .aggregator import Aggregator, TokenSums
+from .aggregator import Aggregator, BlockInfo, TokenSums
 from .config import load_config, save_config
 from .pricing import PricingTable
 from .project_slug import decode_project_slug
@@ -87,11 +87,10 @@ def _human_usd(v: float) -> str:
 
 
 class SummaryPanel(Static):
-    """Top panel: totals, rate, current 5h block."""
+    """Top panel: totals + rolling weekly aggregate + live rate."""
 
     sums: reactive[TokenSums] = reactive(TokenSums)
-    block_sums: reactive[TokenSums] = reactive(TokenSums)
-    block_start: reactive[datetime | None] = reactive(None)
+    sums_7d: reactive[TokenSums] = reactive(TokenSums)
     session_count: reactive[int] = reactive(0)
     active_count: reactive[int] = reactive(0)
     rate_tokens: reactive[float] = reactive(0.0)
@@ -110,7 +109,7 @@ class SummaryPanel(Static):
 
         table = Table.grid(padding=(0, 2), pad_edge=False)
         table.add_column(justify="left", style="bold")
-        for _ in range(7):
+        for _ in range(6):
             table.add_column(justify="left")
 
         table.add_row(
@@ -121,7 +120,6 @@ class SummaryPanel(Static):
             Text("Cache W", style="dim"),
             Text("Cost", style="dim"),
             Text("Turns", style="dim"),
-            Text("", style="dim"),
         )
         s = self.sums
         table.add_row(
@@ -132,28 +130,129 @@ class SummaryPanel(Static):
             _human(s.cache_write_5m + s.cache_write_1h),
             _human_usd(s.cost_usd),
             f"{s.turns:,}",
-            "",
         )
-
-        b = self.block_sums
-        block_age = ""
-        if self.block_start is not None:
-            now = datetime.now(tz=self.block_start.tzinfo or timezone.utc)
-            delta = now - self.block_start
-            mins = int(delta.total_seconds() // 60)
-            block_age = f"started {_fmt_ts(self.block_start)} ({mins}m ago)"
+        w = self.sums_7d
         table.add_row(
-            "5h block",
-            _human(b.input),
-            _human(b.output),
-            _human(b.cache_read),
-            _human(b.cache_write_5m + b.cache_write_1h),
-            _human_usd(b.cost_usd),
-            f"{b.turns:,}",
-            Text(block_age, style="dim"),
+            "Last 7d",
+            _human(w.input),
+            _human(w.output),
+            _human(w.cache_read),
+            _human(w.cache_write_5m + w.cache_write_1h),
+            _human_usd(w.cost_usd),
+            f"{w.turns:,}",
         )
 
         return Group(header, Text(""), table)
+
+
+class BlockPanel(Static):
+    """Live status of the current 5-hour Anthropic session block."""
+
+    info: reactive[BlockInfo | None] = reactive(None, layout=True)
+
+    BAR_W = 30
+
+    def render(self) -> RenderableType:
+        info = self.info
+        if info is None:
+            return Group(
+                Text("⏱  5h block", style="bold"),
+                Text("No active block (no records in the last 5h)", style="dim italic"),
+            )
+
+        start_local = info.start.astimezone()
+        end_local = info.end.astimezone()
+        elapsed_str = _fmt_minutes(info.minutes_elapsed)
+        remaining_str = _fmt_minutes(info.minutes_remaining)
+
+        header = Text.from_markup(
+            f"[b]⏱  5h block[/b]   "
+            f"started [b]{start_local.strftime('%H:%M')}[/b]  ·  "
+            f"ends [b]{end_local.strftime('%H:%M')}[/b]  ·  "
+            f"elapsed [b]{elapsed_str}[/b]  ·  "
+            f"remaining [b]{remaining_str}[/b]"
+        )
+
+        lines: list[Text] = [header]
+
+        # Tokens line
+        sums = info.sums
+        if info.token_limit:
+            lines.append(self._progress_line("Tokens", info.pct_tokens or 0.0,
+                f"{_human(sums.total_tokens)} / {_human(info.token_limit)}"))
+        else:
+            lines.append(Text.from_markup(
+                f"[b]Tokens[/b]   {_human(sums.total_tokens)}  "
+                f"[dim](no limit set; pass --plan or --max-5h-tokens)[/dim]"
+            ))
+
+        # Cost line
+        if info.cost_limit:
+            lines.append(self._progress_line("Cost  ", info.pct_cost or 0.0,
+                f"${sums.cost_usd:,.2f} / ${info.cost_limit:,.2f}"))
+        else:
+            lines.append(Text.from_markup(
+                f"[b]Cost  [/b]   ${sums.cost_usd:,.2f}  "
+                f"[dim](no limit set; pass --plan or --max-5h-cost)[/dim]"
+            ))
+
+        # Burn + ETA
+        burn_line = Text.from_markup(
+            f"[b]Burn[/b]    {_human(int(info.burn_tokens_per_min))} tok/min  ·  "
+            f"${info.burn_cost_per_min:,.2f}/min"
+        )
+        lines.append(burn_line)
+
+        eta_parts = []
+        if info.eta_to_token_limit_min is not None:
+            t_label, t_color = self._eta_verdict(info.eta_to_token_limit_min, info.minutes_remaining)
+            eta_parts.append(
+                f"tokens limit in [{t_color}]{_fmt_minutes(info.eta_to_token_limit_min)}[/{t_color}] {t_label}"
+            )
+        if info.eta_to_cost_limit_min is not None:
+            c_label, c_color = self._eta_verdict(info.eta_to_cost_limit_min, info.minutes_remaining)
+            eta_parts.append(
+                f"cost limit in [{c_color}]{_fmt_minutes(info.eta_to_cost_limit_min)}[/{c_color}] {c_label}"
+            )
+        if eta_parts:
+            lines.append(Text.from_markup("[b]ETA[/b]     " + "  ·  ".join(eta_parts)))
+
+        return Group(*lines)
+
+    def _progress_line(self, label: str, pct: float, suffix: str) -> Text:
+        pct = max(0.0, pct)
+        if pct < 80:
+            color = "green"
+        elif pct < 95:
+            color = "yellow"
+        else:
+            color = "red"
+        filled = min(int(round(pct / 100 * self.BAR_W)), self.BAR_W)
+        bar = "█" * filled + "·" * (self.BAR_W - filled)
+        line = Text()
+        line.append_text(Text.from_markup(f"[b]{label}[/b]  "))
+        line.append(bar, style=color)
+        line.append(f"  {suffix}  ({pct:.1f}%)")
+        return line
+
+    @staticmethod
+    def _eta_verdict(eta_min: float, block_remaining_min: float) -> tuple[str, str]:
+        """Return (label, rich-style-color) comparing ETA to block end."""
+        if eta_min >= block_remaining_min:
+            return ("(after block ends ✓)", "green")
+        slack = block_remaining_min - eta_min
+        if slack < 30:
+            return ("(before block ends ⚠)", "yellow")
+        return ("(before block ends ✗)", "red")
+
+
+def _fmt_minutes(m: float) -> str:
+    if m < 0:
+        return "0m"
+    if m < 60:
+        return f"{int(m)}m"
+    h, mm = divmod(int(m), 60)
+    return f"{h}h {mm}m" if mm else f"{h}h"
 
 
 class BarChart(Static):
@@ -200,8 +299,14 @@ class UsageMonitorApp(App):
     CSS = """
     Screen { layout: vertical; }
     SummaryPanel {
-        height: 7;
+        height: 6;
         padding: 1 2;
+        background: $boost;
+        border-bottom: solid $primary;
+    }
+    BlockPanel {
+        height: 6;
+        padding: 0 2;
         background: $boost;
         border-bottom: solid $primary;
     }
@@ -242,6 +347,7 @@ class UsageMonitorApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield SummaryPanel(id="summary")
+        yield BlockPanel(id="block")
         with TabbedContent(initial="sessions"):
             with TabPane("Sessions [1]", id="sessions"):
                 yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
@@ -376,14 +482,17 @@ class UsageMonitorApp(App):
         agg = self.aggregator
         summary = self.query_one("#summary", SummaryPanel)
         summary.sums = agg.total_sums()
+        summary.sums_7d = agg.sums_in_window(timedelta(days=7))
         summary.rate_tokens = agg.recent_token_rate_per_min()
         summary.rate_cost = agg.recent_cost_per_min()
         summary.rate_turns = agg.recent_turns_per_min()
-        summary.block_sums = agg.block_sums
-        summary.block_start = agg.block_start
         summary.session_count = len(agg.sessions)
         summary.active_count = agg.active_session_count()
         summary.refresh()
+
+        block_panel = self.query_one("#block", BlockPanel)
+        block_panel.info = agg.block_info()
+        block_panel.refresh()
 
         # Refresh only the visible tab — keeps the UI responsive even at
         # hundreds of rows. The other tables are still in-sync from previous
