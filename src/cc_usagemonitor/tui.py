@@ -195,7 +195,7 @@ class UsageMonitorApp(App):
         ("In", "in"),
         ("Out", "out"),
         ("CacheR", "cache_r"),
-        ("Sidechain%", "side"),
+        ("Agent%", "agent"),
         ("Cost", "cost"),
         ("Turns", "turns"),
     ]
@@ -361,10 +361,11 @@ class UsageMonitorApp(App):
             reverse=True,
         )
         for s in sorted_sessions:
-            total_main = s.sums_main.total_tokens
-            total_side = s.sums_sidechain.total_tokens
-            total = total_main + total_side
-            side_pct = (total_side / total * 100) if total else 0.0
+            agent_pct = (
+                s.sums_from_agents.cost_usd / s.sums.cost_usd * 100
+                if s.sums.cost_usd > 0
+                else 0.0
+            )
             project_name = decode_project_slug(s.project_slug)
             cells = (
                 s.session_id[:8],
@@ -373,7 +374,7 @@ class UsageMonitorApp(App):
                 _fmt_int(s.sums.input),
                 _fmt_int(s.sums.output),
                 _fmt_int(s.sums.cache_read),
-                f"{side_pct:.1f}%",
+                f"{agent_pct:.1f}%",
                 _fmt_usd(s.sums.cost_usd),
                 str(s.sums.turns),
             )

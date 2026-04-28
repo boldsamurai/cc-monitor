@@ -19,7 +19,7 @@ EVENT_LOG = Path.home() / ".claude" / "usagemonitor-events.jsonl"
 def _name_for(tool: str, tool_input: dict) -> str | None:
     if tool == "Skill":
         return tool_input.get("skill")
-    if tool == "Task":
+    if tool == "Agent":
         return tool_input.get("subagent_type")
     return None
 
