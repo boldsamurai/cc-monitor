@@ -95,6 +95,7 @@ class SessionDetailScreen(Screen):
         Binding("1", "show_tab('tab-time')", "Time"),
         Binding("2", "show_tab('tab-turn')", "Turn"),
         Binding("3", "show_tab('tab-dist')", "Distribution"),
+        Binding("4", "show_tab('tab-usage')", "Usage"),
         # Copy actions moved to function keys so the digits stay free.
         Binding("f1", "copy_session_id", "Copy session ID"),
         Binding("f2", "copy_project_path", "Copy project path"),
@@ -130,6 +131,9 @@ class SessionDetailScreen(Screen):
     #charts-tabs TabPane {
         padding: 0;
         background: $panel;
+    }
+    #usage-content {
+        padding: 1 2;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -197,6 +201,11 @@ class SessionDetailScreen(Screen):
                     with TabPane("Distribution [3]", id="tab-dist"):
                         yield self._make_plot("chart-hist")
                         yield self._make_plot("chart-gap")
+                    with TabPane("Usage [4]", id="tab-usage"):
+                        yield Static(
+                            self._build_usage_block(sess),
+                            id="usage-content",
+                        )
             else:
                 yield Static(
                     Text(
@@ -205,27 +214,13 @@ class SessionDetailScreen(Screen):
                     )
                 )
 
-            # Skills / agents (full width, only when relevant).
-            if sess and sess.skills:
-                yield Static(
-                    Group(
-                        Text("Skills used in this session", style="bold underline"),
-                        self._skills_table(sess),
-                    ),
-                    id="section-skills",
-                )
-            if sess and sess.agents:
-                yield Static(
-                    Group(
-                        Text("Agents used in this session", style="bold underline"),
-                        self._agents_table(sess),
-                    ),
-                    id="section-agents",
-                )
+            # Skills/agents now live in the Usage tab above — no
+            # separate sections at the bottom.
 
         with Horizontal(id="detail-footer"):
             yield Static(
-                "[b]1[/b] Time   [b]2[/b] Turn   [b]3[/b] Distribution",
+                "[b]1[/b] Time   [b]2[/b] Turn   [b]3[/b] Distribution"
+                "   [b]4[/b] Usage",
                 id="footer-left",
             )
             yield Static(
@@ -511,6 +506,30 @@ class SessionDetailScreen(Screen):
                 _fmt_int(sums.total_tokens),
             )
         return t
+
+    def _build_usage_block(self, sess: SessionState | None) -> RenderableType:
+        """Skills + agents tables stacked. Empty state explains the
+        hook-dependency so the user knows it's not a bug."""
+        if sess is None:
+            return Text("")
+        parts: list = []
+        if sess.skills:
+            parts.append(Text("Skills", style="bold underline"))
+            parts.append(self._skills_table(sess))
+            parts.append(Text(""))
+        if sess.agents:
+            parts.append(Text("Agents", style="bold underline"))
+            parts.append(self._agents_table(sess))
+            parts.append(Text(""))
+        if not parts:
+            return Text(
+                "No skill/agent usage recorded for this session.\n\n"
+                "This data comes from the Claude Code hook script. If the "
+                "session predates the hook setup, or if the session never "
+                "called any Skill/Agent tools, this view stays empty.",
+                style="dim italic",
+            )
+        return Group(*parts)
 
     def _skills_table(self, sess: SessionState) -> Table | None:
         if not sess.skills:
