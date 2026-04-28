@@ -34,6 +34,14 @@ def _fmt_ts(ts: datetime | None) -> str:
     return ts.astimezone().strftime("%H:%M:%S")
 
 
+def _fmt_datetime(ts: datetime | None) -> str:
+    if ts is None:
+        return "-"
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone().strftime("%d:%m:%Y %H:%M")
+
+
 def _human(n: int) -> str:
     """Compact integer formatting: 1234 -> 1.2K, 1_234_567 -> 1.23M, etc."""
     if n < 1_000:
@@ -361,7 +369,7 @@ class UsageMonitorApp(App):
             cells = (
                 s.session_id[:8],
                 project_name[-30:] if len(project_name) > 30 else project_name,
-                _fmt_ts(s.last_seen),
+                _fmt_datetime(s.last_seen),
                 _fmt_int(s.sums.input),
                 _fmt_int(s.sums.output),
                 _fmt_int(s.sums.cache_read),
