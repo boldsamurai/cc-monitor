@@ -23,19 +23,6 @@ def _fmt_int(n: int) -> str:
     return f"{n:,}"
 
 
-def _hex_to_rgb(value: str | None) -> tuple[int, int, int] | None:
-    """Parse '#RRGGBB' (or 'RRGGBB') into an (r, g, b) tuple plotext accepts."""
-    if not isinstance(value, str):
-        return None
-    h = value.strip().lstrip("#")
-    if len(h) != 6:
-        return None
-    try:
-        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    except ValueError:
-        return None
-
-
 def _fmt_turn_tick(v: int) -> str:
     """Render a turn-axis tick. Forces 'k' suffix above 999 so plotext
     doesn't sneak in its own '×10³' multiplier and confuse the axis."""
@@ -101,7 +88,10 @@ class SessionDetailScreen(Screen):
     .chart-plot {
         height: 14;
         margin: 1 2;
-        background: $boost;
+        /* textual-plotext's auto theme paints the canvas with $surface, so
+           match the widget background to it; otherwise the panel and the
+           plot canvas render as two visibly different shades of dark. */
+        background: $surface;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -214,40 +204,21 @@ class SessionDetailScreen(Screen):
 
         n = len(turns)
         x_turns = list(range(1, n + 1))
-        # Force readable, integer turn-axis ticks. plotext otherwise picks
-        # float ticks ('156.2') for small ranges and silently applies a
-        # '×10³' multiplier for large ones, which made huge sessions show
-        # axes like '1, 3, 6, 9, 12' for 4949 turns. Pre-formatting with
-        # a 'k' suffix sidesteps both behaviors.
+        # Pre-format turn-axis labels with 'k' suffix above 999. plotext
+        # otherwise picks float ticks for small ranges and silently applies
+        # a '×10³' multiplier for large ones — both confusing on a turn
+        # counter. NOTE: canvas/axes colors are intentionally left to
+        # textual-plotext's auto theme — it resets them on every render
+        # anyway, so calling canvas_color() here would be no-op.
         tick_positions = sorted(
             {1, max(1, n // 4), max(1, n // 2), max(1, 3 * n // 4), n}
         )
         tick_labels = [_fmt_turn_tick(p) for p in tick_positions]
 
-        # plotext.canvas_color() accepts named colors, a 256-color int, or
-        # an (r, g, b) tuple — but NOT a hex string. Textual exposes theme
-        # colors as '#RRGGBB', so parse to RGB before passing through.
-        boost_hex = "#181825"
-        try:
-            boost_hex = self.app.theme_variables.get("boost", boost_hex)
-        except Exception:
-            pass
-        boost_rgb = _hex_to_rgb(boost_hex) or (24, 24, 37)
-
-        def _style(p) -> None:
-            p.theme("clear")
-            try:
-                p.canvas_color(boost_rgb)
-                p.axes_color(boost_rgb)
-                p.ticks_color("white")
-            except Exception:
-                pass
-
         # Context size line chart.
         ctx_plot = self.query_one("#chart-context", PlotextPlot)
         p = ctx_plot.plt
         p.clear_data()
-        _style(p)
         p.plot(x_turns, ctx_series, marker="braille", color="cyan")
         p.title("Context size per turn (K tokens)")
         p.xlabel("turn")
@@ -262,31 +233,21 @@ class SessionDetailScreen(Screen):
         cost_plot = self.query_one("#chart-cost", PlotextPlot)
         p = cost_plot.plt
         p.clear_data()
-        _style(p)
         p.plot(x_turns, cumulative, marker="braille", color="green")
         p.title("Cumulative cost ($) over turns")
         p.xlabel("turn")
         p.xticks(tick_positions, tick_labels)
 
-        # Sorted tokens-per-turn (descending). Replaces the histogram —
-        # the curve's shape tells you the same thing (a few fat turns, a
-        # long tail) without forcing the user to read bin widths. Rank
-        # axis is 'turn ranked by size', not chronological.
-        sorted_tokens = sorted(token_series, reverse=True)
-        ranks = list(range(1, len(sorted_tokens) + 1))
-        rank_ticks = sorted(
-            {1, max(1, n // 4), max(1, n // 2), max(1, 3 * n // 4), n}
-        )
-        rank_labels = [_fmt_turn_tick(p) for p in rank_ticks]
-        hist_plot = self.query_one("#chart-hist", PlotextPlot)
-        p = hist_plot.plt
+        # Per-turn cost (chronological). Pairs naturally with the cumulative
+        # cost above — the user can see WHEN spend happened, not just that it
+        # accumulated. Spikes here are the ones worth investigating.
+        cost_chart = self.query_one("#chart-hist", PlotextPlot)
+        p = cost_chart.plt
         p.clear_data()
-        _style(p)
-        p.plot(ranks, sorted_tokens, marker="braille", color="orange")
-        p.title("Tokens per turn (sorted desc) — distribution shape")
-        p.xlabel("rank")
-        p.ylabel("K tokens")
-        p.xticks(rank_ticks, rank_labels)
+        p.plot(x_turns, cost_series, marker="braille", color="orange")
+        p.title("Cost per turn ($)")
+        p.xlabel("turn")
+        p.xticks(tick_positions, tick_labels)
 
     def action_copy_session_id(self) -> None:
         try:
