@@ -39,7 +39,7 @@ def _fmt_datetime(ts: datetime | None) -> str:
         return "-"
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
-    return ts.astimezone().strftime("%d:%m:%Y %H:%M")
+    return ts.astimezone().strftime("%d-%m-%Y %H:%M")
 
 
 def _human(n: int) -> str:
