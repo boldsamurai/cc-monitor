@@ -145,16 +145,18 @@ class SessionDetailScreen(Screen):
         padding: 1 2 0 2;
         text-style: bold underline;
     }
-    /* Spans table is wider — 8 columns vs files' 3 — so split 60/40. */
     #usage-row {
         height: auto;
     }
+    /* 50/50 with a 2-cell margin between columns so the spans cursor
+       row doesn't appear to run into the files table. */
     .usage-col-spans {
-        width: 3fr;
+        width: 1fr;
         height: auto;
+        margin-right: 2;
     }
     .usage-col-files {
-        width: 2fr;
+        width: 1fr;
         height: auto;
     }
     #section-skills, #section-agents {
