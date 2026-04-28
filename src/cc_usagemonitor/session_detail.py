@@ -193,6 +193,7 @@ class SessionDetailScreen(Screen):
                         yield self._make_plot("chart-cost")
                     with TabPane("Distribution [3]", id="tab-dist"):
                         yield self._make_plot("chart-hist")
+                        yield self._make_plot("chart-gap")
             else:
                 yield Static(
                     Text(
@@ -365,6 +366,27 @@ class SessionDetailScreen(Screen):
             step = max(1, int(round(top / 5 / 50) * 50))  # round to nice 50K
             xt = list(range(0, int(top) + step, step))
             p.xticks(xt, [str(v) for v in xt])
+
+        # Time-between-turns histogram. Gaps capped at 10 minutes so the
+        # active-conversation tail (most gaps are seconds-to-minutes)
+        # stays readable instead of being squashed by the rare hours-long
+        # break between sessions on different days.
+        _GAP_CAP_MIN = 10.0
+        gaps_min: list[float] = []
+        prev_ts = None
+        for ts, _rec, _cost in turns:
+            t = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            if prev_ts is not None:
+                g = (t - prev_ts).total_seconds() / 60.0
+                gaps_min.append(min(g, _GAP_CAP_MIN))
+            prev_ts = t
+        gap_plot = self.query_one("#chart-gap", PlotextPlot)
+        p = gap_plot.plt
+        p.clear_data()
+        if gaps_min:
+            p.hist(gaps_min, bins=20, color="magenta")
+        p.title("Gap between turns (minutes, ≥10 collapsed to 10)")
+        p.xlabel("minutes")
 
     def action_show_tab(self, tab_id: str) -> None:
         try:
