@@ -13,6 +13,7 @@ from textual.reactive import reactive
 from textual.widgets import DataTable, Header, Static, TabbedContent, TabPane
 
 from .aggregator import Aggregator, TokenSums
+from .config import load_config, save_config
 from .pricing import PricingTable
 from .project_slug import decode_project_slug
 from .tailer import Tailer
@@ -211,10 +212,24 @@ class UsageMonitorApp(App):
             yield Static("[b]r[/b] Refresh  [b]q[/b] Quit", id="status-right")
 
     def on_mount(self) -> None:
+        cfg = load_config()
+        saved_theme = cfg.get("theme")
+        if saved_theme:
+            try:
+                self.theme = saved_theme
+            except Exception:
+                pass
+        self.watch(self, "theme", self._on_theme_change)
+
         self._setup_tables()
         self.run_worker(self._consume_queue(), exclusive=False)
         self.run_worker(self._tailer_runner(), exclusive=False)
         self.set_interval(0.5, self._refresh_view)
+
+    def _on_theme_change(self, new_theme: str) -> None:
+        cfg = load_config()
+        cfg["theme"] = new_theme
+        save_config(cfg)
 
     def on_tabbed_content_tab_activated(
         self, event: TabbedContent.TabActivated
