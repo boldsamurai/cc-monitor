@@ -38,7 +38,13 @@ def main() -> None:
         "--plan",
         choices=list(PLAN_LIMITS.keys()),
         default="none",
-        help="Anthropic plan for 5h block limits (default: none, no progress bars).",
+        help=(
+            "Anthropic plan for 5h block limits (default: none — BlockPanel "
+            "shows raw numbers without progress bars). Plan limits match "
+            "Maciek-roboblog/Claude-Code-Usage-Monitor: pro=19k/$18, "
+            "max5=88k/$35, max20=220k/$140 per 5h session. Heavy users will "
+            "blow past these — use --max-5h-tokens / --max-5h-cost overrides."
+        ),
     )
     parser.add_argument(
         "--max-5h-tokens",

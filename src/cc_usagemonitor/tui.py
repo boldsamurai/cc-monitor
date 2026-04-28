@@ -223,16 +223,23 @@ class BlockPanel(Static):
         pct = max(0.0, pct)
         if pct < 80:
             color = "green"
-        elif pct < 95:
+        elif pct < 100:
             color = "yellow"
         else:
             color = "red"
-        filled = min(int(round(pct / 100 * self.BAR_W)), self.BAR_W)
+        # Cap visual fill at 100%; numeric pct is shown separately so the
+        # truth still leaks through for over-plan users.
+        filled = min(int(round(min(pct, 100.0) / 100 * self.BAR_W)), self.BAR_W)
         bar = "█" * filled + "·" * (self.BAR_W - filled)
         line = Text()
         line.append_text(Text.from_markup(f"[b]{label}[/b]  "))
         line.append(bar, style=color)
-        line.append(f"  {suffix}  ({pct:.1f}%)")
+        # Compact pct display: 12.3%, 99%, 234%, 12.3K%
+        if pct < 1000:
+            pct_str = f"{pct:.1f}%"
+        else:
+            pct_str = f"{pct/1000:.1f}K%"
+        line.append(f"  {suffix}  ({pct_str})")
         return line
 
     @staticmethod
@@ -299,14 +306,14 @@ class UsageMonitorApp(App):
     CSS = """
     Screen { layout: vertical; }
     SummaryPanel {
-        height: 6;
+        height: 8;
         padding: 1 2;
         background: $boost;
         border-bottom: solid $primary;
     }
     BlockPanel {
-        height: 6;
-        padding: 0 2;
+        height: 7;
+        padding: 1 2;
         background: $boost;
         border-bottom: solid $primary;
     }
