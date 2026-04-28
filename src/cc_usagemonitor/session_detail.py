@@ -237,11 +237,22 @@ class SessionDetailScreen(Screen):
         turns = self.aggregator.load_full_session_turns(self.session_id)
         if not turns:
             return
-        self._populate_charts(turns)
+        self._populate_charts(turns, sess)
 
     def _populate_charts(
-        self, turns: list[tuple[datetime, "object", float]]
+        self,
+        turns: list[tuple[datetime, "object", float]],
+        sess: SessionState,
     ) -> None:
+        # The y-axis on context charts is a percentage of the model's
+        # context window. _context_limit_for handles the 1M-variant
+        # case where the API reports a 200K model id but the session
+        # actually exceeded 200K tokens.
+        from .tui import _context_limit_for
+        ctx_limit = _context_limit_for(
+            sess.last_context_model, sess.max_context_tokens
+        )
+
         ctx_series: list[float] = []
         cost_series: list[float] = []
         token_series: list[float] = []
@@ -252,7 +263,7 @@ class SessionDetailScreen(Screen):
                 + rec.cache_write_5m_tokens
                 + rec.cache_write_1h_tokens
             )
-            ctx_series.append(ctx / 1000.0)  # K tokens
+            ctx_series.append(ctx / ctx_limit * 100.0)  # % of context window
             cost_series.append(cost)
             token_series.append((ctx + rec.output_tokens) / 1000.0)
 
@@ -269,13 +280,14 @@ class SessionDetailScreen(Screen):
         )
         tick_labels = [_fmt_turn_tick(p) for p in tick_positions]
 
-        # Context size line chart.
+        # Context %-of-window line chart.
         ctx_plot = self.query_one("#chart-context", PlotextPlot)
         p = ctx_plot.plt
         p.clear_data()
         p.plot(x_turns, ctx_series, marker="braille", color="cyan")
-        p.title("Context size per turn (K tokens)")
+        p.title("Context % per turn")
         p.xlabel("turn")
+        p.ylabel("%")
         p.xticks(tick_positions, tick_labels)
 
         # Cumulative cost line chart.
@@ -320,12 +332,13 @@ class SessionDetailScreen(Screen):
 
         time_tick_labels = [_fmt_time_tick(s) for s in time_tick_secs]
 
-        # Context size over time.
+        # Context %-of-window over time.
         p = self.query_one("#chart-context-time", PlotextPlot).plt
         p.clear_data()
         p.plot(times_secs, ctx_series, marker="braille", color="cyan")
-        p.title("Context size over time (K tokens)")
+        p.title("Context % over time")
         p.xlabel("time")
+        p.ylabel("%")
         p.xticks(time_tick_secs, time_tick_labels)
 
         # Cumulative cost over time.
