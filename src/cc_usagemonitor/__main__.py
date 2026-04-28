@@ -16,6 +16,7 @@ PLAN_LIMITS = {
     "pro": {"tokens": 19_000, "cost": 18.0},
     "max5": {"tokens": 88_000, "cost": 35.0},
     "max20": {"tokens": 220_000, "cost": 140.0},
+    "auto": {"tokens": None, "cost": None},  # filled in dynamically via P90
     "custom": {"tokens": None, "cost": None},
     "none": {"tokens": None, "cost": None},
 }
@@ -68,9 +69,15 @@ def main() -> None:
     aggregator.token_limit = args.max_5h_tokens or plan["tokens"]
     aggregator.cost_limit = args.max_5h_cost or plan["cost"]
 
+    # --plan auto needs the historical archive populated to compute P90,
+    # so silently turn on --from-start and recompute periodically.
+    auto_limits = args.plan == "auto"
+    if auto_limits and not args.from_start:
+        args.from_start = True
+
     tailer = Tailer(queue, poll_interval=args.poll, from_start=args.from_start)
 
-    run_app(aggregator, tailer, queue)
+    run_app(aggregator, tailer, queue, auto_limits=auto_limits)
 
 
 if __name__ == "__main__":
