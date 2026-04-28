@@ -250,15 +250,15 @@ class BlockPanel(Static):
         line = Text()
         line.append_text(Text.from_markup(f"[b]{label}[/b]  "))
         line.append(bar, style=color)
-        # Compact pct display: 12.3%, 99%, 234%, 12.3K%
+        # Compact pct display: 12%, 99%, 234%, 12K%
         if pct < 1000:
-            pct_str = f"{pct:.1f}%"
+            pct_str = f"{pct:.0f}%"
         else:
-            pct_str = f"{pct/1000:.1f}K%"
+            pct_str = f"{pct/1000:.0f}K%"
         if suffix:
-            line.append(f"  {suffix}  ({pct_str})")
+            line.append(f"  {suffix}  {pct_str}")
         else:
-            line.append(f"  ({pct_str})")
+            line.append(f"  {pct_str}")
         return line
 
     @staticmethod
