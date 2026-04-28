@@ -23,6 +23,28 @@ def _fmt_int(n: int) -> str:
     return f"{n:,}"
 
 
+def _hex_to_rgb(value: str | None) -> tuple[int, int, int] | None:
+    """Parse '#RRGGBB' (or 'RRGGBB') into an (r, g, b) tuple plotext accepts."""
+    if not isinstance(value, str):
+        return None
+    h = value.strip().lstrip("#")
+    if len(h) != 6:
+        return None
+    try:
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    except ValueError:
+        return None
+
+
+def _fmt_turn_tick(v: int) -> str:
+    """Render a turn-axis tick. Forces 'k' suffix above 999 so plotext
+    doesn't sneak in its own '×10³' multiplier and confuse the axis."""
+    if v >= 1000:
+        kv = v / 1000
+        return f"{kv:.0f}k" if kv == int(kv) else f"{kv:.1f}k"
+    return str(v)
+
+
 def _fmt_dt(ts: datetime | None) -> str:
     if ts is None:
         return "-"
@@ -192,27 +214,32 @@ class SessionDetailScreen(Screen):
 
         n = len(turns)
         x_turns = list(range(1, n + 1))
-        # Force integer x-ticks for both line charts (the default float
-        # ticks like '156.2' make no sense for a turn counter).
+        # Force readable, integer turn-axis ticks. plotext otherwise picks
+        # float ticks ('156.2') for small ranges and silently applies a
+        # '×10³' multiplier for large ones, which made huge sessions show
+        # axes like '1, 3, 6, 9, 12' for 4949 turns. Pre-formatting with
+        # a 'k' suffix sidesteps both behaviors.
         tick_positions = sorted(
             {1, max(1, n // 4), max(1, n // 2), max(1, 3 * n // 4), n}
         )
-        tick_labels = [str(p) for p in tick_positions]
+        tick_labels = [_fmt_turn_tick(p) for p in tick_positions]
 
-        # Pick a canvas color that matches Textual's $boost surface so the
-        # plot doesn't look detached from the rest of the panel. Falls
-        # back to a sensible Catppuccin-Mocha-like dark slate if the
-        # active theme doesn't expose 'boost'.
+        # plotext.canvas_color() accepts named colors, a 256-color int, or
+        # an (r, g, b) tuple — but NOT a hex string. Textual exposes theme
+        # colors as '#RRGGBB', so parse to RGB before passing through.
+        boost_hex = "#181825"
         try:
-            boost = self.app.theme_variables.get("boost", "#181825")
+            boost_hex = self.app.theme_variables.get("boost", boost_hex)
         except Exception:
-            boost = "#181825"
+            pass
+        boost_rgb = _hex_to_rgb(boost_hex) or (24, 24, 37)
 
         def _style(p) -> None:
             p.theme("clear")
             try:
-                p.canvas_color(boost)
-                p.axes_color(boost)
+                p.canvas_color(boost_rgb)
+                p.axes_color(boost_rgb)
+                p.ticks_color("white")
             except Exception:
                 pass
 
@@ -241,14 +268,25 @@ class SessionDetailScreen(Screen):
         p.xlabel("turn")
         p.xticks(tick_positions, tick_labels)
 
-        # Tokens per turn histogram. Title now spells out what bars mean.
+        # Sorted tokens-per-turn (descending). Replaces the histogram —
+        # the curve's shape tells you the same thing (a few fat turns, a
+        # long tail) without forcing the user to read bin widths. Rank
+        # axis is 'turn ranked by size', not chronological.
+        sorted_tokens = sorted(token_series, reverse=True)
+        ranks = list(range(1, len(sorted_tokens) + 1))
+        rank_ticks = sorted(
+            {1, max(1, n // 4), max(1, n // 2), max(1, 3 * n // 4), n}
+        )
+        rank_labels = [_fmt_turn_tick(p) for p in rank_ticks]
         hist_plot = self.query_one("#chart-hist", PlotextPlot)
         p = hist_plot.plt
         p.clear_data()
         _style(p)
-        p.hist(token_series, bins=20, color="orange")
-        p.title("How many turns landed in each token-size bucket")
-        p.xlabel("K tokens per turn")
+        p.plot(ranks, sorted_tokens, marker="braille", color="orange")
+        p.title("Tokens per turn (sorted desc) — distribution shape")
+        p.xlabel("rank")
+        p.ylabel("K tokens")
+        p.xticks(rank_ticks, rank_labels)
 
     def action_copy_session_id(self) -> None:
         try:
