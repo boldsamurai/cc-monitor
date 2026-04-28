@@ -18,13 +18,14 @@ from textual_plotext import PlotextPlot
 from .aggregator import Aggregator, SessionState, TokenSums
 from .project_slug import decode_project_path, decode_project_slug
 
-# Register a fixed plotext theme that matches Textual's $panel color
-# (solid #242F38). textual-plotext's "auto" theme derives canvas color
-# from $surface and re-applies on every render, but the result rendered
-# visibly different from the surrounding panel for reasons that aren't
-# worth chasing further. A hardcoded theme with the same RGB as our
-# widget CSS background gives a guaranteed seamless match.
-_PANEL_RGB: tuple[int, int, int] = (36, 47, 56)
+# Register a fixed plotext theme matching Textual's $panel-lighten-1
+# (#343F49). textual-plotext's "auto" theme derives canvas color from
+# $surface (#1E1E1E) which renders very close to terminal black; the
+# lighter shade is the smallest bump that's actually visible while
+# still feeling like a panel and not a popup. A hardcoded RGB makes
+# the match exact regardless of which Textual theme is active (all
+# 20 built-in themes resolve $panel to the same hex anyway).
+_PANEL_RGB: tuple[int, int, int] = (52, 63, 73)  # #343F49
 _PLOTEXT_THEME_NAME = "cc-monitor-panel"
 try:
     from plotext._dict import themes as _plotext_themes
@@ -114,7 +115,7 @@ class SessionDetailScreen(Screen):
         margin: 1 2;
         /* Solid color (no alpha) so the registered plotext theme can
            match it exactly via _PANEL_RGB. */
-        background: $panel;
+        background: $panel-lighten-1;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -265,15 +266,24 @@ class SessionDetailScreen(Screen):
         p.xlabel("turn")
         p.xticks(tick_positions, tick_labels)
 
-        # Tokens-per-turn distribution (histogram). Reverted to the
-        # original chart on the user's request — bins of token-size
-        # show how many turns landed in each magnitude bucket.
+        # Tokens-per-turn distribution (histogram). The x axis here is
+        # the SIZE of a single turn in K tokens — NOT a turn counter; the
+        # rightmost bucket holds the largest turn observed in the session.
+        # The y axis is the count of turns landing in that bucket.
         hist_plot = self.query_one("#chart-hist", PlotextPlot)
         p = hist_plot.plt
         p.clear_data()
         p.hist(token_series, bins=20, color="orange")
-        p.title("Tokens-per-turn distribution")
-        p.xlabel("K tokens per turn")
+        p.title("Turn-size distribution (how many turns by token count)")
+        p.xlabel("Turn size (K tokens)")
+        p.ylabel("# of turns")
+        # Force integer x-ticks. plotext's auto-tick prefers float values
+        # like '362.1' which look like turn numbers and confuse readers.
+        if token_series:
+            top = max(token_series)
+            step = max(1, int(round(top / 5 / 50) * 50))  # round to nice 50K
+            xt = list(range(0, int(top) + step, step))
+            p.xticks(xt, [str(v) for v in xt])
 
     def action_copy_session_id(self) -> None:
         try:
