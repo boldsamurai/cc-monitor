@@ -5,6 +5,46 @@ from pathlib import Path
 
 
 @lru_cache(maxsize=4096)
+def decode_project_path(slug: str) -> str | None:
+    """Recover the full filesystem path from a Claude Code slug.
+
+    Returns None when no candidate path exists on disk (project moved or
+    deleted). Same greedy filesystem probe as decode_project_slug — the
+    only difference is what we return when a match is found.
+    """
+    if not slug:
+        return None
+    body = slug.lstrip("-")
+    parts = body.split("-")
+    if not parts:
+        return None
+    for split_at in range(len(parts) - 1, 0, -1):
+        path_parts = parts[:split_at]
+        name = "-".join(parts[split_at:])
+        candidate = "/" + "/".join(path_parts) + "/" + name
+        try:
+            if Path(candidate).is_dir():
+                return candidate
+        except OSError:
+            continue
+    # No real path matched — synthesize a best-effort version using the
+    # deepest existing prefix; lets the user at least navigate part-way.
+    deepest = 0
+    for split_at in range(1, len(parts)):
+        prefix_path = "/" + "/".join(parts[:split_at])
+        try:
+            if Path(prefix_path).is_dir():
+                deepest = split_at
+            else:
+                break
+        except OSError:
+            break
+    if deepest > 0:
+        return "/" + "/".join(parts[:deepest]) + "/" + "-".join(parts[deepest:])
+    return None
+
+
+@lru_cache(maxsize=4096)
 def decode_project_slug(slug: str) -> str:
     """Recover the project name (basename of cwd) from a Claude Code slug.
 

@@ -15,7 +15,7 @@ from textual.screen import Screen
 from textual.widgets import Static
 
 from .aggregator import Aggregator, SessionState, TokenSums
-from .project_slug import decode_project_slug
+from .project_slug import decode_project_path, decode_project_slug
 
 
 def _fmt_int(n: int) -> str:
@@ -57,6 +57,7 @@ class SessionDetailScreen(Screen):
         Binding("escape", "app.pop_screen", "Back"),
         Binding("q", "app.pop_screen", "Back"),
         Binding("c", "copy_session_id", "Copy session ID"),
+        Binding("p", "copy_project_path", "Copy project path"),
     ]
 
     CSS = """
@@ -84,7 +85,8 @@ class SessionDetailScreen(Screen):
         with VerticalScroll():
             yield Static(self._build_content(), id="detail-body")
         yield Static(
-            "[b]Esc[/b] / [b]q[/b] back   ·   [b]c[/b] copy session ID",
+            "[b]Esc[/b] / [b]q[/b] back   ·   "
+            "[b]c[/b] copy session ID   ·   [b]p[/b] copy project path",
             id="detail-footer",
         )
 
@@ -96,6 +98,19 @@ class SessionDetailScreen(Screen):
             return
         self.app.notify(f"Copied {self.session_id}", timeout=2)
 
+    def action_copy_project_path(self) -> None:
+        sess = self.aggregator.sessions.get(self.session_id)
+        path = decode_project_path(sess.project_slug) if sess else None
+        if not path:
+            self.app.notify("Project path unknown", severity="warning")
+            return
+        try:
+            self.app.copy_to_clipboard(path)
+        except Exception as e:
+            self.app.notify(f"Copy failed: {e}", severity="error")
+            return
+        self.app.notify(f"Copied {path}", timeout=2)
+
     def _build_content(self) -> RenderableType:
         sess = self.aggregator.sessions.get(self.session_id)
         if sess is None:
@@ -103,6 +118,7 @@ class SessionDetailScreen(Screen):
 
         # Header.
         project_name = decode_project_slug(sess.project_slug)
+        project_path = decode_project_path(sess.project_slug) or "(not found on disk)"
         title = Text()
         title.append("Session ", style="bold")
         title.append(self.session_id, style="bold cyan")
@@ -110,8 +126,8 @@ class SessionDetailScreen(Screen):
         sub = Text()
         sub.append("Project:  ", style="dim")
         sub.append(f"{project_name}\n")
-        sub.append("Slug:     ", style="dim")
-        sub.append(f"{sess.project_slug}\n")
+        sub.append("Path:     ", style="dim")
+        sub.append(f"{project_path}\n")
         sub.append("First:    ", style="dim")
         sub.append(f"{_fmt_dt(sess.first_seen)}\n")
         sub.append("Last:     ", style="dim")
