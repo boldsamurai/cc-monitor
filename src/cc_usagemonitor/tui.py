@@ -17,7 +17,7 @@ from .aggregator import Aggregator, BlockInfo, TokenSums
 from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
 from .pricing import PricingTable
-from .project_slug import decode_project_slug
+from .project_slug import decode_project_path, decode_project_slug
 from .session_detail import SessionDetailScreen
 from .tailer import Tailer
 
@@ -570,6 +570,7 @@ class UsageMonitorApp(App):
     ]
     PROJECTS_COLS = [
         ("Project", "project"),
+        ("Exists", "exists"),
         ("Sessions", "sessions"),
         ("First seen", "first"),
         ("Last activity", "last"),
@@ -812,9 +813,12 @@ class UsageMonitorApp(App):
     def _refresh_projects_table(self) -> None:
         """Aggregate every session by its project_slug. Sums cost /
         tokens / session-count, tracks first/last activity, computes
-        last-7d cost from the long_window archive. Sorted by last
-        activity desc — same convention as Sessions."""
+        last-7d cost from the long_window archive, and probes the
+        filesystem to mark deleted projects. Sorted: existing first
+        (so live projects sit at the top), deleted ones below — both
+        groups internally sorted by last activity desc."""
         from collections import defaultdict
+        from pathlib import Path
 
         agg: dict[str, dict] = defaultdict(
             lambda: {
@@ -852,25 +856,51 @@ class UsageMonitorApp(App):
                 continue
             last_7d[sess.project_slug] += cost
 
+        # Probe the filesystem once per slug. decode_project_path()
+        # synthesizes a 'best-effort' path even when no real match is
+        # found — so a follow-up is_dir() check distinguishes truly-
+        # existing projects from placeholders.
+        existence: dict[str, bool] = {}
+        for slug in agg:
+            p = decode_project_path(slug)
+            existence[slug] = bool(p and Path(p).is_dir())
+
         rows: list[tuple[str, tuple[str, ...]]] = []
         epoch = datetime.min.replace(tzinfo=timezone.utc)
+        # Sort key: existing first (so True > False under reverse=True),
+        # then most-recent activity. Deleted projects fall to the bottom
+        # of the table but stay visible.
         ordered = sorted(
             agg.items(),
-            key=lambda kv: kv[1]["last_seen"] or epoch,
+            key=lambda kv: (
+                existence.get(kv[0], False),
+                kv[1]["last_seen"] or epoch,
+            ),
             reverse=True,
         )
         for slug, entry in ordered:
             sessions_n = entry["sessions"]
             per_session = entry["cost"] / sessions_n if sessions_n else 0.0
+            exists = existence.get(slug, False)
+            # Dim the entire row when the project is gone so it visually
+            # recedes; the ✗ marker in Exists is still readable.
+            style = "" if exists else "dim"
+            def _styled(s: str) -> Text:
+                return Text(s, style=style) if style else Text(s)
             cells = (
-                decode_project_slug(slug),
-                _human(sessions_n),
-                self._fmt_dt(entry["first_seen"]),
-                self._fmt_dt(entry["last_seen"]),
-                _fmt_usd(entry["cost"]),
-                _fmt_usd(last_7d.get(slug, 0.0)),
-                f"${per_session:.2f}" if per_session >= 1 else f"${per_session:.4f}",
-                _human(entry["tokens"]),
+                _styled(decode_project_slug(slug)),
+                Text("✓", style="green") if exists else Text("✗", style="red dim"),
+                _styled(_human(sessions_n)),
+                _styled(self._fmt_dt(entry["first_seen"])),
+                _styled(self._fmt_dt(entry["last_seen"])),
+                _styled(_fmt_usd(entry["cost"])),
+                _styled(_fmt_usd(last_7d.get(slug, 0.0))),
+                _styled(
+                    f"${per_session:.2f}"
+                    if per_session >= 1
+                    else f"${per_session:.4f}"
+                ),
+                _styled(_human(entry["tokens"])),
             )
             rows.append((slug, cells))
         self._apply_rows("#t-projects", self.PROJECTS_COLS, rows)
