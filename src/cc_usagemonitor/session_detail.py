@@ -466,7 +466,9 @@ class SessionDetailScreen(Screen):
 
     def action_copy_project_path(self) -> None:
         sess = self.aggregator.sessions.get(self.session_id)
-        path = decode_project_path(sess.project_slug) if sess else None
+        path = (sess.cwd if sess and sess.cwd else None) or (
+            decode_project_path(sess.project_slug) if sess else None
+        )
         if not path:
             self.app.notify("Project path unknown", severity="warning")
             return
@@ -481,8 +483,14 @@ class SessionDetailScreen(Screen):
         if sess is None:
             return Text(f"Session {self.session_id} not found", style="bold red")
 
-        project_name = decode_project_slug(sess.project_slug)
-        project_path = decode_project_path(sess.project_slug) or "(not found on disk)"
+        # Ground-truth cwd from JSONL beats slug-decode; fall back when
+        # the session hasn't surfaced one (older or hook-only state).
+        project_path = sess.cwd or decode_project_path(sess.project_slug) or "(not found on disk)"
+        project_name = (
+            project_path.rsplit("/", 1)[-1]
+            if project_path and project_path != "(not found on disk)"
+            else decode_project_slug(sess.project_slug)
+        )
 
         title = Text()
         title.append("ID: ", style="bold")
@@ -673,9 +681,11 @@ class SessionDetailScreen(Screen):
         # Strip the project-root prefix so paths read like
         # 'src/cc_usagemonitor/aggregator.py' instead of the absolute
         # '/home/.../Projekty/cc-usagemonitor/src/...' that overflows
-        # the column.
+        # the column. Prefer the JSONL-captured cwd over slug-decode.
         sess = self.aggregator.sessions.get(self.session_id)
-        project_root = decode_project_path(sess.project_slug) if sess else None
+        project_root = (sess.cwd if sess and sess.cwd else None) or (
+            decode_project_path(sess.project_slug) if sess else None
+        )
         # Order: biggest tokens first — that's the actionable signal
         # ('which file is bloating my context the most').
         ordered = sorted(
