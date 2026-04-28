@@ -10,7 +10,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import DataTable, Footer, Header, Static, TabbedContent, TabPane
+from textual.widgets import DataTable, Header, Static, TabbedContent, TabPane
 
 from .aggregator import Aggregator, TokenSums
 from .pricing import PricingTable
@@ -166,6 +166,14 @@ class UsageMonitorApp(App):
     }
     TabbedContent { height: 1fr; }
     DataTable { height: 1fr; }
+    #status-bar {
+        height: 1;
+        dock: bottom;
+        background: $accent;
+        color: $text;
+    }
+    #status-left { width: 1fr; padding: 0 1; content-align: left middle; }
+    #status-right { width: auto; padding: 0 1; content-align: right middle; }
     """
 
     BINDINGS = [
@@ -195,7 +203,12 @@ class UsageMonitorApp(App):
                 yield DataTable(id="t-skills", cursor_type="row", zebra_stripes=True)
             with TabPane("Agents [4]", id="agents"):
                 yield DataTable(id="t-agents", cursor_type="row", zebra_stripes=True)
-        yield Footer()
+        with Horizontal(id="status-bar"):
+            yield Static(
+                "[b]1[/b] Sessions  [b]2[/b] Models  [b]3[/b] Skills  [b]4[/b] Agents",
+                id="status-left",
+            )
+            yield Static("[b]r[/b] Refresh  [b]q[/b] Quit", id="status-right")
 
     def on_mount(self) -> None:
         self._setup_tables()
