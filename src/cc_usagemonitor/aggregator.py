@@ -315,6 +315,44 @@ class Aggregator:
             if rec.session_id == session_id
         ]
 
+    def load_full_session_turns(
+        self, session_id: str
+    ) -> list[tuple[datetime, UsageRecord, float]]:
+        """Re-parse the JSONL file for a session and return every turn.
+
+        Slower than `turns_for_session` but works regardless of the 8-day
+        archive — useful for the detail screen of older sessions whose
+        per-turn data has aged out.
+        """
+        from pathlib import Path
+        from .parser import parse_session_line
+        from .paths import PROJECTS_DIR
+
+        sess = self.sessions.get(session_id)
+        if sess is None:
+            return []
+        path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
+        if not path.is_file():
+            return []
+        try:
+            text = path.read_text()
+        except OSError:
+            return []
+        turns: list[tuple[datetime, UsageRecord, float]] = []
+        for line in text.splitlines():
+            rec = parse_session_line(line, sess.project_slug)
+            if rec is None:
+                continue
+            cost = self.pricing.for_model(rec.model).cost(rec.raw_usage)
+            ts = (
+                rec.ts
+                if rec.ts.tzinfo
+                else rec.ts.replace(tzinfo=timezone.utc)
+            )
+            turns.append((ts, rec, cost))
+        turns.sort(key=lambda x: x[0])
+        return turns
+
     def auto_detect_limits_p90(self) -> tuple[int, float] | None:
         """Analyze the 8-day window and return (P90 token limit, P90 cost
         limit) computed across historical 5h blocks. Used by --plan auto.
