@@ -102,9 +102,10 @@ def _context_limit_for(model: str, observed_max: int = 0) -> int:
 def _ctx_cell(used: int, limit: int) -> Text:
     """Render '████░░░░ 22%' as a Text cell for DataTable.
 
-    Bar uses unstyled solid/light blocks so the contrast survives the
-    inverted style applied to the selected row in DataTable. Color is
-    applied only to the percentage suffix (red/yellow/green).
+    Filled blocks use the bar color as BOTH foreground and background so
+    the bar is visible even when DataTable inverts foreground on the
+    selected row (bg color survives the inversion). Empty blocks use a
+    dim '░'. Percentage suffix is colored separately.
     """
     if limit <= 0 or used <= 0:
         return Text("-", style="dim")
@@ -112,16 +113,16 @@ def _ctx_cell(used: int, limit: int) -> Text:
     bar_w = 8
     filled = min(int(round(min(pct, 100.0) / 100 * bar_w)), bar_w)
     if pct < 60:
-        pct_style = "green"
+        color = "green"
     elif pct < 85:
-        pct_style = "yellow"
+        color = "yellow"
     else:
-        pct_style = "red"
+        color = "red"
     cell = Text()
-    cell.append("█" * filled)
-    cell.append("░" * (bar_w - filled))
+    cell.append("█" * filled, style=f"{color} on {color}")
+    cell.append("░" * (bar_w - filled), style="grey50")
     cell.append(" ")
-    cell.append(f"{pct:.0f}%", style=pct_style)
+    cell.append(f"{pct:.0f}%", style=color)
     return cell
 
 
