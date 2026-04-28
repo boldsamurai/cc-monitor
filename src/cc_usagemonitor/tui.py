@@ -42,6 +42,28 @@ def _fmt_datetime(ts: datetime | None) -> str:
     return ts.astimezone().strftime("%d-%m-%Y %H:%M")
 
 
+def _fmt_duration(start: datetime | None, end: datetime | None) -> str:
+    if start is None or end is None:
+        return "-"
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    total_s = int((end - start).total_seconds())
+    if total_s < 0:
+        return "-"
+    if total_s < 60:
+        return f"{total_s}s"
+    if total_s < 3600:
+        return f"{total_s // 60}m"
+    if total_s < 86400:
+        h, m = divmod(total_s // 60, 60)
+        return f"{h}h {m}m" if m else f"{h}h"
+    d, rem = divmod(total_s, 86400)
+    h = rem // 3600
+    return f"{d}d {h}h" if h else f"{d}d"
+
+
 def _human(n: int) -> str:
     """Compact integer formatting: 1234 -> 1.2K, 1_234_567 -> 1.23M, etc."""
     if n < 1_000:
@@ -195,7 +217,9 @@ class UsageMonitorApp(App):
         ("In", "in"),
         ("Out", "out"),
         ("CacheR", "cache_r"),
-        ("Agent%", "agent"),
+        ("Cache%", "cache_pct"),
+        ("$/turn", "per_turn"),
+        ("Duration", "dur"),
         ("Cost", "cost"),
         ("Turns", "turns"),
     ]
@@ -361,11 +385,14 @@ class UsageMonitorApp(App):
             reverse=True,
         )
         for s in sorted_sessions:
-            agent_pct = (
-                s.sums_from_agents.cost_usd / s.sums.cost_usd * 100
-                if s.sums.cost_usd > 0
-                else 0.0
+            total_in = (
+                s.sums.cache_read
+                + s.sums.input
+                + s.sums.cache_write_5m
+                + s.sums.cache_write_1h
             )
+            cache_pct = (s.sums.cache_read / total_in * 100) if total_in else 0.0
+            per_turn = (s.sums.cost_usd / s.sums.turns) if s.sums.turns else 0.0
             project_name = decode_project_slug(s.project_slug)
             cells = (
                 s.session_id[:8],
@@ -374,7 +401,9 @@ class UsageMonitorApp(App):
                 _fmt_int(s.sums.input),
                 _fmt_int(s.sums.output),
                 _fmt_int(s.sums.cache_read),
-                f"{agent_pct:.1f}%",
+                f"{cache_pct:.1f}%",
+                f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}",
+                _fmt_duration(s.first_seen, s.last_seen),
                 _fmt_usd(s.sums.cost_usd),
                 str(s.sums.turns),
             )
