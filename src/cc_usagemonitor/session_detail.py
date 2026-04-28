@@ -55,9 +55,8 @@ class SessionDetailScreen(Screen):
 
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
-        Binding("q", "app.pop_screen", "Back"),
-        Binding("c", "copy_session_id", "Copy session ID"),
-        Binding("p", "copy_project_path", "Copy project path"),
+        Binding("1", "copy_session_id", "Copy session ID"),
+        Binding("2", "copy_project_path", "Copy project path"),
     ]
 
     CSS = """
@@ -85,8 +84,8 @@ class SessionDetailScreen(Screen):
         with VerticalScroll():
             yield Static(self._build_content(), id="detail-body")
         yield Static(
-            "[b]Esc[/b] / [b]q[/b] back   ·   "
-            "[b]c[/b] copy session ID   ·   [b]p[/b] copy project path",
+            "[b]Esc[/b] back   ·   "
+            "[b]1[/b] copy session ID   ·   [b]2[/b] copy project path",
             id="detail-footer",
         )
 
