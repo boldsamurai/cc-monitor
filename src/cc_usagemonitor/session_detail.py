@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
@@ -134,7 +134,7 @@ class SessionDetailScreen(Screen):
     }
     #usage-table, #files-table {
         height: auto;
-        max-height: 20;
+        max-height: 25;
         background: $panel;
     }
     .usage-hint {
@@ -144,6 +144,18 @@ class SessionDetailScreen(Screen):
     .usage-section-heading {
         padding: 1 2 0 2;
         text-style: bold underline;
+    }
+    /* Spans table is wider — 8 columns vs files' 3 — so split 60/40. */
+    #usage-row {
+        height: auto;
+    }
+    .usage-col-spans {
+        width: 3fr;
+        height: auto;
+    }
+    .usage-col-files {
+        width: 2fr;
+        height: auto;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -203,40 +215,47 @@ class SessionDetailScreen(Screen):
                 # use the hand-registered theme so canvas matches widget bg.
                 with TabbedContent(id="charts-tabs"):
                     with TabPane("Usage [1]", id="tab-usage"):
-                        yield Static(
-                            "Skill / Agent invocations",
-                            classes="usage-section-heading",
-                        )
-                        usage_table = DataTable(
-                            id="usage-table", cursor_type="row"
-                        )
-                        usage_table.add_columns(
-                            "Time", "Type", "Name",
-                            "Duration", "Tokens", "Cost",
-                            "% session", "% 5h",
-                        )
-                        yield usage_table
-                        yield Static(
-                            "",
-                            id="usage-empty",
-                            classes="usage-hint",
-                        )
-                        yield Static(
-                            "Files read",
-                            classes="usage-section-heading",
-                        )
-                        files_table = DataTable(
-                            id="files-table", cursor_type="row"
-                        )
-                        files_table.add_columns(
-                            "File", "Reads", "Tokens (~est)",
-                        )
-                        yield files_table
-                        yield Static(
-                            "",
-                            id="files-empty",
-                            classes="usage-hint",
-                        )
+                        # Two columns side by side: spans on the left
+                        # (wider — 8 columns vs files' 3), files on the
+                        # right. Each column has its own heading + table
+                        # + empty-state hint.
+                        with Horizontal(id="usage-row"):
+                            with Vertical(classes="usage-col-spans"):
+                                yield Static(
+                                    "Skill / Agent invocations",
+                                    classes="usage-section-heading",
+                                )
+                                usage_table = DataTable(
+                                    id="usage-table", cursor_type="row"
+                                )
+                                usage_table.add_columns(
+                                    "Time", "Type", "Name",
+                                    "Duration", "Tokens", "Cost",
+                                    "% session", "% 5h",
+                                )
+                                yield usage_table
+                                yield Static(
+                                    "",
+                                    id="usage-empty",
+                                    classes="usage-hint",
+                                )
+                            with Vertical(classes="usage-col-files"):
+                                yield Static(
+                                    "Files read",
+                                    classes="usage-section-heading",
+                                )
+                                files_table = DataTable(
+                                    id="files-table", cursor_type="row"
+                                )
+                                files_table.add_columns(
+                                    "File", "Reads", "Tokens (~est)",
+                                )
+                                yield files_table
+                                yield Static(
+                                    "",
+                                    id="files-empty",
+                                    classes="usage-hint",
+                                )
                     with TabPane("Time [2]", id="tab-time"):
                         yield self._make_plot("chart-context-time")
                         yield self._make_plot("chart-cost-time")
