@@ -685,6 +685,10 @@ class SessionDetailScreen(Screen):
             display = fp
             if project_root and fp.startswith(project_root + "/"):
                 display = fp[len(project_root) + 1:]
+            # Truncate from the start so the filename + immediate parent
+            # always stay visible — that's the actionable part.
+            if len(display) > 60:
+                display = "…" + display[-59:]
             tokens = stats["tokens_est"]
             tokens_str = (
                 f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
