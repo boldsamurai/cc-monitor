@@ -1,0 +1,41 @@
+{
+  "_comment": "Prices per 1M tokens in USD. Update as Anthropic publishes new pricing.",
+  "_source": "https://www.anthropic.com/pricing",
+  "models": {
+    "claude-opus-4-7": {
+      "input": 15.00,
+      "output": 75.00,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30.00,
+      "cache_read": 1.50
+    },
+    "claude-opus-4-6": {
+      "input": 15.00,
+      "output": 75.00,
+      "cache_write_5m": 18.75,
+      "cache_write_1h": 30.00,
+      "cache_read": 1.50
+    },
+    "claude-sonnet-4-6": {
+      "input": 3.00,
+      "output": 15.00,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6.00,
+      "cache_read": 0.30
+    },
+    "claude-haiku-4-5": {
+      "input": 1.00,
+      "output": 5.00,
+      "cache_write_5m": 1.25,
+      "cache_write_1h": 2.00,
+      "cache_read": 0.10
+    },
+    "_default": {
+      "input": 3.00,
+      "output": 15.00,
+      "cache_write_5m": 3.75,
+      "cache_write_1h": 6.00,
+      "cache_read": 0.30
+    }
+  }
+}
