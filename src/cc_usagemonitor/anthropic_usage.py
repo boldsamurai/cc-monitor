@@ -35,6 +35,12 @@ API_PATH = "/api/oauth/usage"
 API_TIMEOUT = 5.0
 API_BETA_HEADER = "oauth-2025-04-20"
 
+# Anthropic applies stricter rate-limit buckets to non-Claude-Code user
+# agents. Sending 'claude-code/<version>' lands us in the same bucket as
+# the official client and avoids spurious 429s. See
+# github.com/anthropics/claude-code/issues/30930#issuecomment by @fazxes.
+_DEFAULT_CC_VERSION = "2.1.80"
+
 CACHE_TTL_SUCCESS_S = 120  # 2 min: keeps API hits well under any sane rate limit
 CACHE_TTL_FAILURE_S = 15
 CACHE_TTL_FAILURE_MAX_S = 300  # cap exponential backoff at 5 minutes
@@ -260,7 +266,7 @@ def fetch_usage(access_token: str) -> tuple[UsageData | None, str | None, float 
         headers={
             "Authorization": f"Bearer {access_token}",
             "anthropic-beta": API_BETA_HEADER,
-            "User-Agent": "cc-usagemonitor/0.1",
+            "User-Agent": f"claude-code/{_claude_code_version()}",
             "Accept": "application/json",
         },
         method="GET",
@@ -293,6 +299,26 @@ def fetch_usage(access_token: str) -> tuple[UsageData | None, str | None, float 
         None,
         None,
     )
+
+
+def _claude_code_version() -> str:
+    """Try to get the installed Claude Code version. Falls back to a known-
+    recent version so we still land in the right rate-limit bucket."""
+    try:
+        result = subprocess.run(
+            ["claude", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+        if result.returncode == 0:
+            # Output looks like '2.1.80 (Claude Code)' or '2.1.80'.
+            first = result.stdout.strip().split()[0]
+            if first and first[0].isdigit():
+                return first
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, IndexError):
+        pass
+    return _DEFAULT_CC_VERSION
 
 
 def _retry_after(headers: Any) -> float | None:
