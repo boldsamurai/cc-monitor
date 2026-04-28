@@ -35,7 +35,7 @@ API_PATH = "/api/oauth/usage"
 API_TIMEOUT = 5.0
 API_BETA_HEADER = "oauth-2025-04-20"
 
-CACHE_TTL_SUCCESS_S = 60
+CACHE_TTL_SUCCESS_S = 120  # 2 min: keeps API hits well under any sane rate limit
 CACHE_TTL_FAILURE_S = 15
 CACHE_TTL_FAILURE_MAX_S = 300  # cap exponential backoff at 5 minutes
 KEYCHAIN_BACKOFF_S = 60
