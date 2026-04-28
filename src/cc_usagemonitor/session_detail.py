@@ -178,7 +178,7 @@ class SessionDetailScreen(Screen):
     ) -> None:
         ctx_series: list[float] = []
         cost_series: list[float] = []
-        token_series: list[int] = []
+        token_series: list[float] = []
         for _ts, rec, cost in turns:
             ctx = (
                 rec.input_tokens
@@ -188,18 +188,43 @@ class SessionDetailScreen(Screen):
             )
             ctx_series.append(ctx / 1000.0)  # K tokens
             cost_series.append(cost)
-            token_series.append((ctx + rec.output_tokens) / 1000)
+            token_series.append((ctx + rec.output_tokens) / 1000.0)
 
-        x_turns = list(range(1, len(turns) + 1))
+        n = len(turns)
+        x_turns = list(range(1, n + 1))
+        # Force integer x-ticks for both line charts (the default float
+        # ticks like '156.2' make no sense for a turn counter).
+        tick_positions = sorted(
+            {1, max(1, n // 4), max(1, n // 2), max(1, 3 * n // 4), n}
+        )
+        tick_labels = [str(p) for p in tick_positions]
+
+        # Pick a canvas color that matches Textual's $boost surface so the
+        # plot doesn't look detached from the rest of the panel. Falls
+        # back to a sensible Catppuccin-Mocha-like dark slate if the
+        # active theme doesn't expose 'boost'.
+        try:
+            boost = self.app.theme_variables.get("boost", "#181825")
+        except Exception:
+            boost = "#181825"
+
+        def _style(p) -> None:
+            p.theme("clear")
+            try:
+                p.canvas_color(boost)
+                p.axes_color(boost)
+            except Exception:
+                pass
 
         # Context size line chart.
         ctx_plot = self.query_one("#chart-context", PlotextPlot)
         p = ctx_plot.plt
         p.clear_data()
-        p.theme("clear")  # transparent canvas — picks up Textual bg
+        _style(p)
         p.plot(x_turns, ctx_series, marker="braille", color="cyan")
         p.title("Context size per turn (K tokens)")
         p.xlabel("turn")
+        p.xticks(tick_positions, tick_labels)
 
         # Cumulative cost line chart.
         cumulative: list[float] = []
@@ -210,18 +235,19 @@ class SessionDetailScreen(Screen):
         cost_plot = self.query_one("#chart-cost", PlotextPlot)
         p = cost_plot.plt
         p.clear_data()
-        p.theme("clear")
+        _style(p)
         p.plot(x_turns, cumulative, marker="braille", color="green")
         p.title("Cumulative cost ($) over turns")
         p.xlabel("turn")
+        p.xticks(tick_positions, tick_labels)
 
-        # Tokens per turn histogram.
+        # Tokens per turn histogram. Title now spells out what bars mean.
         hist_plot = self.query_one("#chart-hist", PlotextPlot)
         p = hist_plot.plt
         p.clear_data()
-        p.theme("clear")
+        _style(p)
         p.hist(token_series, bins=20, color="orange")
-        p.title("Distribution of tokens per turn (K tokens)")
+        p.title("How many turns landed in each token-size bucket")
         p.xlabel("K tokens per turn")
 
     def action_copy_session_id(self) -> None:
