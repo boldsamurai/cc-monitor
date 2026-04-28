@@ -18,14 +18,11 @@ from textual_plotext import PlotextPlot
 from .aggregator import Aggregator, SessionState, TokenSums
 from .project_slug import decode_project_path, decode_project_slug
 
-# Register a fixed plotext theme matching Textual's $panel-lighten-1
-# (#343F49). textual-plotext's "auto" theme derives canvas color from
-# $surface (#1E1E1E) which renders very close to terminal black; the
-# lighter shade is the smallest bump that's actually visible while
-# still feeling like a panel and not a popup. A hardcoded RGB makes
-# the match exact regardless of which Textual theme is active (all
-# 20 built-in themes resolve $panel to the same hex anyway).
-_PANEL_RGB: tuple[int, int, int] = (52, 63, 73)  # #343F49
+# Register a fixed plotext theme matching Textual's $panel (#242F38).
+# All surface widgets in the detail screen (info panel, charts, tabs,
+# footer) are painted with the same $panel color so the whole screen
+# reads as one unified panel rather than a patchwork of shades.
+_PANEL_RGB: tuple[int, int, int] = (36, 47, 56)  # #242F38
 _PLOTEXT_THEME_NAME = "cc-monitor-panel"
 try:
     from plotext._dict import themes as _plotext_themes
@@ -104,11 +101,14 @@ class SessionDetailScreen(Screen):
     ]
 
     CSS = """
-    SessionDetailScreen { background: $background; }
+    /* Whole screen painted with $panel — one unified surface across the
+       info panel, charts, tabs, and footer so nothing looks like a
+       sticker glued onto another shade. */
+    SessionDetailScreen { background: $panel; }
     #detail-top {
         height: auto;
         padding: 1 2 0 2;
-        background: $boost;
+        background: $panel;
     }
     #detail-top > Static {
         width: 1fr;
@@ -118,15 +118,18 @@ class SessionDetailScreen(Screen):
     .chart-plot {
         height: 14;
         margin: 1 2;
-        /* Solid color (no alpha) so the registered plotext theme can
-           match it exactly via _PANEL_RGB. */
-        background: $panel-lighten-1;
+        background: $panel;
     }
     #charts-tabs {
         height: auto;
+        background: $panel;
+    }
+    #charts-tabs Tabs {
+        background: $panel;
     }
     #charts-tabs TabPane {
         padding: 0;
+        background: $panel;
     }
     #section-skills, #section-agents {
         padding: 0 2;
