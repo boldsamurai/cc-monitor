@@ -237,6 +237,14 @@ class UsageMonitorApp(App):
         # The newly-shown tab may be stale (we only refresh the active tab on
         # the timer). Force a refresh now so the user sees current numbers.
         self._refresh_view()
+        # Move keyboard focus into the table of the newly-activated tab so
+        # arrow keys keep working — without this, switching with 1-4 leaves
+        # focus on the previous (now hidden) table and the user has to Tab.
+        active = event.tabbed_content.active
+        try:
+            self.query_one(f"#t-{active}", DataTable).focus()
+        except Exception:
+            pass
 
     SESSIONS_COLS = [
         ("Session", "sid"),
