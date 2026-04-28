@@ -18,6 +18,30 @@ from textual_plotext import PlotextPlot
 from .aggregator import Aggregator, SessionState, TokenSums
 from .project_slug import decode_project_path, decode_project_slug
 
+# Register a fixed plotext theme that matches Textual's $panel color
+# (solid #242F38). textual-plotext's "auto" theme derives canvas color
+# from $surface and re-applies on every render, but the result rendered
+# visibly different from the surrounding panel for reasons that aren't
+# worth chasing further. A hardcoded theme with the same RGB as our
+# widget CSS background gives a guaranteed seamless match.
+_PANEL_RGB: tuple[int, int, int] = (36, 47, 56)
+_PLOTEXT_THEME_NAME = "cc-monitor-panel"
+try:
+    from plotext._dict import themes as _plotext_themes
+    if _PLOTEXT_THEME_NAME not in _plotext_themes:
+        _plotext_themes[_PLOTEXT_THEME_NAME] = (
+            _PANEL_RGB,        # canvas color
+            _PANEL_RGB,        # axes color
+            (224, 224, 224),   # ticks/foreground
+            "default",         # default style
+            [                  # data series color cycle (plotext _sequence)
+                (0, 130, 200), (60, 180, 75), (230, 25, 75), (255, 225, 25),
+                (245, 130, 48), (145, 30, 180), (70, 240, 240), (240, 50, 230),
+            ],
+        )
+except Exception:
+    pass
+
 
 def _fmt_int(n: int) -> str:
     return f"{n:,}"
@@ -88,7 +112,9 @@ class SessionDetailScreen(Screen):
     .chart-plot {
         height: 14;
         margin: 1 2;
-        background: $boost;
+        /* Solid color (no alpha) so the registered plotext theme can
+           match it exactly via _PANEL_RGB. */
+        background: $panel;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -110,15 +136,16 @@ class SessionDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         sess = self.aggregator.sessions.get(self.session_id)
-        # Fast path: the 8-day rolling archive. If the session is older,
-        # re-read its JSONL from disk so the user always gets charts.
+        # Always re-read the JSONL from disk for charts. The 8-day rolling
+        # archive only holds the fresh tail of long sessions (e.g. a session
+        # with 4958 assistant turns spread over 2 weeks shows up as ~12
+        # records in the archive), so trusting it here would silently
+        # truncate the charts.
         turns = (
-            self.aggregator.turns_for_session(self.session_id)
+            self.aggregator.load_full_session_turns(self.session_id)
             if sess
             else []
         )
-        if sess and not turns:
-            turns = self.aggregator.load_full_session_turns(self.session_id)
 
         with VerticalScroll():
             # Top row: Session info, Totals, By model — three columns
@@ -130,22 +157,19 @@ class SessionDetailScreen(Screen):
                 yield Static(self._build_models_block(sess), id="detail-models")
 
             if turns:
-                # theme='clear' makes plotext emit no canvas background, so
-                # the widget's $boost CSS bg shows through. The auto theme
-                # paints canvas cells with an explicit color that ends up
-                # visibly darker than the surrounding panel — letting the
-                # CSS show through is the only way to get a seamless match.
+                # Use our hand-registered theme so plotext's canvas color
+                # matches the widget CSS background exactly.
                 ctx_plot = PlotextPlot(classes="chart-plot")
                 ctx_plot.id = "chart-context"
-                ctx_plot.theme = "clear"
+                ctx_plot.theme = _PLOTEXT_THEME_NAME
                 yield ctx_plot
                 cost_plot = PlotextPlot(classes="chart-plot")
                 cost_plot.id = "chart-cost"
-                cost_plot.theme = "clear"
+                cost_plot.theme = _PLOTEXT_THEME_NAME
                 yield cost_plot
                 hist_plot = PlotextPlot(classes="chart-plot")
                 hist_plot.id = "chart-hist"
-                hist_plot.theme = "clear"
+                hist_plot.theme = _PLOTEXT_THEME_NAME
                 yield hist_plot
             else:
                 yield Static(
@@ -183,9 +207,7 @@ class SessionDetailScreen(Screen):
         sess = self.aggregator.sessions.get(self.session_id)
         if sess is None:
             return
-        turns = self.aggregator.turns_for_session(self.session_id)
-        if not turns:
-            turns = self.aggregator.load_full_session_turns(self.session_id)
+        turns = self.aggregator.load_full_session_turns(self.session_id)
         if not turns:
             return
         self._populate_charts(turns)
@@ -243,16 +265,15 @@ class SessionDetailScreen(Screen):
         p.xlabel("turn")
         p.xticks(tick_positions, tick_labels)
 
-        # Per-turn cost (chronological). Pairs naturally with the cumulative
-        # cost above — the user can see WHEN spend happened, not just that it
-        # accumulated. Spikes here are the ones worth investigating.
-        cost_chart = self.query_one("#chart-hist", PlotextPlot)
-        p = cost_chart.plt
+        # Tokens-per-turn distribution (histogram). Reverted to the
+        # original chart on the user's request — bins of token-size
+        # show how many turns landed in each magnitude bucket.
+        hist_plot = self.query_one("#chart-hist", PlotextPlot)
+        p = hist_plot.plt
         p.clear_data()
-        p.plot(x_turns, cost_series, marker="braille", color="orange")
-        p.title("Cost per turn ($)")
-        p.xlabel("turn")
-        p.xticks(tick_positions, tick_labels)
+        p.hist(token_series, bins=20, color="orange")
+        p.title("Tokens-per-turn distribution")
+        p.xlabel("K tokens per turn")
 
     def action_copy_session_id(self) -> None:
         try:
