@@ -140,5 +140,15 @@ def parse_hook_event_line(line: str) -> HookEvent | None:
 
 
 def project_slug_from_path(path: Path) -> str:
-    """Given .../projects/<slug>/<session>.jsonl, return <slug>."""
+    """Given .../projects/<slug>/<session>.jsonl, return <slug>.
+
+    Subagent JSONLs live one (or more) directories deeper at
+    .../projects/<slug>/<session_id>/subagents/agent-<id>.jsonl —
+    walk up to the parent of <slug> to find the right segment.
+    """
+    parts = path.parts
+    if "projects" in parts:
+        idx = parts.index("projects")
+        if idx + 1 < len(parts):
+            return parts[idx + 1]
     return path.parent.name
