@@ -95,8 +95,8 @@ class SessionDetailScreen(Screen):
         # exit the program with muscle memory from the table view.
         Binding("q", "app.pop_screen", "Back"),
         # Digit keys switch chart tabs (mirrors the main view's pattern).
-        Binding("1", "show_tab('tab-turn')", "Turn"),
-        Binding("2", "show_tab('tab-time')", "Time"),
+        Binding("1", "show_tab('tab-time')", "Time"),
+        Binding("2", "show_tab('tab-turn')", "Turn"),
         Binding("3", "show_tab('tab-dist')", "Distribution"),
         # Copy actions moved to function keys so the digits stay free.
         Binding("f1", "copy_session_id", "Copy session ID"),
@@ -134,10 +134,17 @@ class SessionDetailScreen(Screen):
     #detail-footer {
         height: 1;
         dock: bottom;
-        padding: 0 1;
         background: $panel;
         color: $text;
-        content-align: left middle;
+    }
+    #footer-left {
+        width: auto;
+        padding: 0 1;
+    }
+    #footer-right {
+        width: 1fr;
+        padding: 0 1;
+        text-align: right;
     }
     """
 
@@ -178,14 +185,14 @@ class SessionDetailScreen(Screen):
                 # Charts grouped by what their x-axis depends on. All plots
                 # use the hand-registered theme so canvas matches widget bg.
                 with TabbedContent(id="charts-tabs"):
-                    with TabPane("Turn", id="tab-turn"):
-                        yield self._make_plot("chart-context")
-                        yield self._make_plot("chart-cost")
-                    with TabPane("Time", id="tab-time"):
+                    with TabPane("Time [1]", id="tab-time"):
                         yield self._make_plot("chart-context-time")
                         yield self._make_plot("chart-cost-time")
                         yield self._make_plot("chart-turns-time")
-                    with TabPane("Distribution", id="tab-dist"):
+                    with TabPane("Turn [2]", id="tab-turn"):
+                        yield self._make_plot("chart-context")
+                        yield self._make_plot("chart-cost")
+                    with TabPane("Distribution [3]", id="tab-dist"):
                         yield self._make_plot("chart-hist")
             else:
                 yield Static(
@@ -213,12 +220,16 @@ class SessionDetailScreen(Screen):
                     id="section-agents",
                 )
 
-        yield Static(
-            "[b]Esc[/b] back   ·   "
-            "[b]1[/b] Turn   ·   [b]2[/b] Time   ·   [b]3[/b] Distribution"
-            "   ·   [b]F1[/b] copy session ID   ·   [b]F2[/b] copy project path",
-            id="detail-footer",
-        )
+        with Horizontal(id="detail-footer"):
+            yield Static(
+                "[b]1[/b] Time   [b]2[/b] Turn   [b]3[/b] Distribution",
+                id="footer-left",
+            )
+            yield Static(
+                "[b]Esc[/b] back   "
+                "[b]F1[/b] copy session ID   [b]F2[/b] copy project path",
+                id="footer-right",
+            )
 
     def on_mount(self) -> None:
         sess = self.aggregator.sessions.get(self.session_id)
