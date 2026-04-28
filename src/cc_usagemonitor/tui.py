@@ -461,7 +461,11 @@ class UsageMonitorApp(App):
                 m.cost_usd += sums.cost_usd
                 m.turns += sums.turns
         rows: list[tuple[str, tuple[str, ...]]] = []
-        for model, sums in sorted(per_model.items()):
+        # Most-used first (by turn count). Tie-break alphabetically so order
+        # is deterministic when two models have identical turns.
+        for model, sums in sorted(
+            per_model.items(), key=lambda kv: (-kv[1].turns, kv[0])
+        ):
             cells = (
                 model or "(unknown)",
                 _fmt_int(sums.input),

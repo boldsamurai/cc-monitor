@@ -1,10 +1,27 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
+
+
+_MODEL_DATE_SUFFIX = re.compile(r"-\d{8}$")
+
+
+def normalize_model_name(model: str) -> str:
+    """Strip the trailing -YYYYMMDD snapshot stamp.
+
+    Anthropic exposes both family aliases (claude-sonnet-4-6) and dated
+    snapshots (claude-sonnet-4-5-20250929). Claude Code records whichever
+    one was active for that turn, so the same family ends up in multiple
+    rows. Normalize to the alias for aggregation.
+    """
+    if not model:
+        return model
+    return _MODEL_DATE_SUFFIX.sub("", model)
 
 
 @dataclass
@@ -79,7 +96,7 @@ def parse_session_line(line: str, project_slug: str) -> UsageRecord | None:
         ts=ts,
         session_id=d.get("sessionId", ""),
         project_slug=project_slug,
-        model=msg.get("model", ""),
+        model=normalize_model_name(msg.get("model", "")),
         is_sidechain=bool(d.get("isSidechain")),
         input_tokens=usage.get("input_tokens", 0),
         output_tokens=usage.get("output_tokens", 0),
