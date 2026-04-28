@@ -66,11 +66,11 @@ def _fmt_duration(start: datetime | None, end: datetime | None) -> str:
 
 
 def _human(n: int) -> str:
-    """Compact integer formatting: 1234 -> 1.2K, 1_234_567 -> 1.23M, etc."""
+    """Compact integer formatting: 1234 -> 1.23K, 1_234_567 -> 1.23M, etc."""
     if n < 1_000:
         return f"{n:,}"
     if n < 1_000_000:
-        return f"{n/1_000:.1f}K"
+        return f"{n/1_000:.2f}K"
     if n < 1_000_000_000:
         return f"{n/1_000_000:.2f}M"
     if n < 1_000_000_000_000:
@@ -437,12 +437,12 @@ class UsageMonitorApp(App):
                 _fmt_datetime(s.last_seen),
                 _fmt_duration(s.first_seen, s.last_seen),
                 _fmt_usd(s.sums.cost_usd),
-                str(s.sums.turns),
+                _human(s.sums.turns),
                 f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}",
-                _fmt_int(s.sums.input),
-                _fmt_int(s.sums.output),
-                _fmt_int(s.sums.cache_read),
-                _fmt_int(s.sums.cache_write_5m + s.sums.cache_write_1h),
+                _human(s.sums.input),
+                _human(s.sums.output),
+                _human(s.sums.cache_read),
+                _human(s.sums.cache_write_5m + s.sums.cache_write_1h),
                 f"{cache_pct:.1f}%",
             )
             rows.append((s.session_id, cells))
@@ -468,12 +468,12 @@ class UsageMonitorApp(App):
         ):
             cells = (
                 model or "(unknown)",
-                _fmt_int(sums.input),
-                _fmt_int(sums.output),
-                _fmt_int(sums.cache_read),
-                _fmt_int(sums.cache_write_5m + sums.cache_write_1h),
+                _human(sums.input),
+                _human(sums.output),
+                _human(sums.cache_read),
+                _human(sums.cache_write_5m + sums.cache_write_1h),
                 _fmt_usd(sums.cost_usd),
-                str(sums.turns),
+                _human(sums.turns),
             )
             rows.append((model or "(unknown)", cells))
         self._apply_rows("#t-models", self.MODELS_COLS, rows)
@@ -483,11 +483,11 @@ class UsageMonitorApp(App):
         for name, sums in sorted(self.aggregator.by_skill.items()):
             cells = (
                 name,
-                _fmt_int(sums.input),
-                _fmt_int(sums.output),
-                _fmt_int(sums.cache_read),
+                _human(sums.input),
+                _human(sums.output),
+                _human(sums.cache_read),
                 _fmt_usd(sums.cost_usd),
-                str(sums.turns),
+                _human(sums.turns),
             )
             rows.append((name, cells))
         self._apply_rows("#t-skills", self.SKILLS_COLS, rows)
@@ -497,11 +497,11 @@ class UsageMonitorApp(App):
         for name, sums in sorted(self.aggregator.by_agent.items()):
             cells = (
                 name,
-                _fmt_int(sums.input),
-                _fmt_int(sums.output),
-                _fmt_int(sums.cache_read),
+                _human(sums.input),
+                _human(sums.output),
+                _human(sums.cache_read),
                 _fmt_usd(sums.cost_usd),
-                str(sums.turns),
+                _human(sums.turns),
             )
             rows.append((name, cells))
         self._apply_rows("#t-agents", self.AGENTS_COLS, rows)
