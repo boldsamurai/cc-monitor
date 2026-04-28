@@ -188,7 +188,6 @@ class SessionDetailScreen(Screen):
                     with TabPane("Time [1]", id="tab-time"):
                         yield self._make_plot("chart-context-time")
                         yield self._make_plot("chart-cost-time")
-                        yield self._make_plot("chart-turns-time")
                     with TabPane("Turn [2]", id="tab-turn"):
                         yield self._make_plot("chart-context")
                         yield self._make_plot("chart-cost")
@@ -335,16 +334,6 @@ class SessionDetailScreen(Screen):
         p.plot(times_secs, cumulative, marker="braille", color="green")
         p.title("Cumulative cost over time ($)")
         p.xlabel("time")
-        p.xticks(time_tick_secs, time_tick_labels)
-
-        # Cumulative turn count over time. Slope = pace of conversation;
-        # flat segments are gaps, steep segments are bursts.
-        p = self.query_one("#chart-turns-time", PlotextPlot).plt
-        p.clear_data()
-        p.plot(times_secs, x_turns, marker="braille", color="magenta")
-        p.title("Turns over time")
-        p.xlabel("time")
-        p.ylabel("# of turns")
         p.xticks(time_tick_secs, time_tick_labels)
 
         # ---- Distribution tab ----
