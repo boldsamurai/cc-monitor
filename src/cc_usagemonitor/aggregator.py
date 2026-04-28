@@ -76,6 +76,9 @@ class SessionState:
     # (Anthropic returns 'claude-opus-4-7' even when the user is running
     # the 1M variant locally configured as 'opus[1m]').
     max_context_tokens: int = 0
+    # Per-session breakdown for skill/agent calls correlated via hooks.
+    skills: dict[str, TokenSums] = field(default_factory=dict)
+    agents: dict[str, TokenSums] = field(default_factory=dict)
 
 
 @dataclass
@@ -278,13 +281,16 @@ class Aggregator:
             return
         span = queue.popleft()
         span.sums.add(rec, cost)
+        sess = self.sessions.get(rec.session_id)
         if span.tool == "Skill" and span.name:
             self.by_skill[span.name].add(rec, cost)
+            if sess is not None:
+                sess.skills.setdefault(span.name, TokenSums()).add(rec, cost)
         elif span.tool == "Agent" and span.name:
             self.by_agent[span.name].add(rec, cost)
-            sess = self.sessions.get(rec.session_id)
             if sess is not None:
                 sess.sums_from_agents.add(rec, cost)
+                sess.agents.setdefault(span.name, TokenSums()).add(rec, cost)
 
     # ----- read API for TUI -----
 
