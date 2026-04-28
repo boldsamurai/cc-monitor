@@ -397,7 +397,9 @@ class UsageMonitorApp(App):
         background: $boost;
         border-bottom: solid $primary;
     }
-    TabbedContent { height: 1fr; }
+    TabbedContent { height: 1fr; background: $boost; }
+    TabbedContent Tabs { background: $boost; }
+    TabbedContent TabPane { background: $boost; }
     DataTable { height: 1fr; }
     #t-models { height: 1fr; }
     #models-charts { height: 50%; }
