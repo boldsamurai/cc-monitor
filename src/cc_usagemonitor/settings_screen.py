@@ -14,7 +14,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, Input, RadioButton, RadioSet, Static
+from textual.widgets import Button, RadioButton, RadioSet, Static
 
 from .config import CONFIG_FILE, load_config, save_config
 from .formatting import DATE_FORMATS, apply_config
@@ -24,11 +24,6 @@ from .logger import LOG_FILE, get_logger
 from .paths import PROJECTS_DIR
 
 log = get_logger(__name__)
-
-
-# Built-in time-zone presets shown as direct radio options. Anything
-# else goes through the Custom radio + IANA-name input.
-_TIME_ZONE_PRESETS = ["Local", "UTC"]
 
 
 class SettingsScreen(Screen):
@@ -61,10 +56,6 @@ class SettingsScreen(Screen):
     }
     RadioSet:focus {
         border: none;
-    }
-    #tz-custom-input {
-        width: 40;
-        margin: 0 0 1 0;
     }
     #hook-status-text {
         padding: 1 0;
@@ -120,19 +111,6 @@ class SettingsScreen(Screen):
                         yield RadioButton(
                             fmt, value=(fmt == current_date_fmt)
                         )
-
-                yield Static("Time zone", classes="settings-row")
-                current_tz = self._cfg.get("time_zone", "Local")
-                tz_is_custom = current_tz not in _TIME_ZONE_PRESETS
-                with RadioSet(id="tz-radio"):
-                    for tz in _TIME_ZONE_PRESETS:
-                        yield RadioButton(tz, value=(tz == current_tz))
-                    yield RadioButton("Custom", value=tz_is_custom)
-                yield Input(
-                    placeholder="IANA TZ name (e.g. Europe/Warsaw)",
-                    value=current_tz if tz_is_custom else "",
-                    id="tz-custom-input",
-                )
 
                 # ----- Hook integration -----
                 yield Static("Hook integration", classes="settings-heading")
@@ -244,44 +222,6 @@ class SettingsScreen(Screen):
             self._set_theme(label)
         elif rs_id == "date-format-radio":
             self._set_date_format(label)
-        elif rs_id == "tz-radio":
-            if label == "Custom":
-                # Read whatever's in the Input; empty stays as 'Custom'
-                # selection but doesn't apply until the user submits.
-                tz_input = self.query_one("#tz-custom-input", Input)
-                value = tz_input.value.strip()
-                if value:
-                    self._set_time_zone(value)
-            else:
-                self._set_time_zone(label)
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id != "tz-custom-input":
-            return
-        value = event.value.strip()
-        if not value:
-            return
-        # Validate via zoneinfo before persisting — invalid IANA names
-        # would degrade to local-tz fallback at render time, but it's
-        # nicer to reject here so the user knows immediately.
-        try:
-            from zoneinfo import ZoneInfo
-            ZoneInfo(value)
-        except Exception as e:
-            log.warning("rejected invalid TZ %r: %s", value, e)
-            self.app.bell()
-            return
-        # Flip the radio to Custom (in case it wasn't already) so the
-        # UI state matches the saved config.
-        try:
-            tz_radio = self.query_one("#tz-radio", RadioSet)
-            for child in tz_radio.query(RadioButton):
-                if str(child.label) == "Custom":
-                    child.value = True
-                    break
-        except Exception:
-            pass
-        self._set_time_zone(value)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn = event.button
@@ -316,11 +256,6 @@ class SettingsScreen(Screen):
             return
         apply_config(date_format=fmt)
         self._cfg["date_format"] = fmt
-        save_config(self._cfg)
-
-    def _set_time_zone(self, tz: str) -> None:
-        apply_config(time_zone=tz)
-        self._cfg["time_zone"] = tz
         save_config(self._cfg)
 
     def _refresh_hook_status(self) -> None:
