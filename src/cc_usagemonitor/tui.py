@@ -573,13 +573,10 @@ class UsageMonitorApp(App):
                 self.theme = saved_theme
             except Exception:
                 pass
-        # Push date format / time zone into the formatting module's
-        # global state so all _fmt_* helpers see the user's preferences
-        # on the very first refresh tick rather than after a reload.
-        _apply_format_config(
-            date_format=cfg.get("date_format"),
-            time_zone=cfg.get("time_zone"),
-        )
+        # Push date format into the formatting module's global state
+        # so all _fmt_* helpers see the user's preference on the very
+        # first refresh tick rather than after a reload.
+        _apply_format_config(date_format=cfg.get("date_format"))
         self.watch(self, "theme", self._on_theme_change)
 
         self._setup_tables()
