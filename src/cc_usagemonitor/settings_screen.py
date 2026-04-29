@@ -50,7 +50,18 @@ class SettingsScreen(Screen):
         text-style: bold underline;
     }
     .settings-row { height: auto; padding: 0 0 1 0; }
-    RadioSet { background: $panel; padding: 0 0 1 0; }
+    /* Default RadioSet has a heavy border that eats vertical space and
+       boxes off the panel into disconnected slabs — drop it so the
+       options just sit in the surrounding panel flow. */
+    RadioSet {
+        background: $panel;
+        border: none;
+        padding: 0 0 1 0;
+        height: auto;
+    }
+    RadioSet:focus {
+        border: none;
+    }
     #tz-custom-input {
         width: 40;
         margin: 0 0 1 0;
