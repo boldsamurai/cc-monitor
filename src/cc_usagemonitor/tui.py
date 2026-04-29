@@ -25,7 +25,7 @@ from .aggregator import Aggregator, BlockInfo, TokenSums
 from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
 from .launchers import open_file, open_in_file_manager, open_terminal_with
-from .logger import LOG_FILE, get_logger
+from .logger import LOG_DIR, LOG_FILE, get_logger
 from .pricing import PricingTable
 
 log = get_logger(__name__)
@@ -1238,9 +1238,23 @@ class UsageMonitorApp(App):
             self.notify(msg, severity="error")
 
     def action_open_log(self) -> None:
-        """Open the rotating log file in the user's default text editor."""
-        ok, msg = open_file(LOG_FILE)
-        self.notify(msg, severity="information" if ok else "warning")
+        """Spawn a new terminal tailing the log in real time.
+
+        'less +F' behaves like 'tail -f' (auto-scrolls as new entries
+        arrive) but lets the user press Ctrl-C to switch to normal less
+        mode for scrollback / search. Fallback to the default text
+        editor if no terminal emulator is available."""
+        ok, msg = open_terminal_with(
+            str(LOG_DIR), ["less", "+F", str(LOG_FILE)]
+        )
+        if ok:
+            self.notify(f"Tailing log in {msg.split()[-1]}", timeout=2)
+            return
+        # Couldn't open a terminal — fall back to xdg-open / default app.
+        ok, fallback_msg = open_file(LOG_FILE)
+        self.notify(
+            fallback_msg, severity="information" if ok else "warning"
+        )
 
     def action_open_claude_resume_last(self) -> None:
         """Projects tab only — resume the most recent session of the
