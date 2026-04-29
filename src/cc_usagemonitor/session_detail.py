@@ -16,6 +16,7 @@ from textual.widgets import DataTable, Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, SessionState, TokenSums
+from .parser import humanize_model_name
 from .launchers import open_in_file_manager, open_terminal_with
 from .project_slug import decode_project_path, decode_project_slug
 
@@ -691,7 +692,7 @@ class SessionDetailScreen(Screen):
         t.add_column("Total tokens", justify="right")
         for model, sums in sorted(sess.by_model.items(), key=lambda kv: -kv[1].turns):
             t.add_row(
-                model or "(unknown)",
+                humanize_model_name(model) or "(unknown)",
                 _fmt_int(sums.turns),
                 f"${sums.cost_usd:.4f}",
                 _fmt_int(sums.total_tokens),

@@ -21,6 +21,7 @@ from textual.widgets import DataTable, Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, SessionState, TokenSums
+from .parser import humanize_model_name
 from .launchers import open_terminal_with
 from .project_slug import decode_project_path
 from .session_detail import (
@@ -594,7 +595,7 @@ class ProjectDetailScreen(Screen):
             model_sums.items(), key=lambda kv: -kv[1].cost_usd
         ):
             t.add_row(
-                model or "(unknown)",
+                humanize_model_name(model) or "(unknown)",
                 _fmt_int(sums.turns),
                 f"${sums.cost_usd:.4f}",
             )
