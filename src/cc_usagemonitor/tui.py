@@ -557,6 +557,7 @@ class UsageMonitorApp(App):
     SESSIONS_COLS = [
         ("Session", "sid"),
         ("Project", "proj"),
+        ("Exists", "exists"),
         ("Last", "last"),
         ("Duration", "dur"),
         ("Cost", "cost"),
@@ -713,16 +714,23 @@ class UsageMonitorApp(App):
                 pass
 
     def _refresh_sessions_table(self) -> None:
-        # Sort by last_seen DESC (newest activity on top). The active session
-        # naturally stays pinned to row 0 — its last_seen ticks but it's
-        # already the largest, so the order doesn't change and cursor doesn't
-        # jump. Reorder only happens when ranking truly shifts (new session,
-        # different session becomes most-recent); _apply_rows preserves the
-        # cursor's row_key across that rebuild.
+        # Sort: existing-project sessions on top, then deleted ones, both
+        # groups internally sorted by last_seen DESC (newest first). Same
+        # convention as the Projects tab — the deleted block stays at
+        # the bottom, dimmed, but doesn't disappear.
+        from pathlib import Path
         rows: list[tuple[str, tuple[str, ...]]] = []
+        epoch = datetime.min.replace(tzinfo=timezone.utc)
         sorted_sessions = sorted(
             self.aggregator.sessions.values(),
-            key=lambda s: s.last_seen or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda s: (
+                bool(s.cwd and Path(s.cwd).is_dir())
+                or bool(
+                    decode_project_path(s.project_slug)
+                    and Path(decode_project_path(s.project_slug) or "").is_dir()
+                ),
+                s.last_seen or epoch,
+            ),
             reverse=True,
         )
         for s in sorted_sessions:
@@ -734,22 +742,41 @@ class UsageMonitorApp(App):
             )
             cache_pct = (s.sums.cache_read / total_in * 100) if total_in else 0.0
             per_turn = (s.sums.cost_usd / s.sums.turns) if s.sums.turns else 0.0
-            project_name = decode_project_slug(s.project_slug)
+            # Prefer cwd basename (ground truth) over slug guess for the
+            # project label.
+            real_path = s.cwd or decode_project_path(s.project_slug)
+            if real_path:
+                project_name = real_path.rsplit("/", 1)[-1]
+            else:
+                project_name = decode_project_slug(s.project_slug)
+            exists = bool(real_path and Path(real_path).is_dir())
             ctx_limit = _context_limit_for(s.last_context_model, s.max_context_tokens)
+            style = "" if exists else "dim"
+
+            def _styled(value):
+                if not style:
+                    return value
+                # Wrap plain string cells with dim Text. Renderable
+                # values (Text/Group from _ctx_cell) get a copy with the
+                # dim style stacked on.
+                if isinstance(value, str):
+                    return Text(value, style=style)
+                return value
             cells = (
-                s.session_id[:8],
-                project_name[-30:] if len(project_name) > 30 else project_name,
-                _fmt_datetime(s.last_seen),
-                _fmt_duration(s.first_seen, s.last_seen),
-                _fmt_usd(s.sums.cost_usd),
-                _human(s.sums.turns),
-                f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}",
+                _styled(s.session_id[:8]),
+                _styled(project_name[-30:] if len(project_name) > 30 else project_name),
+                Text("✓", style="green") if exists else Text("✗", style="red dim"),
+                _styled(_fmt_datetime(s.last_seen)),
+                _styled(_fmt_duration(s.first_seen, s.last_seen)),
+                _styled(_fmt_usd(s.sums.cost_usd)),
+                _styled(_human(s.sums.turns)),
+                _styled(f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}"),
                 _ctx_cell(s.last_context_tokens, ctx_limit),
-                _human(s.sums.input),
-                _human(s.sums.output),
-                _human(s.sums.cache_read),
-                _human(s.sums.cache_write_5m + s.sums.cache_write_1h),
-                f"{cache_pct:.1f}%",
+                _styled(_human(s.sums.input)),
+                _styled(_human(s.sums.output)),
+                _styled(_human(s.sums.cache_read)),
+                _styled(_human(s.sums.cache_write_5m + s.sums.cache_write_1h)),
+                _styled(f"{cache_pct:.1f}%"),
             )
             rows.append((s.session_id, cells))
         self._apply_rows("#t-sessions", self.SESSIONS_COLS, rows)
