@@ -165,8 +165,10 @@ class ProjectDetailScreen(Screen):
             # active tab (F3 only meaningful on Sessions). Initial value
             # matches the default Sessions tab.
             yield Static(
-                "[b]Esc[/b] back   [b]F1[/b] open   [b]F2[/b] copy path"
-                "   [b]F3[/b] copy session ID",
+                "[b]Esc[/b] back   "
+                "[b]F1[/b] open in file manager   "
+                "[b]F2[/b] copy project path   "
+                "[b]F3[/b] copy session ID",
                 id="pd-footer-right",
             )
 
@@ -583,7 +585,11 @@ class ProjectDetailScreen(Screen):
             footer = self.query_one("#pd-footer-right", Static)
         except Exception:
             return
-        common = "[b]Esc[/b] back   [b]F1[/b] open   [b]F2[/b] copy path"
+        common = (
+            "[b]Esc[/b] back   "
+            "[b]F1[/b] open in file manager   "
+            "[b]F2[/b] copy project path"
+        )
         if tabs.active == "tab-sessions":
             footer.update(common + "   [b]F3[/b] copy session ID")
         else:
