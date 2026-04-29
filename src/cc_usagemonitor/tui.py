@@ -971,6 +971,10 @@ class UsageMonitorApp(App):
                 "last_seen": None,
                 "first_seen": None,
                 "cwd": None,
+                # Lower-cased model id set so the Projects model filter
+                # ('opus' / 'sonnet' / 'haiku') can do a substring check
+                # without re-walking sessions.
+                "models": set(),
             }
         )
         for sess in self.aggregator.sessions.values():
@@ -980,6 +984,7 @@ class UsageMonitorApp(App):
             entry["tokens"] += sess.sums.total_tokens
             if entry["cwd"] is None and sess.cwd:
                 entry["cwd"] = sess.cwd
+            entry["models"].update(m.lower() for m in sess.by_model)
             for ts_attr, key, cmp in (
                 (sess.last_seen, "last_seen", lambda a, b: a > b),
                 (sess.first_seen, "first_seen", lambda a, b: a < b),
@@ -1200,6 +1205,13 @@ class UsageMonitorApp(App):
         cost_min = self._cost_filter_min()
         if cost_min is not None and entry["cost"] < cost_min:
             return False
+        # Model filter at project level keeps a project as long as any
+        # of its sessions used a model whose id contains the substring.
+        model_substr = self._model_filter_substr()
+        if model_substr is not None:
+            models = entry.get("models") or set()
+            if not any(model_substr in m for m in models):
+                return False
         if search_q:
             cwd = entry.get("cwd") or ""
             name = (cwd.rsplit("/", 1)[-1] if cwd else slug).lower()
