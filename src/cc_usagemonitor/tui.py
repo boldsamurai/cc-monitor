@@ -487,7 +487,7 @@ class UsageMonitorApp(App):
         Binding("f1", "open_in_explorer", "Open in file manager"),
         Binding("f2", "open_claude_primary", "Open Claude Code"),
         Binding("f3", "open_claude_resume_last", "Resume last (project)"),
-        Binding("L", "open_log", "Open log file"),
+        Binding("l", "open_log", "Open log file"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -671,7 +671,7 @@ class UsageMonitorApp(App):
         active = self._active_tab()
         nav = "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back"
         # 'L' on every tab — log opens regardless of context.
-        log_hint = "[b]L[/b] log"
+        log_hint = "[b]l[/b] log"
         if active == "sessions":
             keys = (
                 "[b]F1[/b] open dir   "
