@@ -203,6 +203,13 @@ class Aggregator:
             "hook event %s session=%s tool=%s name=%s",
             ev.event, ev.session_id[:8], ev.tool, ev.name,
         )
+        # Bump last_seen on every hook tick so the Sessions tab sorts by
+        # real activity, not just the last completed assistant turn.
+        # Tool hooks fire during a turn (every Read/Bash/Edit/Skill/Agent
+        # call), so a long-running turn keeps the session at the top.
+        sess = self.sessions.get(ev.session_id)
+        if sess is not None and (sess.last_seen is None or ev.ts > sess.last_seen):
+            sess.last_seen = ev.ts
         if ev.event == "tool_start" and ev.span_id:
             span = ToolSpan(
                 span_id=ev.span_id,
