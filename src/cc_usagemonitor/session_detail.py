@@ -297,9 +297,31 @@ class SessionDetailScreen(Screen):
         self._populate_usage_table(sess)
         self._populate_files_table()
         turns = self.aggregator.load_full_session_turns(self.session_id)
-        if not turns:
+        if turns:
+            self._populate_charts(turns, sess)
+        # Default tab is Usage — focus its primary table so arrows /
+        # Enter work right away instead of sitting on the tab bar.
+        self._focus_table_for_tab()
+
+    def on_tabbed_content_tab_activated(
+        self, event: TabbedContent.TabActivated
+    ) -> None:
+        self._focus_table_for_tab()
+
+    def _focus_table_for_tab(self) -> None:
+        try:
+            active = self.query_one(TabbedContent).active
+        except Exception:
             return
-        self._populate_charts(turns, sess)
+        target = {
+            "tab-usage": "#usage-table",
+        }.get(active)
+        if not target:
+            return
+        try:
+            self.query_one(target, DataTable).focus()
+        except Exception:
+            pass
 
     def _populate_charts(
         self,
