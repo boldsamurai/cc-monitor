@@ -166,10 +166,10 @@ class ProjectDetailScreen(Screen):
             # matches the default Sessions tab.
             yield Static(
                 "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
-                "[b]Esc[/b] back   "
                 "[b]F1[/b] open in file manager   "
                 "[b]F2[/b] copy project path   "
-                "[b]F3[/b] copy session ID",
+                "[b]F3[/b] copy session ID   "
+                "[b]Esc[/b] back",
                 id="pd-footer-right",
             )
 
@@ -606,16 +606,15 @@ class ProjectDetailScreen(Screen):
             footer = self.query_one("#pd-footer-right", Static)
         except Exception:
             return
-        common = (
-            "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
-            "[b]Esc[/b] back   "
+        prefix = "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
+        actions = (
             "[b]F1[/b] open in file manager   "
             "[b]F2[/b] copy project path"
         )
         if tabs.active == "tab-sessions":
-            footer.update(common + "   [b]F3[/b] copy session ID")
-        else:
-            footer.update(common)
+            actions += "   [b]F3[/b] copy session ID"
+        # Esc always sits at the rightmost end across every tab.
+        footer.update(prefix + actions + "   [b]Esc[/b] back")
 
     def action_open_explorer(self) -> None:
         """Open the project directory in the OS file manager. Uses

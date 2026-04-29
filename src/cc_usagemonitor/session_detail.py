@@ -286,8 +286,8 @@ class SessionDetailScreen(Screen):
             )
             yield Static(
                 "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
-                "[b]Esc[/b] back   "
-                "[b]F1[/b] copy session ID   [b]F2[/b] copy project path",
+                "[b]F1[/b] copy session ID   [b]F2[/b] copy project path   "
+                "[b]Esc[/b] back",
                 id="footer-right",
             )
 
