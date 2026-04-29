@@ -109,6 +109,20 @@ def _context_limit_for(model: str, observed_max: int = 0) -> int:
     return 200_000
 
 
+class FilterInput(Input):
+    """Search Input with extra word-deletion bindings.
+
+    Textual's stock Input already maps ctrl+w to delete_left_word, but
+    Notepad-style ctrl+backspace / alt+backspace are conventional in
+    GUI editors. Adding both as aliases — modern terminals (Kitty,
+    WezTerm, alacritty in CSI-u mode) report them as distinct keys."""
+
+    BINDINGS = [
+        Binding("ctrl+backspace", "delete_left_word", "Delete word"),
+        Binding("alt+backspace", "delete_left_word", "Delete word"),
+    ]
+
+
 def _ctx_cell(used: int, limit: int) -> Text:
     """Render '████░░░░ 22%' as a Text cell for DataTable.
 
@@ -472,7 +486,7 @@ class UsageMonitorApp(App):
     filter_hide_deleted: reactive[bool] = reactive(False)
     _FILTER_CYCLES: dict[str, list[str]] = {
         "date": ["all", "24h", "7d", "30d"],
-        "cost": ["all", "1", "10", "100"],
+        "cost": ["all", "1", "10", "100", "1000", "10000"],
         "model": ["all", "opus", "sonnet", "haiku"],
     }
     filter_date: reactive[str] = reactive("all")
@@ -509,7 +523,7 @@ class UsageMonitorApp(App):
             id="main-tabs",
         )
         with Horizontal(id="filter-bar"):
-            yield Input(
+            yield FilterInput(
                 placeholder="search…  (/)",
                 id="filter-search",
             )
@@ -1202,10 +1216,22 @@ class UsageMonitorApp(App):
         ctrl.update(
             f"[b]h[/b] [{hide_marker}] hide deleted   "
             f"[b]d[/b] date: {self.filter_date}   "
-            f"[b]c[/b] cost: "
-            f"{'≥$' + self.filter_cost if self.filter_cost != 'all' else 'all'}   "
+            f"[b]c[/b] cost: {self._cost_label()}   "
             f"[b]m[/b] model: {self.filter_model}"
         )
+
+    def _cost_label(self) -> str:
+        """Pretty-print the cost filter for the hint: '$1K' instead of
+        '$1000', etc. Keeps the cycle values numeric and human readable."""
+        if self.filter_cost == "all":
+            return "all"
+        try:
+            n = float(self.filter_cost)
+        except ValueError:
+            return self.filter_cost
+        if n >= 1000:
+            return f"≥${int(n / 1000)}K"
+        return f"≥${self.filter_cost}"
 
 
 def run_app(
