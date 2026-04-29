@@ -176,6 +176,23 @@ def _fmt_dollar_tick(v: float) -> str:
     return f"${v:.2f}"
 
 
+def _fmt_token_tick(v: float) -> str:
+    """Format a y-axis token tick: 1.2M / 5K / 0. Mirrors _fmt_dollar_tick
+    in shape (no currency prefix, K/M/B suffix instead)."""
+    if v <= 0:
+        return "0"
+    if v >= 1_000_000_000:
+        gv = v / 1_000_000_000
+        return f"{gv:.1f}B" if gv < 10 else f"{gv:.0f}B"
+    if v >= 1_000_000:
+        mv = v / 1_000_000
+        return f"{mv:.1f}M" if mv < 10 else f"{mv:.0f}M"
+    if v >= 1_000:
+        kv = v / 1_000
+        return f"{kv:.1f}K" if kv < 10 else f"{kv:.0f}K"
+    return f"{int(v)}"
+
+
 class SummaryPanel(Static):
     """Top panel: totals + rolling weekly aggregate + live rate."""
 
@@ -383,46 +400,6 @@ def _fmt_duration_minutes(m: float) -> str:
     return f"{d}d {h}h" if h else f"{d}d"
 
 
-class BarChart(Static):
-    """Horizontal bar chart with one row per item.
-
-    items: list of (label, value, suffix) tuples. Bars are scaled to the
-    largest value in the list. Suffix is a free-form string shown to the
-    right of the bar (e.g. '$4,197  38%').
-    """
-
-    title: reactive[str] = reactive("", layout=True)
-    items: reactive[list[tuple[str, float, str]]] = reactive(list, layout=True)
-
-    BAR_CHAR = "█"
-    EMPTY_CHAR = "·"
-    LABEL_W = 24
-    SUFFIX_W = 18
-
-    def render(self) -> RenderableType:
-        title = Text(self.title, style="bold")
-        if not self.items:
-            return Group(title, Text("No data yet", style="dim italic"))
-
-        max_val = max((v for _, v, _ in self.items), default=0.0) or 1.0
-        total_w = self.size.width or 60
-        # Reserve space for borders/padding handled by CSS.
-        bar_w = max(8, total_w - self.LABEL_W - self.SUFFIX_W - 2)
-
-        lines: list[Text] = [title]
-        for label, value, suffix in self.items:
-            ratio = max(0.0, value / max_val)
-            n = int(round(ratio * bar_w))
-            bar_str = self.BAR_CHAR * n + self.EMPTY_CHAR * (bar_w - n)
-            label_str = label[: self.LABEL_W - 1].ljust(self.LABEL_W)
-            line = Text()
-            line.append(label_str)
-            line.append(bar_str, style="cyan")
-            line.append(" " + suffix.rjust(self.SUFFIX_W - 1))
-            lines.append(line)
-        return Group(*lines)
-
-
 class UsageMonitorApp(App):
     CSS = """
     /* Whole main view painted with $panel — same approach as the detail
@@ -469,16 +446,10 @@ class UsageMonitorApp(App):
     DataTable { height: 1fr; background: $panel; }
     #t-models { height: 1fr; }
     #models-charts { height: 50%; }
-    #models-charts > BarChart {
+    /* Two plotext stacked-bars side by side — tokens and cost over the
+       same 7-day window, splitting horizontal space 50/50. */
+    #chart-tokens-time, #chart-cost-time {
         width: 1fr;
-        padding: 1 1;
-        border: round $primary;
-        background: $panel;
-    }
-    /* Stacked-bar plotext gets 2fr so the day-axis stays readable next
-       to the two thinner BarCharts. */
-    #chart-cost-time {
-        width: 2fr;
         padding: 1 1;
         border: round $primary;
         background: $panel;
@@ -578,7 +549,7 @@ class UsageMonitorApp(App):
             with Container(id="models"):
                 yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
                 with Horizontal(id="models-charts"):
-                    yield BarChart(id="chart-cost")
+                    yield PlotextPlot(id="chart-tokens-time")
                     yield PlotextPlot(id="chart-cost-time")
         with Horizontal(id="status-bar"):
             yield Static("", id="status-left")
@@ -1016,39 +987,49 @@ class UsageMonitorApp(App):
         self._refresh_models_charts(per_model)
 
     def _refresh_models_charts(self, per_model: dict[str, TokenSums]) -> None:
-        total_cost = sum(s.cost_usd for s in per_model.values()) or 1.0
+        # Both charts pull from the same 7-day _long_window archive but
+        # one slices on cost and the other on tokens — keeps the eye on
+        # spend vs. raw volume without a third redundant table summary.
+        self._refresh_per_day_chart(
+            "#chart-cost-time",
+            self.aggregator.cost_per_day_per_model,
+            title="Cost / day per model",
+            ylabel="$",
+            tick_fmt=_fmt_dollar_tick,
+        )
+        self._refresh_per_day_chart(
+            "#chart-tokens-time",
+            self.aggregator.tokens_per_day_per_model,
+            title="Tokens / day per model",
+            ylabel="tokens",
+            tick_fmt=_fmt_token_tick,
+        )
 
-        cost_items: list[tuple[str, float, str]] = []
-        for model, sums in per_model.items():
-            label = model or "(unknown)"
-            pct_cost = sums.cost_usd / total_cost * 100
-            cost_suffix = f"${sums.cost_usd:,.0f} ({pct_cost:.0f}%)"
-            cost_items.append((label, sums.cost_usd, cost_suffix))
-        cost_items.sort(key=lambda t: -t[1])
+    def _refresh_per_day_chart(
+        self,
+        chart_id: str,
+        source_method,
+        *,
+        title: str,
+        ylabel: str,
+        tick_fmt,
+    ) -> None:
+        """Render a stacked-bar plotext chart of (date × model) values.
 
+        Used for both Cost/day and Tokens/day in the Models tab — same
+        layout, only the source method and y-axis formatter differ.
+        """
         try:
-            chart_cost = self.query_one("#chart-cost", BarChart)
-            chart_cost.title = "Cost share"
-            chart_cost.items = cost_items
-        except Exception:
-            pass
-
-        # Stacked bar: cost per day, segmented per model. Pulls from the
-        # 7-day long-window archive so this is a true rolling-week view.
-        self._refresh_models_cost_time_chart()
-
-    def _refresh_models_cost_time_chart(self) -> None:
-        try:
-            plot = self.query_one("#chart-cost-time", PlotextPlot)
+            plot = self.query_one(chart_id, PlotextPlot)
         except Exception:
             return
-        dates, per_model = self.aggregator.cost_per_day_per_model(days=7)
+        dates, per_model = source_method(days=7)
         if not per_model:
             # Empty state — clear any prior render and show a title.
             p = plot.plt
             p.clear_data()
             p.clear_figure()
-            p.title("Cost / day (no data in last 7d)")
+            p.title(f"{title} (no data in last 7d)")
             plot.refresh()
             return
 
@@ -1072,8 +1053,9 @@ class UsageMonitorApp(App):
         series_names = [m for m, _ in ordered]
         series_values = [vals for _, vals in ordered]
 
-        # Custom y-axis ticks with $K formatting — plotext's defaults
-        # land on values like '1292.8' which read awkwardly for cost.
+        # Custom y-axis ticks — plotext's defaults pick floats like
+        # '1292.8' that read awkwardly. Formatter passed in by caller
+        # decides how to render (dollars vs. token K/M/B suffixes).
         max_stack = max(
             (sum(vals[i] for vals in series_values) for i in range(len(labels))),
             default=0.0,
@@ -1085,19 +1067,19 @@ class UsageMonitorApp(App):
                 0.0, max_stack * 0.25, max_stack * 0.5,
                 max_stack * 0.75, max_stack,
             ]
-            tick_labels = [_fmt_dollar_tick(v) for v in tick_positions]
+            tick_labels = [tick_fmt(v) for v in tick_positions]
 
         # plotext's stacked_bar in this version doesn't accept a `label`
         # kwarg for the legend, so encode the stack order in the title
-        # instead. Bottom-up = largest-to-smallest by total cost.
+        # instead. Bottom-up = largest-to-smallest by total.
         legend = "  •  ".join(series_names)
         p = plot.plt
         p.clear_data()
         p.clear_figure()
         p.stacked_bar(labels, series_values)
-        p.title(f"Cost / day per model (last 7d) — {legend}")
+        p.title(f"{title} (last 7d) — {legend}")
         p.xlabel("date")
-        p.ylabel("$")
+        p.ylabel(ylabel)
         if tick_positions:
             p.yticks(tick_positions, tick_labels)
         plot.refresh()
