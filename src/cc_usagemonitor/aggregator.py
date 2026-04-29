@@ -149,6 +149,22 @@ class Aggregator:
         # populated, the TUI prefers it over local-only token/cost limits.
         self.api_usage: UsageData | None = None
 
+    def reset_state(self) -> None:
+        """Drop all accumulated runtime state but keep configuration
+        (token/cost limits, api_usage). After this, a follow-up
+        ``Tailer.reset_tails()`` + next polling tick will rebuild from
+        scratch — used by the Settings 'Force re-scan' action.
+        """
+        self.sessions.clear()
+        self.spans_by_id.clear()
+        self.spans_by_session.clear()
+        self._pending_correlation.clear()
+        self.recent_usage.clear()
+        self.by_skill.clear()
+        self.by_agent.clear()
+        self._long_window.clear()
+        log.info("aggregator state reset (force re-scan)")
+
     # ----- ingest -----
 
     def ingest(self, item) -> None:

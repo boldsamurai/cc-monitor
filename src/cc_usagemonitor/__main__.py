@@ -4,6 +4,7 @@ import argparse
 import asyncio
 
 from .aggregator import Aggregator
+from .config import load_config
 from .install_hook import ensure_installed as ensure_hook_installed
 from .logger import setup_logging
 from .pricing import PricingTable
@@ -40,10 +41,11 @@ def main() -> None:
     parser.add_argument(
         "--plan",
         choices=list(PLAN_LIMITS.keys()),
-        default="none",
+        default=None,
         help=(
-            "Anthropic plan for 5h block limits (default: none — BlockPanel "
-            "shows raw numbers without progress bars). Plan limits match "
+            "Anthropic plan for 5h block limits (default: read from "
+            "config.json, falling back to 'none' which shows raw "
+            "numbers without progress bars). Plan limits match "
             "Maciek-roboblog/Claude-Code-Usage-Monitor: pro=19k/$18, "
             "max5=88k/$35, max20=220k/$140 per 5h session. Heavy users will "
             "blow past these — use --max-5h-tokens / --max-5h-cost overrides."
@@ -95,22 +97,31 @@ def main() -> None:
     queue: asyncio.Queue = asyncio.Queue()
     aggregator = Aggregator(pricing)
 
-    plan = PLAN_LIMITS[args.plan]
+    # Layer config under CLI: explicit flags always win, otherwise fall
+    # back to whatever the user persisted via the Settings screen, then
+    # the historical defaults if config is empty.
+    cfg = load_config()
+    plan_name = args.plan or cfg.get("plan", "none")
+    plan = PLAN_LIMITS.get(plan_name, PLAN_LIMITS["none"])
     aggregator.token_limit = args.max_5h_tokens or plan["tokens"]
     aggregator.cost_limit = args.max_5h_cost or plan["cost"]
 
     # --plan auto needs the historical archive populated to compute P90,
     # so silently turn on --from-start and recompute periodically.
-    auto_limits = args.plan == "auto"
+    auto_limits = plan_name == "auto"
     if auto_limits and not args.from_start:
         args.from_start = True
+
+    # CLI --no-api always disables; otherwise honor the persisted
+    # Settings toggle (defaults to enabled).
+    use_api = False if args.no_api else cfg.get("use_api", True)
 
     tailer = Tailer(queue, poll_interval=args.poll, from_start=args.from_start)
 
     run_app(
         aggregator, tailer, queue,
         auto_limits=auto_limits,
-        use_api=not args.no_api,
+        use_api=use_api,
     )
 
 
