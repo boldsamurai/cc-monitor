@@ -158,14 +158,14 @@ class ProjectDetailScreen(Screen):
 
         with Horizontal(id="pd-footer"):
             yield Static(
-                "[b]1[/b] Sessions   [b]2[/b] Activity   [b]3[/b] Usage    "
-                "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back",
+                "[b]1[/b] Sessions   [b]2[/b] Activity   [b]3[/b] Usage",
                 id="pd-footer-left",
             )
             # Footer text is rebuilt in _update_footer based on the
             # active tab (F3 only meaningful on Sessions). Initial value
             # matches the default Sessions tab.
             yield Static(
+                "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
                 "[b]Esc[/b] back   "
                 "[b]F1[/b] open in file manager   "
                 "[b]F2[/b] copy project path   "
@@ -607,6 +607,7 @@ class ProjectDetailScreen(Screen):
         except Exception:
             return
         common = (
+            "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
             "[b]Esc[/b] back   "
             "[b]F1[/b] open in file manager   "
             "[b]F2[/b] copy project path"
