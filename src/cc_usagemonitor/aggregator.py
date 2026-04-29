@@ -331,15 +331,28 @@ class Aggregator:
         self, days: int = 7
     ) -> tuple[list[date], dict[str, list[float]]]:
         """Aggregate cost from the long-window archive into per-(date, model)
-        buckets.
+        buckets. See ``_per_day_per_model`` for return shape."""
+        return self._per_day_per_model(days, value="cost")
 
-        Returns ``(dates, per_model)`` where ``dates`` is a chronological
-        list of length ``days`` ending today (UTC) and ``per_model`` is
-        a {model: [cost_for_each_date]} dict aligned with that list.
-        Models present in the archive but with zero cost on a given day
-        still get a 0.0 entry so the lists stay equal length — that's
-        what plotext's stacked_bar expects.
-        """
+    def tokens_per_day_per_model(
+        self, days: int = 7
+    ) -> tuple[list[date], dict[str, list[float]]]:
+        """Aggregate total tokens (input + output + cache_read +
+        cache_write_5m + cache_write_1h) per (date, model). Same shape
+        as cost_per_day_per_model — see _per_day_per_model."""
+        return self._per_day_per_model(days, value="tokens")
+
+    def _per_day_per_model(
+        self, days: int, value: str
+    ) -> tuple[list[date], dict[str, list[float]]]:
+        """Returns ``(dates, per_model)`` where ``dates`` is a
+        chronological list of length ``days`` ending today (UTC) and
+        ``per_model`` is a {model: [value_for_each_date]} dict aligned
+        with that list. Models present in the archive but with zero
+        value on a given day still get a 0.0 entry so the lists stay
+        equal length — that's what plotext's stacked_bar expects.
+
+        ``value`` selects the per-record metric: 'cost' or 'tokens'."""
         today = datetime.now(tz=timezone.utc).date()
         dates: list[date] = [
             today - timedelta(days=i) for i in range(days - 1, -1, -1)
@@ -353,9 +366,19 @@ class Aggregator:
             idx = date_index.get(d)
             if idx is None:
                 continue
+            if value == "cost":
+                v = cost
+            else:
+                v = (
+                    rec.input_tokens
+                    + rec.output_tokens
+                    + rec.cache_read_tokens
+                    + rec.cache_write_5m_tokens
+                    + rec.cache_write_1h_tokens
+                )
             model = rec.model or "(unknown)"
             series = per_model.setdefault(model, [0.0] * days)
-            series[idx] += cost
+            series[idx] += v
         return dates, per_model
 
     def active_session_count(self, max_idle: timedelta = timedelta(minutes=30)) -> int:
