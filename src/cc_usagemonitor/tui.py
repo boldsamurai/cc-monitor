@@ -163,6 +163,19 @@ def _human_usd(v: float) -> str:
     return f"${v:,.0f}"
 
 
+def _fmt_dollar_tick(v: float) -> str:
+    """Format a y-axis cost tick. Aims for short, scannable strings:
+    $1.3K instead of '1292.8', $25 instead of '25.0', $0 for zero."""
+    if v <= 0:
+        return "$0"
+    if v >= 1_000:
+        kv = v / 1_000
+        return f"${kv:.1f}K" if kv < 10 else f"${kv:.0f}K"
+    if v >= 10:
+        return f"${v:.0f}"
+    return f"${v:.2f}"
+
+
 class SummaryPanel(Static):
     """Top panel: totals + rolling weekly aggregate + live rate."""
 
@@ -1057,15 +1070,40 @@ class UsageMonitorApp(App):
             plot.refresh()
             return
 
+        # Drop models contributing <1% of total — at typical opus/haiku
+        # ratios haiku's slice is sub-pixel anyway, and showing it in
+        # the legend is just noise. Fall back to the unfiltered set if
+        # everything would round to zero (degenerate case).
+        total_all = sum(sum(vals) for vals in per_model.values())
+        threshold = total_all * 0.01
+        filtered = {
+            m: v for m, v in per_model.items() if sum(v) > threshold
+        } or per_model
+
         # plotext stacked_bar: largest model at the bottom of each stack
         # so visual mass anchors the chart and the small slivers (cheap
         # models) sit on top, easier to read.
         ordered = sorted(
-            per_model.items(), key=lambda kv: -sum(kv[1])
+            filtered.items(), key=lambda kv: -sum(kv[1])
         )
         labels = [d.strftime("%m-%d") for d in dates]
         series_names = [m for m, _ in ordered]
         series_values = [vals for _, vals in ordered]
+
+        # Custom y-axis ticks with $K formatting — plotext's defaults
+        # land on values like '1292.8' which read awkwardly for cost.
+        max_stack = max(
+            (sum(vals[i] for vals in series_values) for i in range(len(labels))),
+            default=0.0,
+        )
+        tick_positions: list[float] = []
+        tick_labels: list[str] = []
+        if max_stack > 0:
+            tick_positions = [
+                0.0, max_stack * 0.25, max_stack * 0.5,
+                max_stack * 0.75, max_stack,
+            ]
+            tick_labels = [_fmt_dollar_tick(v) for v in tick_positions]
 
         # plotext's stacked_bar in this version doesn't accept a `label`
         # kwarg for the legend, so encode the stack order in the title
@@ -1078,6 +1116,8 @@ class UsageMonitorApp(App):
         p.title(f"Cost / day per model (last 7d) — {legend}")
         p.xlabel("date")
         p.ylabel("$")
+        if tick_positions:
+            p.yticks(tick_positions, tick_labels)
         plot.refresh()
 
     def _refresh_projects_table(self) -> None:
