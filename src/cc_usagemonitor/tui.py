@@ -9,17 +9,9 @@ from rich.table import Table
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import (
-    ContentSwitcher,
-    DataTable,
-    Header,
-    Input,
-    Static,
-    Tab,
-    Tabs,
-)
+from textual.widgets import DataTable, Header, Input, Static, TabbedContent, TabPane
 
 from .aggregator import Aggregator, BlockInfo, TokenSums
 from .anthropic_usage import UsageData, get_usage
@@ -409,20 +401,28 @@ class UsageMonitorApp(App):
         background: $panel;
         border-bottom: solid $primary;
     }
-    /* Tab strip + filter bar share one row. Tabs auto-size to its
-       labels (left), filter bar takes the remaining space (right). */
-    #tabs-row { height: auto; background: $panel; }
-    #main-tabs { width: auto; background: $panel; }
+    TabbedContent { height: 1fr; background: $panel; }
+    TabbedContent Tabs { background: $panel; }
+    TabbedContent TabPane { background: $panel; }
+    /* Filter bar — its own row between BlockPanel and the tab strip.
+       Search Input on the left, status hint on the right. */
     #filter-bar {
-        width: 1fr;
         height: 3;
-        padding: 0 1;
+        padding: 0 2;
         background: $panel;
     }
-    #filter-search { width: 30; height: 3; background: $panel-lighten-1; }
-    #filter-bar Static { padding: 0 1; height: 3; content-align: left middle; }
-    #main-content { height: 1fr; background: $panel; }
-    #main-content > Container { background: $panel; }
+    #filter-search {
+        width: 36;
+        height: 3;
+        background: $panel-lighten-1;
+        margin-right: 2;
+    }
+    #filter-controls {
+        width: 1fr;
+        height: 3;
+        content-align: left middle;
+        color: $text;
+    }
     DataTable { height: 1fr; background: $panel; }
     #t-models { height: 1fr; }
     #models-charts { height: 50%; }
@@ -459,7 +459,6 @@ class UsageMonitorApp(App):
     # Filter state — watched so any change forces a table refresh.
     filter_search: reactive[str] = reactive("")
     filter_hide_deleted: reactive[bool] = reactive(False)
-    # Cycle order kept here so bindings stay short (single state name).
     _FILTER_CYCLES: dict[str, list[str]] = {
         "date": ["all", "24h", "7d", "30d"],
         "cost": ["all", "1", "10", "100"],
@@ -488,35 +487,24 @@ class UsageMonitorApp(App):
         yield Header(show_clock=True)
         yield SummaryPanel(id="summary")
         yield BlockPanel(id="block")
-        # Tabs strip + filter bar share one row. Splitting Tabs from
-        # ContentSwitcher (instead of using bundled TabbedContent) lets
-        # us put filter widgets next to the tab buttons instead of on
-        # a separate row.
-        with Horizontal(id="tabs-row"):
-            yield Tabs(
-                Tab("Sessions [1]", id="sessions"),
-                Tab("Projects [2]", id="projects"),
-                Tab("Models [3]", id="models"),
-                id="main-tabs",
+        with Horizontal(id="filter-bar"):
+            yield Input(
+                placeholder="search…  (/ to focus)",
+                id="filter-search",
             )
-            with Horizontal(id="filter-bar"):
-                yield Input(
-                    placeholder="search…  (/ to focus)",
-                    id="filter-search",
-                )
-                yield Static(
-                    "[b]h[/b] hide deleted   "
-                    "[b]d[/b] date: All   "
-                    "[b]c[/b] cost: All   "
-                    "[b]m[/b] model: All",
-                    id="filter-controls",
-                )
-        with ContentSwitcher(initial="sessions", id="main-content"):
-            with Container(id="sessions"):
+            yield Static(
+                "[b]h[/b] [ ] hide deleted   "
+                "[b]d[/b] date: all   "
+                "[b]c[/b] cost: all   "
+                "[b]m[/b] model: all",
+                id="filter-controls",
+            )
+        with TabbedContent(initial="sessions"):
+            with TabPane("Sessions [1]", id="sessions"):
                 yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
-            with Container(id="projects"):
+            with TabPane("Projects [2]", id="projects"):
                 yield DataTable(id="t-projects", cursor_type="row", zebra_stripes=True)
-            with Container(id="models"):
+            with TabPane("Models [3]", id="models"):
                 yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
                 with Horizontal(id="models-charts"):
                     yield BarChart(id="chart-cost")
@@ -542,7 +530,6 @@ class UsageMonitorApp(App):
         self.watch(self, "theme", self._on_theme_change)
 
         self._setup_tables()
-        # Render the initial filter hint (default state: no filters).
         self._update_filter_hint()
         self.run_worker(self._consume_queue(), exclusive=False)
         self.run_worker(self._tailer_runner(), exclusive=False)
@@ -602,23 +589,16 @@ class UsageMonitorApp(App):
                 ProjectDetailScreen(str(event.row_key.value), self.aggregator)
             )
 
-    def on_tabs_tab_activated(
-        self, event: Tabs.TabActivated
+    def on_tabbed_content_tab_activated(
+        self, event: TabbedContent.TabActivated
     ) -> None:
-        # Switch the ContentSwitcher to the newly-activated pane and
-        # force-refresh that table (the per-tab refresh skips inactive
-        # tables to keep the UI responsive).
-        if event.tab is None:
-            return
-        active = event.tab.id
-        try:
-            switcher = self.query_one("#main-content", ContentSwitcher)
-            switcher.current = active
-        except Exception:
-            return
+        # The newly-shown tab may be stale (we only refresh the active tab on
+        # the timer). Force a refresh now so the user sees current numbers.
         self._refresh_view()
-        # Move keyboard focus into the table of the newly-activated tab
-        # so arrow keys keep working without an extra Tab keypress.
+        # Move keyboard focus into the table of the newly-activated tab so
+        # arrow keys keep working — without this, switching with 1-4 leaves
+        # focus on the previous (now hidden) table and the user has to Tab.
+        active = event.tabbed_content.active
         try:
             self.query_one(f"#t-{active}", DataTable).focus()
         except Exception:
@@ -715,10 +695,7 @@ class UsageMonitorApp(App):
         # Refresh only the visible tab — keeps the UI responsive even at
         # hundreds of rows. The other tables are still in-sync from previous
         # refreshes; they'll catch up the moment the user switches tabs.
-        try:
-            active = self.query_one("#main-tabs", Tabs).active
-        except Exception:
-            active = "sessions"
+        active = self.query_one(TabbedContent).active
         if active == "sessions":
             self._refresh_sessions_table()
         elif active == "models":
@@ -794,6 +771,10 @@ class UsageMonitorApp(App):
         from pathlib import Path
 
         def _resolved_path(s) -> str | None:
+            # Prefer the captured cwd (ground truth for this session's
+            # actual working dir) over slug-decode, which only knows
+            # about the project root and would mark deeper subdir
+            # sessions as 'existing' even when their cwd is gone.
             return s.cwd or decode_project_path(s.project_slug)
 
         def _exists(s) -> bool:
@@ -807,15 +788,12 @@ class UsageMonitorApp(App):
             key=lambda s: (_exists(s), s.last_seen or epoch),
             reverse=True,
         )
-        # Filter constants resolved once per refresh so each row only
-        # pays for cheap comparisons.
+        # Resolve filter constants once per refresh.
         date_cutoff = self._date_filter_cutoff()
         cost_min = self._cost_filter_min()
         model_substr = self._model_filter_substr()
         search_q = self.filter_search.strip().lower()
         for s in sorted_sessions:
-            # Apply filters before formatting so we skip expensive cell
-            # work for hidden rows.
             if not self._session_matches_filters(
                 s, _resolved_path(s), _exists(s),
                 date_cutoff, cost_min, model_substr, search_q,
@@ -1048,10 +1026,10 @@ class UsageMonitorApp(App):
         return ts.astimezone().strftime("%d-%m-%Y %H:%M")
 
     def action_show_tab(self, tab_id: str) -> None:
-        try:
-            self.query_one("#main-tabs", Tabs).active = tab_id
-        except Exception:
-            pass
+        self.query_one(TabbedContent).active = tab_id
+
+    def action_refresh(self) -> None:
+        self._refresh_view()
 
     # ----- filter bar wiring -----
 
@@ -1087,7 +1065,7 @@ class UsageMonitorApp(App):
         if event.input.id != "filter-search":
             return
         try:
-            active = self.query_one("#main-tabs", Tabs).active
+            active = self.query_one(TabbedContent).active
             self.query_one(f"#t-{active}", DataTable).focus()
         except Exception:
             pass
@@ -1178,8 +1156,6 @@ class UsageMonitorApp(App):
         cost_min = self._cost_filter_min()
         if cost_min is not None and entry["cost"] < cost_min:
             return False
-        # Model filter doesn't apply at the project level (sessions
-        # within a project can use multiple models). Skip silently.
         if search_q:
             cwd = entry.get("cwd") or ""
             name = (cwd.rsplit("/", 1)[-1] if cwd else slug).lower()
@@ -1196,12 +1172,10 @@ class UsageMonitorApp(App):
         ctrl.update(
             f"[b]h[/b] [{hide_marker}] hide deleted   "
             f"[b]d[/b] date: {self.filter_date}   "
-            f"[b]c[/b] cost: {'≥$' + self.filter_cost if self.filter_cost != 'all' else 'all'}   "
+            f"[b]c[/b] cost: "
+            f"{'≥$' + self.filter_cost if self.filter_cost != 'all' else 'all'}   "
             f"[b]m[/b] model: {self.filter_model}"
         )
-
-    def action_refresh(self) -> None:
-        self._refresh_view()
 
 
 def run_app(
