@@ -48,6 +48,18 @@ class Tailer:
         self._session_tails: dict[Path, _FileTail] = {}
         self._event_tail: _FileTail | None = None
 
+    def reset_tails(self) -> None:
+        """Forget all per-file tail positions and switch to from-start
+        mode so the next polling tick re-reads every JSONL from byte 0.
+        Pairs with Aggregator.reset_state() for the Settings
+        'Force re-scan' action — call both together to avoid double-
+        counting records that are already in the in-memory archive.
+        """
+        self._session_tails.clear()
+        self._event_tail = None
+        self.from_start = True
+        log.info("tailer reset: re-scanning from start")
+
     async def run(self) -> None:
         # Seed event log if it doesn't exist yet — tail still works once it appears.
         log.info(

@@ -577,6 +577,31 @@ class UsageMonitorApp(App):
         # so all _fmt_* helpers see the user's preference on the very
         # first refresh tick rather than after a reload.
         _apply_format_config(date_format=cfg.get("date_format"))
+
+        # Apply persisted view preferences. These are read once on
+        # startup — Settings changes persist immediately but only take
+        # visible effect on the next launch (filters & default tab
+        # would feel jarring to mutate mid-session).
+        self.filter_hide_deleted = bool(cfg.get("hide_missing_by_default", False))
+        if cfg.get("persist_filters", False):
+            saved = cfg.get("last_filters") or {}
+            self.filter_search = saved.get("search", "")
+            self.filter_date = saved.get("date", "all")
+            self.filter_cost = saved.get("cost", "all")
+            self.filter_model = saved.get("model", "all")
+            # hide_missing_by_default already applied above; if
+            # persist_filters also stored a hide flag, honor that more
+            # specific value.
+            if "hide_deleted" in saved:
+                self.filter_hide_deleted = bool(saved["hide_deleted"])
+
+        # Switch to the user's preferred starting tab.
+        default_tab = cfg.get("default_tab", "sessions")
+        if default_tab in ("sessions", "projects", "models"):
+            try:
+                self.query_one("#main-tabs", Tabs).active = default_tab
+            except Exception:
+                pass
         self.watch(self, "theme", self._on_theme_change)
 
         self._setup_tables()
@@ -1260,6 +1285,24 @@ class UsageMonitorApp(App):
 
     def action_refresh(self) -> None:
         self._refresh_view()
+
+    def action_quit(self) -> None:
+        # Save current filter state if the user opted in via Settings.
+        # Run BEFORE exit() so save_config gets a chance to flush.
+        try:
+            cfg = load_config()
+            if cfg.get("persist_filters", False):
+                cfg["last_filters"] = {
+                    "search": self.filter_search,
+                    "date": self.filter_date,
+                    "cost": self.filter_cost,
+                    "model": self.filter_model,
+                    "hide_deleted": self.filter_hide_deleted,
+                }
+                save_config(cfg)
+        except Exception as e:
+            log.warning("could not persist filters on quit: %s", e)
+        self.exit()
 
     # ----- filter bar wiring -----
 

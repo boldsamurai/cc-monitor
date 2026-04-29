@@ -1,29 +1,39 @@
 """Settings screen — global app preferences.
 
 Pushed onto the screen stack from the main view via the ',' binding.
-Three categories: Appearance (theme / date format / time zone), Hook
-integration (status + reinstall action), and Paths (read-only with
-Open buttons). Persists to config.json on every change.
+Sections: Appearance / Behavior / Diagnostics / Hook integration /
+Maintenance / Paths. Persists to config.json on every interactive
+change. Some settings are live (theme, date format), some only take
+effect on next launch (API toggle, plan, default tab, filter
+preferences) — the latter carry a '(restart required)' note.
 """
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, RadioButton, RadioSet, Static
+from textual.widgets import Button, RadioButton, RadioSet, Static, Switch
 
+from . import __version__
 from .config import CONFIG_FILE, load_config, save_config
-from .formatting import DATE_FORMATS, apply_config
+from .formatting import DATE_FORMATS, apply_config, format_time
 from .install_hook import HOOK_MARKER, SETTINGS_PATH, ensure_installed
 from .launchers import open_file, open_in_file_manager
 from .logger import LOG_FILE, get_logger
 from .paths import PROJECTS_DIR
 
 log = get_logger(__name__)
+
+
+# Plan choices mirror PLAN_LIMITS from __main__ (kept in sync by hand —
+# small enough that DRY-ing across modules isn't worth a circular import).
+_PLAN_CHOICES = ["none", "pro", "max5", "max20", "auto"]
+_DEFAULT_TABS = ["sessions", "projects", "models"]
 
 
 class SettingsScreen(Screen):
@@ -45,9 +55,14 @@ class SettingsScreen(Screen):
         text-style: bold underline;
     }
     .settings-row { height: auto; padding: 0 0 1 0; }
-    /* Default RadioSet has a heavy border that eats vertical space and
-       boxes off the panel into disconnected slabs — drop it so the
-       options just sit in the surrounding panel flow. */
+    .setting-note {
+        height: auto;
+        padding: 0 0 1 2;
+        color: $text-muted;
+        text-style: italic;
+    }
+    /* Default RadioSet has a heavy border that boxes off the panel
+       into disconnected slabs — drop it so the options sit inline. */
     RadioSet {
         background: $panel;
         border: none;
@@ -57,15 +72,21 @@ class SettingsScreen(Screen):
     RadioSet:focus {
         border: none;
     }
-    #hook-status-text {
+    /* Switch rows: label on the left, switch widget on the right. */
+    .switch-row {
+        height: auto;
+        padding: 0 0 0 0;
+    }
+    .switch-label { width: 1fr; padding: 1 0 0 0; }
+    .switch-row Switch {
+        background: $panel;
+    }
+    #hook-status-text, #diagnostics-text {
         padding: 1 0;
         height: auto;
     }
     .button-row { height: auto; padding: 0 0 1 0; }
-    .path-row {
-        height: auto;
-        padding: 0 0 0 0;
-    }
+    .path-row { height: auto; padding: 0 0 0 0; }
     .path-label { width: 18; }
     .path-value { width: 1fr; color: $text-muted; }
     .path-open-btn { width: 10; min-width: 10; }
@@ -90,14 +111,12 @@ class SettingsScreen(Screen):
     def compose(self) -> ComposeResult:
         with Vertical():
             with VerticalScroll(id="settings-scroll"):
-                # ----- Appearance -----
+                # ===== Appearance =====
                 yield Static("Appearance", classes="settings-heading")
 
                 yield Static("Theme", classes="settings-row")
                 current_theme = self._cfg.get("theme", "textual-dark")
                 themes = self._available_themes()
-                # Make sure the current theme is in the list — user may
-                # have edited config.json by hand to a custom one.
                 if current_theme not in themes:
                     themes = [current_theme] + themes
                 with RadioSet(id="theme-radio"):
@@ -112,7 +131,69 @@ class SettingsScreen(Screen):
                             fmt, value=(fmt == current_date_fmt)
                         )
 
-                # ----- Hook integration -----
+                # ===== Behavior =====
+                yield Static("Behavior", classes="settings-heading")
+
+                with Horizontal(classes="switch-row"):
+                    yield Static(
+                        "Anthropic API integration",
+                        classes="switch-label",
+                    )
+                    yield Switch(
+                        value=self._cfg.get("use_api", True),
+                        id="use-api-switch",
+                    )
+                yield Static(
+                    "Polls /api/oauth/usage every 60s for "
+                    "authoritative 5h/7d utilization. Restart required.",
+                    classes="setting-note",
+                )
+
+                yield Static("Plan", classes="settings-row")
+                current_plan = self._cfg.get("plan", "none")
+                with RadioSet(id="plan-radio"):
+                    for p in _PLAN_CHOICES:
+                        yield RadioButton(p, value=(p == current_plan))
+                yield Static(
+                    "5h-block limit preset for the BlockPanel "
+                    "progress bars. Restart required.",
+                    classes="setting-note",
+                )
+
+                yield Static("Default tab on startup", classes="settings-row")
+                current_default_tab = self._cfg.get("default_tab", "sessions")
+                with RadioSet(id="default-tab-radio"):
+                    for t in _DEFAULT_TABS:
+                        yield RadioButton(t, value=(t == current_default_tab))
+
+                with Horizontal(classes="switch-row"):
+                    yield Static(
+                        "Persist filters between sessions",
+                        classes="switch-label",
+                    )
+                    yield Switch(
+                        value=self._cfg.get("persist_filters", False),
+                        id="persist-filters-switch",
+                    )
+
+                with Horizontal(classes="switch-row"):
+                    yield Static(
+                        "Hide missing projects/sessions by default",
+                        classes="switch-label",
+                    )
+                    yield Switch(
+                        value=self._cfg.get("hide_missing_by_default", False),
+                        id="hide-missing-switch",
+                    )
+
+                # ===== Diagnostics =====
+                yield Static("Diagnostics", classes="settings-heading")
+                yield Static(
+                    self._build_diagnostics_text(),
+                    id="diagnostics-text",
+                )
+
+                # ===== Hook integration =====
                 yield Static("Hook integration", classes="settings-heading")
                 yield Static(
                     self._build_hook_status_text(),
@@ -124,20 +205,30 @@ class SettingsScreen(Screen):
                         variant="primary",
                     )
 
-                # ----- Paths -----
+                # ===== Maintenance =====
+                yield Static("Maintenance", classes="settings-heading")
+                yield Static(
+                    "Re-scan clears the in-memory archive and re-reads "
+                    "every JSONL from the start. Useful when stats look "
+                    "stale or after restoring deleted sessions.",
+                    classes="setting-note",
+                )
+                with Horizontal(classes="button-row"):
+                    yield Button(
+                        "Force re-scan", id="rescan-btn",
+                        variant="warning",
+                    )
+
+                # ===== Paths =====
                 yield Static("Paths", classes="settings-heading")
                 for label, path in self._paths():
                     with Horizontal(classes="path-row"):
                         yield Static(label, classes="path-label")
                         yield Static(str(path), classes="path-value")
-                        # Button name carries the path so the shared
-                        # on_button_pressed handler can dispatch by
-                        # button identity rather than parent inspection.
-                        btn = Button(
+                        yield Button(
                             "Open", classes="path-open-btn",
                             name=str(path),
                         )
-                        yield btn
 
             with Horizontal(id="settings-footer"):
                 yield Static(
@@ -149,12 +240,6 @@ class SettingsScreen(Screen):
     # ----- compose helpers -----
 
     def _available_themes(self) -> list[str]:
-        """Best-effort list of theme names registered with the App.
-
-        Textual's API for listing themes has changed across versions —
-        try a couple of attribute names and fall back to a hardcoded
-        baseline so the screen never renders empty.
-        """
         for attr in ("themes", "available_themes"):
             obj = getattr(self.app, attr, None)
             if isinstance(obj, dict):
@@ -167,8 +252,6 @@ class SettingsScreen(Screen):
         ]
 
     def _paths(self) -> list[tuple[str, Path]]:
-        """The (label, path) pairs surfaced in the Paths section. Order
-        matters — most-frequently-opened first."""
         return [
             ("Log file", LOG_FILE),
             ("Config", CONFIG_FILE),
@@ -191,8 +274,6 @@ class SettingsScreen(Screen):
         )
 
     def _inspect_hook_status(self) -> tuple[bool, Path]:
-        """True if any cc-usagemonitor entry exists in ~/.claude/settings.json
-        hooks blocks. Returns (installed, settings_path)."""
         if not SETTINGS_PATH.exists():
             return False, SETTINGS_PATH
         try:
@@ -211,6 +292,70 @@ class SettingsScreen(Screen):
                         return True, SETTINGS_PATH
         return False, SETTINGS_PATH
 
+    def _build_diagnostics_text(self) -> str:
+        agg = getattr(self.app, "aggregator", None)
+        lines: list[str] = [f"[b]Version:[/b]          {__version__}"]
+
+        # Plan: prefer authoritative API data, fall back to current
+        # CLI/config setting. Tells the user where the displayed plan
+        # name actually came from.
+        plan_local = self._cfg.get("plan", "none")
+        if agg is not None and agg.api_usage is not None and not agg.api_usage.api_unavailable:
+            api_plan = agg.api_usage.plan_name or "?"
+            lines.append(
+                f"[b]Plan detected:[/b]   {api_plan}  "
+                f"[dim](via Anthropic API)[/dim]"
+            )
+        else:
+            lines.append(
+                f"[b]Plan detected:[/b]   {plan_local}  "
+                f"[dim](from config / CLI)[/dim]"
+            )
+
+        # API status — connected / disabled / waiting / error.
+        use_api = getattr(self.app, "use_api", False)
+        if not use_api:
+            lines.append(
+                "[b]Anthropic API:[/b]   [yellow]disabled[/yellow]  "
+                "[dim](--no-api or Settings toggle off)[/dim]"
+            )
+        elif agg is None or agg.api_usage is None:
+            lines.append(
+                "[b]Anthropic API:[/b]   [yellow]waiting for first "
+                "fetch…[/yellow]"
+            )
+        else:
+            usage = agg.api_usage
+            if usage.api_unavailable:
+                lines.append(
+                    f"[b]Anthropic API:[/b]   [red]✗ unavailable[/red]  "
+                    f"[dim]{usage.error or 'no details'}[/dim]"
+                )
+            else:
+                # fetched_at is epoch seconds — convert via datetime.
+                fetched = datetime.fromtimestamp(
+                    usage.fetched_at, tz=timezone.utc
+                )
+                lines.append(
+                    "[b]Anthropic API:[/b]   [green]✓ connected[/green]  "
+                    f"[dim](last fetch {format_time(fetched)})[/dim]"
+                )
+
+        # Sessions tracked.
+        if agg is not None:
+            total = len(agg.sessions)
+            active = agg.active_session_count()
+            lines.append(
+                f"[b]Sessions:[/b]        {total} tracked  "
+                f"[dim]({active} active, <30m idle)[/dim]"
+            )
+            archive = len(agg._long_window)
+            lines.append(
+                f"[b]Long-window:[/b]     {archive} records  "
+                "[dim](rolling 8d archive used for P90 limits)[/dim]"
+            )
+        return "\n".join(lines)
+
     # ----- event handlers -----
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
@@ -222,13 +367,34 @@ class SettingsScreen(Screen):
             self._set_theme(label)
         elif rs_id == "date-format-radio":
             self._set_date_format(label)
+        elif rs_id == "plan-radio":
+            self._cfg["plan"] = label
+            save_config(self._cfg)
+        elif rs_id == "default-tab-radio":
+            self._cfg["default_tab"] = label
+            save_config(self._cfg)
+
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        sid = event.switch.id
+        if sid == "use-api-switch":
+            self._cfg["use_api"] = bool(event.value)
+            save_config(self._cfg)
+        elif sid == "persist-filters-switch":
+            self._cfg["persist_filters"] = bool(event.value)
+            save_config(self._cfg)
+        elif sid == "hide-missing-switch":
+            self._cfg["hide_missing_by_default"] = bool(event.value)
+            save_config(self._cfg)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn = event.button
         if btn.id == "hook-reinstall-btn":
             ensure_installed()
             self._refresh_hook_status()
-            self.app.bell()  # confirm action ran
+            self.app.bell()
+            return
+        if btn.id == "rescan-btn":
+            self._force_rescan()
             return
         if "path-open-btn" in btn.classes and btn.name:
             path = Path(btn.name)
@@ -240,7 +406,7 @@ class SettingsScreen(Screen):
                 log.warning("settings: open failed: %s", msg)
             return
 
-    # ----- persistence -----
+    # ----- persistence helpers -----
 
     def _set_theme(self, name: str) -> None:
         try:
@@ -264,3 +430,22 @@ class SettingsScreen(Screen):
         except Exception:
             return
         label.update(self._build_hook_status_text())
+
+    def _force_rescan(self) -> None:
+        """Drop in-memory state on both Aggregator and Tailer so the
+        next polling tick re-reads every JSONL from the start. Refreshes
+        the diagnostics block to show the cleared counts."""
+        agg = getattr(self.app, "aggregator", None)
+        tailer = getattr(self.app, "tailer", None)
+        if agg is None or tailer is None:
+            log.warning("force re-scan: app is missing aggregator/tailer")
+            return
+        agg.reset_state()
+        tailer.reset_tails()
+        try:
+            text = self.query_one("#diagnostics-text", Static)
+            text.update(self._build_diagnostics_text())
+        except Exception:
+            pass
+        self.app.bell()
+        log.info("force re-scan triggered from Settings")
