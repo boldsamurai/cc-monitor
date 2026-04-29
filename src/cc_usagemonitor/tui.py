@@ -24,6 +24,7 @@ from textual.widgets import (
 from .aggregator import Aggregator, BlockInfo, TokenSums
 from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
+from .launchers import open_in_file_manager, open_terminal_with
 from .pricing import PricingTable
 from .project_slug import decode_project_path, decode_project_slug
 from .project_detail import ProjectDetailScreen
@@ -107,84 +108,6 @@ def _context_limit_for(model: str, observed_max: int = 0) -> int:
     if observed_max > 200_000:
         return 1_000_000
     return 200_000
-
-
-def _open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
-    """Spawn a new terminal window in cwd running command (detached).
-
-    Returns (ok, message). Cross-platform best-effort:
-    - $TERMINAL env var if set
-    - macOS: osascript + Terminal.app
-    - Windows: start cmd
-    - Linux/BSD: tries kitty / alacritty / wezterm / gnome-terminal /
-      konsole / xterm / x-terminal-emulator in that order
-    """
-    import os
-    import shlex
-    import shutil
-    import subprocess
-    import sys
-
-    if sys.platform == "darwin":
-        cmd_str = " ".join(shlex.quote(c) for c in command)
-        script = (
-            f'tell application "Terminal" to do script '
-            f'"cd {shlex.quote(cwd)} && {cmd_str}"'
-        )
-        try:
-            subprocess.Popen(["osascript", "-e", script])
-            return True, "Opened in Terminal.app"
-        except Exception as e:
-            return False, f"osascript failed: {e}"
-
-    if sys.platform == "win32":
-        cmd_str = " ".join(shlex.quote(c) for c in command)
-        try:
-            subprocess.Popen(
-                f'start "" cmd /k "cd /d \"{cwd}\" && {cmd_str}"',
-                shell=True,
-            )
-            return True, "Opened in cmd"
-        except Exception as e:
-            return False, f"start failed: {e}"
-
-    # Linux / BSD path — try $TERMINAL first, then common emulators.
-    candidates: list[str] = []
-    env_term = os.environ.get("TERMINAL")
-    if env_term:
-        candidates.append(env_term)
-    candidates += [
-        "kitty", "alacritty", "wezterm",
-        "gnome-terminal", "konsole",
-        "xterm", "x-terminal-emulator",
-    ]
-    for term in candidates:
-        if not shutil.which(term):
-            continue
-        try:
-            if term == "kitty":
-                subprocess.Popen([term, "--directory", cwd, *command])
-            elif term == "alacritty":
-                subprocess.Popen(
-                    [term, "--working-directory", cwd, "-e", *command]
-                )
-            elif term == "wezterm":
-                subprocess.Popen(
-                    [term, "start", "--cwd", cwd, "--", *command]
-                )
-            elif term == "gnome-terminal":
-                subprocess.Popen(
-                    [term, "--working-directory", cwd, "--", *command]
-                )
-            elif term == "konsole":
-                subprocess.Popen([term, "--workdir", cwd, "-e", *command])
-            else:
-                # xterm / x-terminal-emulator — generic '-e' form
-                subprocess.Popen([term, "-e", *command], cwd=cwd)
-            return True, f"Opened in {term}"
-        except Exception as e:
-            return False, f"{term} failed: {e}"
-    return False, "No terminal emulator found in PATH"
 
 
 class FilterInput(Input):
@@ -1254,25 +1177,8 @@ class UsageMonitorApp(App):
         return latest
 
     def _open_dir_in_file_manager(self, path: str | None) -> None:
-        from pathlib import Path
-        import subprocess
-        import sys
-        if not path or not Path(path).is_dir():
-            self.notify(
-                "Path missing on disk — can't open",
-                severity="warning",
-            )
-            return
-        try:
-            if sys.platform == "darwin":
-                subprocess.Popen(["open", path])
-            elif sys.platform == "win32":
-                subprocess.Popen(["explorer", path])
-            else:
-                subprocess.Popen(["xdg-open", path])
-            self.notify(f"Opened {path}", timeout=2)
-        except Exception as e:
-            self.notify(f"Open failed: {e}", severity="error")
+        ok, msg = open_in_file_manager(path)
+        self.notify(msg, severity="information" if ok else "warning")
 
     def _resolve_open_path(self) -> str | None:
         """Path under the cursor for the active tab. Sessions tab uses
@@ -1303,7 +1209,7 @@ class UsageMonitorApp(App):
             if not path:
                 self.notify("Project path unknown", severity="warning")
                 return
-            ok, msg = _open_terminal_with(path, ["claude", "--resume", sid])
+            ok, msg = open_terminal_with(path, ["claude", "--resume", sid])
         elif active == "projects":
             slug = self._cursor_row_key("projects")
             if not slug:
@@ -1313,7 +1219,7 @@ class UsageMonitorApp(App):
             if not path:
                 self.notify("Project path unknown", severity="warning")
                 return
-            ok, msg = _open_terminal_with(path, ["claude"])
+            ok, msg = open_terminal_with(path, ["claude"])
         else:
             return
         if ok:
@@ -1341,7 +1247,7 @@ class UsageMonitorApp(App):
                 severity="warning",
             )
             return
-        ok, msg = _open_terminal_with(path, ["claude", "--resume", last_sid])
+        ok, msg = open_terminal_with(path, ["claude", "--resume", last_sid])
         if ok:
             self.notify(msg, timeout=2)
         else:

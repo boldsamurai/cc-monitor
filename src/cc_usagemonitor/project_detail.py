@@ -21,6 +21,7 @@ from textual.widgets import DataTable, Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, SessionState, TokenSums
+from .launchers import open_terminal_with
 from .project_slug import decode_project_path
 from .session_detail import (
     SessionDetailScreen,
@@ -41,9 +42,13 @@ class ProjectDetailScreen(Screen):
         Binding("1", "show_tab('tab-sessions')", "Sessions"),
         Binding("2", "show_tab('tab-activity')", "Activity"),
         Binding("3", "show_tab('tab-usage')", "Usage"),
+        # Open actions take F1-F3, copy aliases on F4-F5 — same priority
+        # as the main view (most-used keys closest to home row).
         Binding("f1", "open_explorer", "Open in file manager"),
-        Binding("f2", "copy_path", "Copy project path"),
-        Binding("f3", "copy_session_id", "Copy session ID"),
+        Binding("f2", "open_new_claude", "New Claude Code session"),
+        Binding("f3", "open_resume_last", "Resume last session"),
+        Binding("f4", "copy_path", "Copy project path"),
+        Binding("f5", "copy_session_id", "Copy session ID"),
     ]
 
     CSS = """
@@ -162,13 +167,15 @@ class ProjectDetailScreen(Screen):
                 id="pd-footer-left",
             )
             # Footer text is rebuilt in _update_footer based on the
-            # active tab (F3 only meaningful on Sessions). Initial value
+            # active tab (F5 only meaningful on Sessions). Initial value
             # matches the default Sessions tab.
             yield Static(
                 "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
-                "[b]F1[/b] open in file manager   "
-                "[b]F2[/b] copy project path   "
-                "[b]F3[/b] copy session ID   "
+                "[b]F1[/b] open dir   "
+                "[b]F2[/b] new claude   "
+                "[b]F3[/b] resume last   "
+                "[b]F4[/b] copy path   "
+                "[b]F5[/b] copy session ID   "
                 "[b]Esc[/b] back",
                 id="pd-footer-right",
             )
@@ -608,13 +615,52 @@ class ProjectDetailScreen(Screen):
             return
         prefix = "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
         actions = (
-            "[b]F1[/b] open in file manager   "
-            "[b]F2[/b] copy project path"
+            "[b]F1[/b] open dir   "
+            "[b]F2[/b] new claude   "
+            "[b]F3[/b] resume last   "
+            "[b]F4[/b] copy path"
         )
         if tabs.active == "tab-sessions":
-            actions += "   [b]F3[/b] copy session ID"
+            actions += "   [b]F5[/b] copy session ID"
         # Esc always sits at the rightmost end across every tab.
         footer.update(prefix + actions + "   [b]Esc[/b] back")
+
+    def _last_session_id(self) -> str | None:
+        latest = None
+        latest_ts = None
+        for sess in self._sessions:
+            if sess.last_seen is None:
+                continue
+            ts = sess.last_seen
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if latest_ts is None or ts > latest_ts:
+                latest_ts = ts
+                latest = sess.session_id
+        return latest
+
+    def action_open_new_claude(self) -> None:
+        path = self._project_path()
+        if not path:
+            self.app.notify("Project path unknown", severity="warning")
+            return
+        ok, msg = open_terminal_with(path, ["claude"])
+        self.app.notify(msg, severity="information" if ok else "error")
+
+    def action_open_resume_last(self) -> None:
+        path = self._project_path()
+        if not path:
+            self.app.notify("Project path unknown", severity="warning")
+            return
+        last_sid = self._last_session_id()
+        if not last_sid:
+            self.app.notify(
+                "No previous session recorded for this project",
+                severity="warning",
+            )
+            return
+        ok, msg = open_terminal_with(path, ["claude", "--resume", last_sid])
+        self.app.notify(msg, severity="information" if ok else "error")
 
     def action_open_explorer(self) -> None:
         """Open the project directory in the OS file manager. Uses
