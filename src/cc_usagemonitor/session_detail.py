@@ -16,6 +16,7 @@ from textual.widgets import DataTable, Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, SessionState, TokenSums
+from .launchers import open_in_file_manager, open_terminal_with
 from .project_slug import decode_project_path, decode_project_slug
 
 # Register a fixed plotext theme matching Textual's $panel (#242F38).
@@ -97,8 +98,12 @@ class SessionDetailScreen(Screen):
         Binding("3", "show_tab('tab-turn')", "Turn"),
         Binding("4", "show_tab('tab-dist')", "Distribution"),
         # Copy actions moved to function keys so the digits stay free.
-        Binding("f1", "copy_session_id", "Copy session ID"),
-        Binding("f2", "copy_project_path", "Copy project path"),
+        # Open actions first (most-used), copies after — same convention
+        # as the main view's F1/F2 keys.
+        Binding("f1", "open_in_explorer", "Open in file manager"),
+        Binding("f2", "open_resume_session", "Resume session in new terminal"),
+        Binding("f3", "copy_session_id", "Copy session ID"),
+        Binding("f4", "copy_project_path", "Copy project path"),
     ]
 
     CSS = """
@@ -286,7 +291,8 @@ class SessionDetailScreen(Screen):
             )
             yield Static(
                 "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
-                "[b]F1[/b] copy session ID   [b]F2[/b] copy project path   "
+                "[b]F1[/b] open dir   [b]F2[/b] resume session   "
+                "[b]F3[/b] copy session ID   [b]F4[/b] copy project path   "
                 "[b]Esc[/b] back",
                 id="footer-right",
             )
@@ -478,6 +484,26 @@ class SessionDetailScreen(Screen):
         except Exception:
             # No tabs yet (e.g. session has no turns -> charts skipped).
             pass
+
+    def _project_path(self) -> str | None:
+        sess = self.aggregator.sessions.get(self.session_id)
+        if sess is None:
+            return None
+        return sess.cwd or decode_project_path(sess.project_slug)
+
+    def action_open_in_explorer(self) -> None:
+        ok, msg = open_in_file_manager(self._project_path())
+        self.app.notify(msg, severity="information" if ok else "warning")
+
+    def action_open_resume_session(self) -> None:
+        path = self._project_path()
+        if not path:
+            self.app.notify("Project path unknown", severity="warning")
+            return
+        ok, msg = open_terminal_with(
+            path, ["claude", "--resume", self.session_id]
+        )
+        self.app.notify(msg, severity="information" if ok else "error")
 
     def action_copy_session_id(self) -> None:
         try:
