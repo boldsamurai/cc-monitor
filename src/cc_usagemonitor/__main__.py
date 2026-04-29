@@ -5,6 +5,7 @@ import asyncio
 
 from .aggregator import Aggregator
 from .install_hook import ensure_installed as ensure_hook_installed
+from .logger import setup_logging
 from .pricing import PricingTable
 from .tailer import Tailer
 from .tui import run_app
@@ -71,7 +72,19 @@ def main() -> None:
             "fully offline (falls back to local --plan limits or P90)."
         ),
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help=(
+            "Enable DEBUG-level logging to "
+            "~/.cache/cc-usagemonitor/usagemonitor.log. Useful when "
+            "tracking down ingest/parser issues; the log rotates at 10MB."
+        ),
+    )
     args = parser.parse_args()
+
+    log = setup_logging(debug=args.debug)
+    log.info("cc-usagemonitor starting (debug=%s)", args.debug)
 
     # Make sure Claude Code is wired to feed us tool_start / tool_end
     # events for Skill and Agent. Idempotent — skips silently when an

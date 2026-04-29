@@ -72,7 +72,11 @@ def parse_session_line(line: str, project_slug: str) -> UsageRecord | None:
         return None
     try:
         d = json.loads(line)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        from .logger import get_logger
+        get_logger(__name__).debug(
+            "skipping malformed session line in %s: %s", project_slug, e,
+        )
         return None
 
     if d.get("type") != "assistant":

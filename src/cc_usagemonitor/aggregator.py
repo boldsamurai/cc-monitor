@@ -5,8 +5,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from .anthropic_usage import UsageData
+from .logger import get_logger
 from .parser import HookEvent, UsageRecord
 from .pricing import PricingTable
+
+log = get_logger(__name__)
 
 BLOCK_DURATION = timedelta(hours=5)
 LONG_WINDOW = timedelta(days=8)  # 192h, matches Maciek-roboblog's P90 window
@@ -163,6 +166,10 @@ class Aggregator:
             sess = SessionState(session_id=rec.session_id, project_slug=rec.project_slug)
             self.sessions[rec.session_id] = sess
             sess.first_seen = rec.ts
+            log.info(
+                "new session %s in project %s (model=%s)",
+                rec.session_id[:8], rec.project_slug, rec.model,
+            )
 
         # Latch the cwd the first time we see it. Lines without cwd
         # (synthetic or early-session events) are ignored.
@@ -192,6 +199,10 @@ class Aggregator:
         self._try_attribute_to_span(rec, cost)
 
     def _ingest_event(self, ev: HookEvent) -> None:
+        log.debug(
+            "hook event %s session=%s tool=%s name=%s",
+            ev.event, ev.session_id[:8], ev.tool, ev.name,
+        )
         if ev.event == "tool_start" and ev.span_id:
             span = ToolSpan(
                 span_id=ev.span_id,
@@ -238,6 +249,7 @@ class Aggregator:
         if span.ended_at is None:
             return
         sess = self.sessions.get(span.session_id)
+        attributed = 0
         for ts, rec, cost in self._long_window:
             if rec.session_id != span.session_id:
                 continue
@@ -246,6 +258,7 @@ class Aggregator:
             if ts < span.started_at or ts > span.ended_at:
                 continue
             span.sums.add(rec, cost)
+            attributed += 1
             if span.name:
                 self.by_agent[span.name].add(rec, cost)
                 if sess is not None:
@@ -253,6 +266,10 @@ class Aggregator:
                     sess.agents.setdefault(span.name, TokenSums()).add(
                         rec, cost
                     )
+        log.info(
+            "agent span attributed: %s/%s in session %s -> %d sidechain records, $%.4f",
+            span.tool, span.name, span.session_id[:8], attributed, span.sums.cost_usd,
+        )
 
     # ----- helpers -----
 

@@ -14,6 +14,10 @@ import shutil
 import sys
 from pathlib import Path
 
+from .logger import get_logger
+
+log = get_logger(__name__)
+
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 HOOK_MARKER = "cc-usagemonitor"  # any command containing this is "ours"
 
@@ -104,6 +108,7 @@ def ensure_installed() -> None:
         added.append(kind)
 
     if not added:
+        log.debug("hook auto-install: already configured, skipping")
         return  # everything was already in place
 
     try:
@@ -118,6 +123,9 @@ def ensure_installed() -> None:
         )
         return
 
+    log.info(
+        "hook auto-install: added entries %s in %s", added, SETTINGS_PATH,
+    )
     print(
         f"cc-usagemonitor: installed Claude Code hook for {', '.join(added)} "
         f"in {SETTINGS_PATH}. Restart your Claude Code sessions to pick it up.",

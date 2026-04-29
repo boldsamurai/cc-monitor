@@ -27,6 +27,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .logger import get_logger
+
+log = get_logger(__name__)
+
 KEYCHAIN_SERVICE = "Claude Code-credentials"
 KEYCHAIN_TIMEOUT = 3.0
 
@@ -275,17 +279,24 @@ def fetch_usage(access_token: str) -> tuple[UsageData | None, str | None, float 
         with urllib.request.urlopen(req, timeout=API_TIMEOUT) as resp:
             if resp.status != 200:
                 retry = _retry_after(resp.headers)
+                log.warning(
+                    "Anthropic API non-200: status=%s retry=%s",
+                    resp.status, retry,
+                )
                 return None, f"http-{resp.status}", retry
             body = resp.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         retry = _retry_after(e.headers)
+        log.warning("Anthropic API HTTPError: code=%s retry=%s", e.code, retry)
         return None, f"http-{e.code}", retry
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        log.warning("Anthropic API network error: %s", e)
         return None, "network", None
 
     try:
         parsed = json.loads(body)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        log.warning("Anthropic API parse error: %s", e)
         return None, "parse", None
 
     five_hour, seven_day = _parse_usage_response(parsed)
@@ -458,7 +469,14 @@ def get_usage(force_refresh: bool = False) -> UsageData | None:
     """
     cached = _read_cache()
     if cached is not None and not force_refresh:
+        log.debug(
+            "usage cache hit: 5h=%s%% 7d=%s%% (api_unavailable=%s)",
+            cached.five_hour.utilization if cached.five_hour else "n/a",
+            cached.seven_day.utilization if cached.seven_day else "n/a",
+            cached.api_unavailable,
+        )
         return cached
+    log.info("usage cache miss / refresh — calling Anthropic API")
 
     # Track running failure count across calls so exponential backoff has
     # something to anchor to. We read the most recent cache entry even when
