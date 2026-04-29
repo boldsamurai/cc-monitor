@@ -25,7 +25,10 @@ from .aggregator import Aggregator, BlockInfo, TokenSums
 from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
 from .launchers import open_in_file_manager, open_terminal_with
+from .logger import get_logger
 from .pricing import PricingTable
+
+log = get_logger(__name__)
 from .project_slug import decode_project_path, decode_project_slug
 from .project_detail import ProjectDetailScreen
 from .session_detail import SessionDetailScreen
@@ -593,6 +596,7 @@ class UsageMonitorApp(App):
         try:
             data = await asyncio.to_thread(get_usage, force_refresh=False)
         except Exception:
+            log.exception("API usage poll crashed")
             return
         self.aggregator.api_usage = data
 
@@ -610,6 +614,7 @@ class UsageMonitorApp(App):
         self.aggregator.cost_limit = cost_limit
 
     def _on_theme_change(self, new_theme: str) -> None:
+        log.info("theme changed to %s", new_theme)
         cfg = load_config()
         cfg["theme"] = new_theme
         save_config(cfg)
@@ -621,14 +626,13 @@ class UsageMonitorApp(App):
         if event.row_key is None or event.row_key.value is None:
             return
         table_id = event.data_table.id
+        key = str(event.row_key.value)
         if table_id == "t-sessions":
-            self.push_screen(
-                SessionDetailScreen(str(event.row_key.value), self.aggregator)
-            )
+            log.info("drill-in: SessionDetailScreen(%s)", key[:8])
+            self.push_screen(SessionDetailScreen(key, self.aggregator))
         elif table_id == "t-projects":
-            self.push_screen(
-                ProjectDetailScreen(str(event.row_key.value), self.aggregator)
-            )
+            log.info("drill-in: ProjectDetailScreen(%s)", key)
+            self.push_screen(ProjectDetailScreen(key, self.aggregator))
 
     def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
         # Switch the ContentSwitcher to the newly-activated pane and
@@ -636,6 +640,7 @@ class UsageMonitorApp(App):
         if event.tab is None:
             return
         active = event.tab.id
+        log.info("tab activated: %s", active)
         try:
             switcher = self.query_one("#main-content", ContentSwitcher)
             switcher.current = active
@@ -741,6 +746,7 @@ class UsageMonitorApp(App):
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            log.exception("tailer crashed")
             self.notify(f"Tailer error: {e}", severity="error")
 
     async def _consume_queue(self) -> None:
@@ -749,6 +755,7 @@ class UsageMonitorApp(App):
             try:
                 self.aggregator.ingest(item)
             except Exception as e:
+                log.exception("ingest crashed")
                 self.notify(f"Ingest error: {e}", severity="error")
 
     def _refresh_view(self) -> None:
@@ -1257,6 +1264,7 @@ class UsageMonitorApp(App):
         """Toggle hide_deleted, or cycle date/cost/model values."""
         if name == "hide_deleted":
             self.filter_hide_deleted = not self.filter_hide_deleted
+            log.info("filter hide_deleted -> %s", self.filter_hide_deleted)
             return
         cycle = self._FILTER_CYCLES.get(name)
         if cycle is None:
@@ -1267,7 +1275,9 @@ class UsageMonitorApp(App):
             idx = cycle.index(current)
         except ValueError:
             idx = -1
-        setattr(self, attr, cycle[(idx + 1) % len(cycle)])
+        new_value = cycle[(idx + 1) % len(cycle)]
+        setattr(self, attr, new_value)
+        log.info("filter %s -> %s", name, new_value)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "filter-search":

@@ -14,6 +14,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .logger import get_logger
+
+log = get_logger(__name__)
+
 
 def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
     """Spawn a new terminal window in cwd running command (detached).
@@ -25,6 +29,7 @@ def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
     - Linux/BSD: tries kitty / alacritty / wezterm / gnome-terminal /
       konsole / xterm / x-terminal-emulator in that order
     """
+    log.info("open_terminal_with cwd=%s cmd=%s", cwd, command)
     if sys.platform == "darwin":
         cmd_str = " ".join(shlex.quote(c) for c in command)
         script = (
@@ -82,12 +87,15 @@ def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
             return True, f"Opened in {term}"
         except Exception as e:
             return False, f"{term} failed: {e}"
+    log.error("No terminal emulator found in PATH")
     return False, "No terminal emulator found in PATH"
 
 
 def open_in_file_manager(path: str | None) -> tuple[bool, str]:
     """xdg-open on Linux, 'open' on macOS, explorer on Windows."""
+    log.info("open_in_file_manager path=%s", path)
     if not path or not Path(path).is_dir():
+        log.warning("open_in_file_manager: path missing or not a dir: %s", path)
         return False, "Path missing on disk"
     try:
         if sys.platform == "darwin":
@@ -98,4 +106,5 @@ def open_in_file_manager(path: str | None) -> tuple[bool, str]:
             subprocess.Popen(["xdg-open", path])
         return True, f"Opened {path}"
     except Exception as e:
+        log.error("open_in_file_manager failed: %s", e)
         return False, f"Open failed: {e}"

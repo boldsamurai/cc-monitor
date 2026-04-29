@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .logger import get_logger
 from .parser import (
     HookEvent,
     UsageRecord,
@@ -13,6 +14,8 @@ from .parser import (
     project_slug_from_path,
 )
 from .paths import EVENT_LOG, PROJECTS_DIR
+
+log = get_logger(__name__)
 
 
 @dataclass
@@ -47,6 +50,10 @@ class Tailer:
 
     async def run(self) -> None:
         # Seed event log if it doesn't exist yet — tail still works once it appears.
+        log.info(
+            "tailer starting: projects=%s event_log=%s from_start=%s",
+            self.projects_dir, self.event_log, self.from_start,
+        )
         while True:
             await self._scan_sessions()
             await self._scan_event_log()
@@ -91,17 +98,23 @@ class Tailer:
                 f.seek(tail.pos)
                 chunk = f.read(st.st_size - tail.pos)
                 tail.pos = f.tell()
-        except OSError:
+        except OSError as e:
+            log.warning("failed to read %s: %s", path, e)
             return
 
+        n_records = 0
         for raw in chunk.splitlines():
             try:
                 line = raw.decode("utf-8", errors="replace")
-            except Exception:
+            except Exception as e:
+                log.debug("decode error in %s: %s", path, e)
                 continue
             rec = parse_session_line(line, slug)
             if rec is not None:
                 await self.queue.put(rec)
+                n_records += 1
+        if n_records:
+            log.debug("ingested %d records from %s", n_records, path.name)
 
     async def _scan_event_log(self) -> None:
         if not self.event_log.exists():
@@ -126,9 +139,11 @@ class Tailer:
                 f.seek(tail.pos)
                 chunk = f.read(st.st_size - tail.pos)
                 tail.pos = f.tell()
-        except OSError:
+        except OSError as e:
+            log.warning("failed to read event log: %s", e)
             return
 
+        n_events = 0
         for raw in chunk.splitlines():
             try:
                 line = raw.decode("utf-8", errors="replace")
@@ -137,6 +152,9 @@ class Tailer:
             ev = parse_hook_event_line(line)
             if ev is not None:
                 await self.queue.put(ev)
+                n_events += 1
+        if n_events:
+            log.debug("ingested %d hook events", n_events)
 
 
 # Re-export for type hints in callers.
