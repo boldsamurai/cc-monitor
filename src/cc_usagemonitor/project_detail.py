@@ -578,6 +578,26 @@ class ProjectDetailScreen(Screen):
         # Show F3 hint only while the Sessions tab is in front — keeps
         # the footer honest about what the keybinding actually does.
         self._update_footer()
+        self._focus_table_for_tab()
+
+    def _focus_table_for_tab(self) -> None:
+        """Auto-focus the primary DataTable in tabs that contain one,
+        so Enter/arrows operate on table rows immediately instead of
+        sitting on the tab bar after switch."""
+        try:
+            active = self.query_one(TabbedContent).active
+        except Exception:
+            return
+        target = {
+            "tab-sessions": "#pd-sessions-table",
+            "tab-usage": "#pd-spans-table",
+        }.get(active)
+        if not target:
+            return
+        try:
+            self.query_one(target, DataTable).focus()
+        except Exception:
+            pass
 
     def _update_footer(self) -> None:
         try:
