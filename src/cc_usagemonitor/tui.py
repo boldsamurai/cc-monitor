@@ -20,6 +20,7 @@ from textual.widgets import (
     Tab,
     Tabs,
 )
+from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, BlockInfo, TokenSums
 from .anthropic_usage import UsageData, get_usage
@@ -461,6 +462,14 @@ class UsageMonitorApp(App):
         border: round $primary;
         background: $panel;
     }
+    /* Stacked-bar plotext gets 2fr so the day-axis stays readable next
+       to the two thinner BarCharts. */
+    #chart-cost-time {
+        width: 2fr;
+        padding: 1 1;
+        border: round $primary;
+        background: $panel;
+    }
     #status-bar {
         height: 1;
         dock: bottom;
@@ -483,10 +492,15 @@ class UsageMonitorApp(App):
         Binding("d", "cycle_filter('date')", "Date filter"),
         Binding("c", "cycle_filter('cost')", "Cost filter"),
         Binding("m", "cycle_filter('model')", "Model filter"),
-        # Open actions — context-aware (cursor row + active tab).
-        Binding("f1", "open_in_explorer", "Open in file manager"),
-        Binding("f2", "open_claude_primary", "Open Claude Code"),
-        Binding("f3", "open_claude_resume_last", "Resume last (project)"),
+        # Open actions — context-aware (cursor row + active tab). Letters
+        # rather than F-keys because F1-Fn aren't reliable on laptops
+        # (Fn-lock) or remote/web terminals.
+        Binding("o", "open_in_explorer", "Open in file manager"),
+        Binding("n", "open_claude_primary", "Open Claude Code"),
+        Binding("s", "open_claude_resume_last", "Resume last (project)"),
+        Binding("f1", "open_in_explorer", "Open in file manager", show=False),
+        Binding("f2", "open_claude_primary", "Open Claude Code", show=False),
+        Binding("f3", "open_claude_resume_last", "Resume last (project)", show=False),
         Binding("l", "open_log", "Open log file"),
     ]
 
@@ -553,15 +567,10 @@ class UsageMonitorApp(App):
                 with Horizontal(id="models-charts"):
                     yield BarChart(id="chart-cost")
                     yield BarChart(id="chart-cache")
+                    yield PlotextPlot(id="chart-cost-time")
         with Horizontal(id="status-bar"):
-            yield Static(
-                "[b]1[/b] Sessions  [b]2[/b] Projects  [b]3[/b] Models",
-                id="status-left",
-            )
-            yield Static(
-                "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back  [b]q[/b] Quit",
-                id="status-right",
-            )
+            yield Static("", id="status-left")
+            yield Static("", id="status-right")
 
     def on_mount(self) -> None:
         cfg = load_config()
@@ -663,30 +672,36 @@ class UsageMonitorApp(App):
             pass
 
     def _update_status_right(self) -> None:
-        """Tab-specific F-key hints in the status bar."""
+        """Tab-specific keybinding hints in the status bar. Per-row /
+        per-tab actions go on the left; globals on the right. Letters
+        rather than F-keys because F1-Fn aren't reliable on laptops
+        (Fn-lock) or remote/web terminals."""
         try:
+            left = self.query_one("#status-left", Static)
             right = self.query_one("#status-right", Static)
         except Exception:
             return
         active = self._active_tab()
-        nav = "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back"
-        # 'L' on every tab — log opens regardless of context.
-        log_hint = "[b]l[/b] log"
         if active == "sessions":
-            keys = (
-                "[b]F1[/b] open dir   "
-                "[b]F2[/b] resume session"
+            actions = (
+                "[b]o[/b] open dir   "
+                "[b]s[/b] resume session   "
+                "[b]↵[/b] details"
             )
         elif active == "projects":
-            keys = (
-                "[b]F1[/b] open dir   "
-                "[b]F2[/b] new claude   "
-                "[b]F3[/b] resume last"
+            actions = (
+                "[b]o[/b] open dir   "
+                "[b]n[/b] new claude   "
+                "[b]s[/b] resume last   "
+                "[b]↵[/b] details"
             )
         else:
-            keys = ""
-        parts = [p for p in (keys, log_hint, nav, "[b]q[/b] Quit") if p]
-        right.update("   ".join(parts))
+            actions = ""
+        left.update(actions)
+        right.update(
+            "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
+            "[b]l[/b] log   [b]q[/b] quit"
+        )
 
     SESSIONS_COLS = [
         ("Session", "sid"),
@@ -706,12 +721,16 @@ class UsageMonitorApp(App):
     ]
     MODELS_COLS = [
         ("Model", "model"),
+        ("Turns", "turns"),
         ("In", "in"),
         ("Out", "out"),
+        ("Out/In", "out_in"),
         ("CacheR", "cache_r"),
         ("CacheW", "cache_w"),
+        ("Cache%", "cache_pct"),
+        ("Total", "total"),
         ("Cost", "cost"),
-        ("Turns", "turns"),
+        ("$/turn", "per_turn"),
     ]
     PROJECTS_COLS = [
         ("Project", "project"),
@@ -953,14 +972,32 @@ class UsageMonitorApp(App):
         for model, sums in sorted(
             per_model.items(), key=lambda kv: (-kv[1].turns, kv[0])
         ):
+            cache_w = sums.cache_write_5m + sums.cache_write_1h
+            total = sums.input + sums.output + sums.cache_read + cache_w
+            # Cache% = share of input that came from cache hits — high is
+            # good (cheap reads). Denominator is "input-side" tokens only.
+            input_side = sums.input + sums.cache_read + cache_w
+            cache_pct = (
+                sums.cache_read / input_side * 100 if input_side else 0.0
+            )
+            # Out/In = how chatty the model is per unit of input. Excludes
+            # cache from the denominator so we measure real prompt size.
+            out_in = sums.output / sums.input if sums.input else 0.0
+            per_turn = (
+                sums.cost_usd / sums.turns if sums.turns else 0.0
+            )
             cells = (
                 model or "(unknown)",
+                _human(sums.turns),
                 _human(sums.input),
                 _human(sums.output),
+                f"{out_in:.2f}",
                 _human(sums.cache_read),
-                _human(sums.cache_write_5m + sums.cache_write_1h),
+                _human(cache_w),
+                f"{cache_pct:.1f}%",
+                _human(total),
                 _fmt_usd(sums.cost_usd),
-                _human(sums.turns),
+                _fmt_usd(per_turn),
             )
             rows.append((model or "(unknown)", cells))
         self._apply_rows("#t-models", self.MODELS_COLS, rows)
@@ -1000,6 +1037,48 @@ class UsageMonitorApp(App):
             chart_cache.items = cache_items
         except Exception:
             pass
+
+        # Stacked bar: cost per day, segmented per model. Pulls from the
+        # 7-day long-window archive so this is a true rolling-week view.
+        self._refresh_models_cost_time_chart()
+
+    def _refresh_models_cost_time_chart(self) -> None:
+        try:
+            plot = self.query_one("#chart-cost-time", PlotextPlot)
+        except Exception:
+            return
+        dates, per_model = self.aggregator.cost_per_day_per_model(days=7)
+        if not per_model:
+            # Empty state — clear any prior render and show a title.
+            p = plot.plt
+            p.clear_data()
+            p.clear_figure()
+            p.title("Cost / day (no data in last 7d)")
+            plot.refresh()
+            return
+
+        # plotext stacked_bar: largest model at the bottom of each stack
+        # so visual mass anchors the chart and the small slivers (cheap
+        # models) sit on top, easier to read.
+        ordered = sorted(
+            per_model.items(), key=lambda kv: -sum(kv[1])
+        )
+        labels = [d.strftime("%m-%d") for d in dates]
+        series_names = [m for m, _ in ordered]
+        series_values = [vals for _, vals in ordered]
+
+        # plotext's stacked_bar in this version doesn't accept a `label`
+        # kwarg for the legend, so encode the stack order in the title
+        # instead. Bottom-up = largest-to-smallest by total cost.
+        legend = "  •  ".join(series_names)
+        p = plot.plt
+        p.clear_data()
+        p.clear_figure()
+        p.stacked_bar(labels, series_values)
+        p.title(f"Cost / day per model (last 7d) — {legend}")
+        p.xlabel("date")
+        p.ylabel("$")
+        plot.refresh()
 
     def _refresh_projects_table(self) -> None:
         """Aggregate every session by its project_slug. Sums cost /

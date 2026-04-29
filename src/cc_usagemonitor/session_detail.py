@@ -97,13 +97,16 @@ class SessionDetailScreen(Screen):
         Binding("2", "show_tab('tab-time')", "Time"),
         Binding("3", "show_tab('tab-turn')", "Turn"),
         Binding("4", "show_tab('tab-dist')", "Distribution"),
-        # Copy actions moved to function keys so the digits stay free.
-        # Open actions first (most-used), copies after — same convention
-        # as the main view's F1/F2 keys.
-        Binding("f1", "open_in_explorer", "Open in file manager"),
-        Binding("f2", "open_resume_session", "Resume session in new terminal"),
-        Binding("f3", "copy_session_id", "Copy session ID"),
-        Binding("f4", "copy_project_path", "Copy project path"),
+        # Letters rather than F-keys (F1-Fn aren't reliable on laptops
+        # or remote terminals). Open actions first, copies after.
+        Binding("o", "open_in_explorer", "Open in file manager"),
+        Binding("s", "open_resume_session", "Resume session in new terminal"),
+        Binding("i", "copy_session_id", "Copy session ID"),
+        Binding("p", "copy_project_path", "Copy project path"),
+        Binding("f1", "open_in_explorer", "Open in file manager", show=False),
+        Binding("f2", "open_resume_session", "Resume session in new terminal", show=False),
+        Binding("f3", "copy_session_id", "Copy session ID", show=False),
+        Binding("f4", "copy_project_path", "Copy project path", show=False),
     ]
 
     CSS = """
@@ -127,7 +130,7 @@ class SessionDetailScreen(Screen):
         background: $panel;
     }
     #charts-tabs {
-        height: auto;
+        height: 1fr;
         background: $panel;
     }
     #charts-tabs Tabs {
@@ -137,13 +140,25 @@ class SessionDetailScreen(Screen):
         padding: 0;
         background: $panel;
     }
-    #usage-table, #files-table {
+    #usage-table {
         height: auto;
         max-height: 25;
         background: $panel;
     }
+    /* Files tables fill their section (1fr) so DataTable handles row
+       overflow with its own internal scroll — auto+max-height would
+       let the second table push below the visible column. */
+    #files-table, #files-write-table {
+        height: 1fr;
+        background: $panel;
+    }
+    /* height: auto + zero vertical padding lets an *empty* hint
+       collapse to 0 rows so it doesn't insert a gap between Files
+       read and Files written when both have data. With content
+       (e.g. "No file reads recorded…") it still renders inline. */
     .usage-hint {
-        padding: 1 2;
+        height: auto;
+        padding: 0 2;
         color: $text-muted;
     }
     .usage-section-heading {
@@ -151,18 +166,25 @@ class SessionDetailScreen(Screen):
         text-style: bold underline;
     }
     #usage-row {
-        height: auto;
+        height: 1fr;
     }
     /* 50/50 with a 2-cell margin between columns so the spans cursor
        row doesn't appear to run into the files table. */
     .usage-col-spans {
         width: 1fr;
-        height: auto;
+        height: 1fr;
         margin-right: 2;
     }
     .usage-col-files {
         width: 1fr;
-        height: auto;
+        height: 1fr;
+    }
+    /* Two stacked sections inside .usage-col-files (Files read / Files
+       written) — fixed 50/50 split. Trades a bit of dead space when
+       one table has few rows for predictable overflow handling: each
+       table fills its half, DataTable scrolls rows internally. */
+    .usage-files-section {
+        height: 1fr;
     }
     #section-skills, #section-agents {
         padding: 0 2;
@@ -208,7 +230,7 @@ class SessionDetailScreen(Screen):
             else []
         )
 
-        with VerticalScroll():
+        with Vertical():
             # Top row: Session info, Totals, By model — three columns
             # side by side so the screen feels like a dashboard rather
             # than a long scroll of stacked sections.
@@ -247,31 +269,53 @@ class SessionDetailScreen(Screen):
                                     classes="usage-hint",
                                 )
                             with Vertical(classes="usage-col-files"):
-                                yield Static(
-                                    "Files read",
-                                    classes="usage-section-heading",
-                                )
-                                files_table = DataTable(
-                                    id="files-table", cursor_type="row"
-                                )
-                                files_table.add_columns(
-                                    "File", "Reads", "Tokens (~est)",
-                                )
-                                yield files_table
-                                yield Static(
-                                    "",
-                                    id="files-empty",
-                                    classes="usage-hint",
-                                )
+                                with Vertical(classes="usage-files-section"):
+                                    yield Static(
+                                        "Files read",
+                                        classes="usage-section-heading",
+                                    )
+                                    files_table = DataTable(
+                                        id="files-table", cursor_type="row"
+                                    )
+                                    files_table.add_columns(
+                                        "File", "Reads", "Tokens (~est)",
+                                    )
+                                    yield files_table
+                                    yield Static(
+                                        "",
+                                        id="files-empty",
+                                        classes="usage-hint",
+                                    )
+                                with Vertical(classes="usage-files-section"):
+                                    yield Static(
+                                        "Files written",
+                                        classes="usage-section-heading",
+                                    )
+                                    files_write_table = DataTable(
+                                        id="files-write-table", cursor_type="row"
+                                    )
+                                    files_write_table.add_columns(
+                                        "File", "Writes", "Edits",
+                                        "Tokens (~est)",
+                                    )
+                                    yield files_write_table
+                                    yield Static(
+                                        "",
+                                        id="files-write-empty",
+                                        classes="usage-hint",
+                                    )
                     with TabPane("Time [2]", id="tab-time"):
-                        yield self._make_plot("chart-context-time")
-                        yield self._make_plot("chart-cost-time")
+                        with VerticalScroll():
+                            yield self._make_plot("chart-context-time")
+                            yield self._make_plot("chart-cost-time")
                     with TabPane("Turn [3]", id="tab-turn"):
-                        yield self._make_plot("chart-context")
-                        yield self._make_plot("chart-cost")
+                        with VerticalScroll():
+                            yield self._make_plot("chart-context")
+                            yield self._make_plot("chart-cost")
                     with TabPane("Distribution [4]", id="tab-dist"):
-                        yield self._make_plot("chart-hist")
-                        yield self._make_plot("chart-gap")
+                        with VerticalScroll():
+                            yield self._make_plot("chart-hist")
+                            yield self._make_plot("chart-gap")
             else:
                 yield Static(
                     Text(
@@ -285,15 +329,12 @@ class SessionDetailScreen(Screen):
 
         with Horizontal(id="detail-footer"):
             yield Static(
-                "[b]1[/b] Usage   [b]2[/b] Time   [b]3[/b] Turn"
-                "   [b]4[/b] Distribution",
+                "[b]o[/b] open dir   [b]s[/b] resume session   "
+                "[b]i[/b] copy session ID   [b]p[/b] copy project path",
                 id="footer-left",
             )
             yield Static(
-                "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
-                "[b]F1[/b] open dir   [b]F2[/b] resume session   "
-                "[b]F3[/b] copy session ID   [b]F4[/b] copy project path   "
-                "[b]Esc[/b] back",
+                "[b]Tab[/b] / [b]shift+Tab[/b] focus   [b]esc[/b] back",
                 id="footer-right",
             )
 
@@ -303,6 +344,7 @@ class SessionDetailScreen(Screen):
             return
         self._populate_usage_table(sess)
         self._populate_files_table()
+        self._populate_files_write_table()
         turns = self.aggregator.load_full_session_turns(self.session_id)
         if turns:
             self._populate_charts(turns, sess)
@@ -753,6 +795,52 @@ class SessionDetailScreen(Screen):
                 f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
             )
             table.add_row(display, str(stats["reads"]), tokens_str)
+
+    def _populate_files_write_table(self) -> None:
+        """Fill the Files-written DataTable with one row per unique file
+        path modified via Write/Edit/NotebookEdit, sorted by total
+        modifications desc."""
+        try:
+            table = self.query_one("#files-write-table", DataTable)
+            empty = self.query_one("#files-write-empty", Static)
+        except Exception:
+            return
+
+        files = self.aggregator.count_file_writes_in_session(self.session_id)
+        if not files:
+            empty.update(
+                "No file writes recorded for this session — either the "
+                "session never used Write/Edit or the JSONL file is gone."
+            )
+            return
+
+        empty.update("")
+        sess = self.aggregator.sessions.get(self.session_id)
+        project_root = (sess.cwd if sess and sess.cwd else None) or (
+            decode_project_path(sess.project_slug) if sess else None
+        )
+        # Sort by total mutations desc — files churned the most are the
+        # actionable signal ('which file did the agent fight with').
+        ordered = sorted(
+            files.items(),
+            key=lambda kv: -(kv[1]["writes"] + kv[1]["edits"]),
+        )
+        for fp, stats in ordered:
+            display = fp
+            if project_root and fp.startswith(project_root + "/"):
+                display = fp[len(project_root) + 1:]
+            if len(display) > 60:
+                display = "…" + display[-59:]
+            tokens = stats["tokens_est"]
+            tokens_str = (
+                f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
+            )
+            table.add_row(
+                display,
+                str(stats["writes"]),
+                str(stats["edits"]),
+                tokens_str,
+            )
 
     def _fmt_pct(self, pct: float) -> str:
         """Render a percentage. Anything that rounds to >=0.01% with two
