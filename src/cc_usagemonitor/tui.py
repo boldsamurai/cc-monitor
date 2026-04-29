@@ -475,7 +475,7 @@ class UsageMonitorApp(App):
         Binding("3", "show_tab('models')", "Models"),
         # Filters — only fire when search Input doesn't have focus.
         Binding("slash", "focus_search", "Search"),
-        Binding("h", "cycle_filter('hide_deleted')", "Hide deleted"),
+        Binding("h", "cycle_filter('hide_deleted')", "Hide missing"),
         Binding("d", "cycle_filter('date')", "Date filter"),
         Binding("c", "cycle_filter('cost')", "Cost filter"),
         Binding("m", "cycle_filter('model')", "Model filter"),
@@ -528,7 +528,7 @@ class UsageMonitorApp(App):
                 id="filter-search",
             )
             yield Static(
-                "[b]h[/b] [ ] hide deleted   "
+                "[b]h[/b] [ ] hide missing   "
                 "[b]d[/b] date: all   "
                 "[b]c[/b] cost: all   "
                 "[b]m[/b] model: all",
@@ -1214,7 +1214,7 @@ class UsageMonitorApp(App):
             return
         hide_marker = "✓" if self.filter_hide_deleted else " "
         ctrl.update(
-            f"[b]h[/b] [{hide_marker}] hide deleted   "
+            f"[b]h[/b] [{hide_marker}] hide missing   "
             f"[b]d[/b] date: {self.filter_date}   "
             f"[b]c[/b] cost: {self._cost_label()}   "
             f"[b]m[/b] model: {self.filter_model}"
