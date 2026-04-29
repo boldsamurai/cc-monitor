@@ -23,6 +23,7 @@ from textual.widgets import (
 from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, BlockInfo, TokenSums
+from .parser import humanize_model_name
 from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
 from .launchers import open_file, open_in_file_manager, open_terminal_with
@@ -989,7 +990,7 @@ class UsageMonitorApp(App):
                 sums.cost_usd / sums.turns if sums.turns else 0.0
             )
             cells = (
-                model or "(unknown)",
+                humanize_model_name(model) or "(unknown)",
                 _human(sums.turns),
                 _human(sums.input),
                 _human(sums.output),
@@ -1001,6 +1002,9 @@ class UsageMonitorApp(App):
                 _fmt_usd(sums.cost_usd),
                 _fmt_usd(per_turn),
             )
+            # Row key stays on the raw model id so DataTable diff-update
+            # keeps tracking the right row across renders even when the
+            # display name changes.
             rows.append((model or "(unknown)", cells))
         self._apply_rows("#t-models", self.MODELS_COLS, rows)
         self._refresh_models_charts(per_model)
@@ -1074,7 +1078,7 @@ class UsageMonitorApp(App):
             legend_widget.update("")
             return
         parts = [
-            f"[rgb({r},{g},{b})]●[/] {name}"
+            f"[rgb({r},{g},{b})]●[/] {humanize_model_name(name)}"
             for name, (r, g, b) in zip(keep, colors)
         ]
         legend_widget.update("   ".join(parts))

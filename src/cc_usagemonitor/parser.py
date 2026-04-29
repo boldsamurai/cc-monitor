@@ -24,6 +24,37 @@ def normalize_model_name(model: str) -> str:
     return _MODEL_DATE_SUFFIX.sub("", model)
 
 
+def humanize_model_name(model: str) -> str:
+    """Render 'claude-opus-4-7' as 'Opus 4.7' for display.
+
+    Strictly a presentational helper — never use the result as a
+    dict key (storage uses normalize_model_name). Preserves the
+    optional context-window suffix '[1m]' so users running the
+    1M variant still see it. Falls back to the raw name when the
+    pattern doesn't match (older Claude 3.x ids, '(unknown)', etc.)
+    so we never silently lose an unrecognized identifier.
+    """
+    if not model:
+        return model
+    suffix = ""
+    base = model
+    if "[" in base:
+        idx = base.index("[")
+        suffix = base[idx:]
+        base = base[:idx]
+    if not base.startswith("claude-"):
+        return model
+    parts = base[len("claude-"):].split("-")
+    # Expected shape: <family>-<major>-<minor> where major/minor are
+    # plain integers. Anything else (e.g., 'claude-3-5-sonnet') stays
+    # as-is — better readable raw than mangled.
+    if len(parts) >= 3 and parts[-2].isdigit() and parts[-1].isdigit():
+        family = "-".join(parts[:-2]).title()
+        version = f"{parts[-2]}.{parts[-1]}"
+        return f"{family} {version}{suffix}"
+    return model
+
+
 @dataclass
 class UsageRecord:
     """One assistant turn's usage, parsed from a session JSONL file."""
