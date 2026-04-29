@@ -40,15 +40,20 @@ class ProjectDetailScreen(Screen):
         Binding("escape", "app.pop_screen", "Back"),
         Binding("q", "app.pop_screen", "Back"),
         Binding("1", "show_tab('tab-sessions')", "Sessions"),
-        Binding("2", "show_tab('tab-activity')", "Activity"),
-        Binding("3", "show_tab('tab-usage')", "Usage"),
-        # Open actions take F1-F3, copy aliases on F4-F5 — same priority
-        # as the main view (most-used keys closest to home row).
-        Binding("f1", "open_explorer", "Open in file manager"),
-        Binding("f2", "open_new_claude", "New Claude Code session"),
-        Binding("f3", "open_resume_last", "Resume last session"),
-        Binding("f4", "copy_path", "Copy project path"),
-        Binding("f5", "copy_session_id", "Copy session ID"),
+        Binding("2", "show_tab('tab-usage')", "Usage"),
+        Binding("3", "show_tab('tab-activity')", "Activity"),
+        # Letters rather than F-keys (F1-Fn aren't reliable on laptops
+        # or remote terminals). Open actions first, copies after.
+        Binding("o", "open_explorer", "Open in file manager"),
+        Binding("n", "open_new_claude", "New Claude Code session"),
+        Binding("s", "open_resume_last", "Resume last session"),
+        Binding("p", "copy_path", "Copy project path"),
+        Binding("i", "copy_session_id", "Copy session ID"),
+        Binding("f1", "open_explorer", "Open in file manager", show=False),
+        Binding("f2", "open_new_claude", "New Claude Code session", show=False),
+        Binding("f3", "open_resume_last", "Resume last session", show=False),
+        Binding("f4", "copy_path", "Copy project path", show=False),
+        Binding("f5", "copy_session_id", "Copy session ID", show=False),
     ]
 
     CSS = """
@@ -69,26 +74,41 @@ class ProjectDetailScreen(Screen):
         background: $panel;
     }
     #pd-tabs {
-        height: auto;
+        height: 1fr;
         background: $panel;
     }
     #pd-tabs Tabs { background: $panel; }
     #pd-tabs TabPane { padding: 0; background: $panel; }
     #pd-sessions-table { height: auto; max-height: 25; background: $panel; }
-    #pd-usage-row { height: auto; }
-    .pd-col-spans { width: 1fr; height: auto; margin-right: 2; }
-    .pd-col-files { width: 1fr; height: auto; }
-    #pd-spans-table, #pd-files-table {
+    #pd-usage-row { height: 1fr; }
+    .pd-col-spans { width: 1fr; height: 1fr; margin-right: 2; }
+    .pd-col-files { width: 1fr; height: 1fr; }
+    #pd-spans-table {
         height: auto;
         max-height: 25;
         background: $panel;
     }
+    /* Files tables fill their section (1fr) so DataTable handles row
+       overflow with its own internal scroll — auto+max-height would
+       let the second table push below the visible column. */
+    #pd-files-table, #pd-files-write-table {
+        height: 1fr;
+        background: $panel;
+    }
+    /* Two stacked sections inside .pd-col-files (Files read / Files
+       written) — fixed 50/50 split. Trades a bit of dead space when
+       one table has few rows for predictable overflow handling. */
+    .pd-files-section { height: 1fr; }
     .pd-section-heading {
         padding: 1 2 0 2;
         text-style: bold underline;
     }
+    /* Empty hint collapses to 0 rows when its content is "" so it
+       doesn't insert extra padding between Files read and Files
+       written when both have data. */
     .pd-hint {
-        padding: 1 2;
+        height: auto;
+        padding: 0 2;
         color: $text-muted;
     }
     #pd-footer {
@@ -120,7 +140,7 @@ class ProjectDetailScreen(Screen):
     # ----- compose -----
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll():
+        with Vertical():
             with Horizontal(id="pd-top"):
                 yield Static(self._build_info_block(), id="pd-info")
                 yield Static(self._build_totals_block(), id="pd-totals")
@@ -129,10 +149,7 @@ class ProjectDetailScreen(Screen):
             with TabbedContent(id="pd-tabs"):
                 with TabPane("Sessions [1]", id="tab-sessions"):
                     yield self._make_sessions_table()
-                with TabPane("Activity [2]", id="tab-activity"):
-                    yield self._make_plot("pd-chart-cost")
-                    yield self._make_plot("pd-chart-tokens")
-                with TabPane("Usage [3]", id="tab-usage"):
+                with TabPane("Usage [2]", id="tab-usage"):
                     with Horizontal(id="pd-usage-row"):
                         with Vertical(classes="pd-col-spans"):
                             yield Static(
@@ -148,37 +165,47 @@ class ProjectDetailScreen(Screen):
                             yield spans_table
                             yield Static("", id="pd-spans-empty", classes="pd-hint")
                         with Vertical(classes="pd-col-files"):
-                            yield Static(
-                                "Files read (across sessions)",
-                                classes="pd-section-heading",
-                            )
-                            files_table = DataTable(
-                                id="pd-files-table", cursor_type="row"
-                            )
-                            files_table.add_columns(
-                                "File", "Reads", "Tokens (~est)",
-                            )
-                            yield files_table
-                            yield Static("", id="pd-files-empty", classes="pd-hint")
+                            with Vertical(classes="pd-files-section"):
+                                yield Static(
+                                    "Files read (across sessions)",
+                                    classes="pd-section-heading",
+                                )
+                                files_table = DataTable(
+                                    id="pd-files-table", cursor_type="row"
+                                )
+                                files_table.add_columns(
+                                    "File", "Reads", "Tokens (~est)",
+                                )
+                                yield files_table
+                                yield Static("", id="pd-files-empty", classes="pd-hint")
+                            with Vertical(classes="pd-files-section"):
+                                yield Static(
+                                    "Files written (across sessions)",
+                                    classes="pd-section-heading",
+                                )
+                                files_write_table = DataTable(
+                                    id="pd-files-write-table", cursor_type="row"
+                                )
+                                files_write_table.add_columns(
+                                    "File", "Writes", "Edits", "Tokens (~est)",
+                                )
+                                yield files_write_table
+                                yield Static(
+                                    "",
+                                    id="pd-files-write-empty",
+                                    classes="pd-hint",
+                                )
+                with TabPane("Activity [3]", id="tab-activity"):
+                    with VerticalScroll():
+                        yield self._make_plot("pd-chart-cost")
+                        yield self._make_plot("pd-chart-tokens")
 
         with Horizontal(id="pd-footer"):
-            yield Static(
-                "[b]1[/b] Sessions   [b]2[/b] Activity   [b]3[/b] Usage",
-                id="pd-footer-left",
-            )
+            yield Static("", id="pd-footer-left")
             # Footer text is rebuilt in _update_footer based on the
-            # active tab (F5 only meaningful on Sessions). Initial value
+            # active tab (5 only meaningful on Sessions). Initial value
             # matches the default Sessions tab.
-            yield Static(
-                "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
-                "[b]F1[/b] open dir   "
-                "[b]F2[/b] new claude   "
-                "[b]F3[/b] resume last   "
-                "[b]F4[/b] copy path   "
-                "[b]F5[/b] copy session ID   "
-                "[b]Esc[/b] back",
-                id="pd-footer-right",
-            )
+            yield Static("", id="pd-footer-right")
 
     # ----- helpers used in compose -----
 
@@ -310,6 +337,12 @@ class ProjectDetailScreen(Screen):
             spans_empty = self.query_one("#pd-spans-empty", Static)
             files_table = self.query_one("#pd-files-table", DataTable)
             files_empty = self.query_one("#pd-files-empty", Static)
+            files_write_table = self.query_one(
+                "#pd-files-write-table", DataTable
+            )
+            files_write_empty = self.query_one(
+                "#pd-files-write-empty", Static
+            )
         except Exception:
             return
 
@@ -391,6 +424,48 @@ class ProjectDetailScreen(Screen):
                     f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
                 )
                 files_table.add_row(display, str(stats["reads"]), tokens_str)
+
+        # Files written: sum writes/edits/chars across all sessions,
+        # sort by total mutations desc.
+        writes_agg: dict[str, dict[str, int]] = defaultdict(
+            lambda: {"writes": 0, "edits": 0, "chars": 0, "tokens_est": 0}
+        )
+        for sess in self._sessions:
+            for fp, stats in self.aggregator.count_file_writes_in_session(
+                sess.session_id
+            ).items():
+                bucket = writes_agg[fp]
+                bucket["writes"] += stats["writes"]
+                bucket["edits"] += stats["edits"]
+                bucket["chars"] += stats["chars"]
+                bucket["tokens_est"] += stats["tokens_est"]
+
+        if not writes_agg:
+            files_write_empty.update(
+                "No Write/Edit tool calls recorded across these sessions."
+            )
+        else:
+            project_root = self._project_path()
+            ordered = sorted(
+                writes_agg.items(),
+                key=lambda kv: -(kv[1]["writes"] + kv[1]["edits"]),
+            )
+            for fp, stats in ordered:
+                display = fp
+                if project_root and fp.startswith(project_root + "/"):
+                    display = fp[len(project_root) + 1:]
+                if len(display) > 60:
+                    display = "…" + display[-59:]
+                tokens = stats["tokens_est"]
+                tokens_str = (
+                    f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
+                )
+                files_write_table.add_row(
+                    display,
+                    str(stats["writes"]),
+                    str(stats["edits"]),
+                    tokens_str,
+                )
 
     # ----- info-block builders -----
 
@@ -610,20 +685,29 @@ class ProjectDetailScreen(Screen):
     def _update_footer(self) -> None:
         try:
             tabs = self.query_one(TabbedContent)
-            footer = self.query_one("#pd-footer-right", Static)
+            left = self.query_one("#pd-footer-left", Static)
+            right = self.query_one("#pd-footer-right", Static)
         except Exception:
             return
-        prefix = "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back   "
         actions = (
-            "[b]F1[/b] open dir   "
-            "[b]F2[/b] new claude   "
-            "[b]F3[/b] resume last   "
-            "[b]F4[/b] copy path"
+            "[b]o[/b] open dir   "
+            "[b]n[/b] new claude   "
+            "[b]s[/b] resume last   "
+            "[b]p[/b] copy path"
         )
         if tabs.active == "tab-sessions":
-            actions += "   [b]F5[/b] copy session ID"
-        # Esc always sits at the rightmost end across every tab.
-        footer.update(prefix + actions + "   [b]Esc[/b] back")
+            # Enter drills into the highlighted session's detail screen.
+            # 'i' (copy session ID) is also session-specific, so both are
+            # gated on the Sessions tab.
+            actions = (
+                "[b]↵[/b] details   "
+                + actions
+                + "   [b]i[/b] copy session ID"
+            )
+        left.update(actions)
+        right.update(
+            "[b]Tab[/b] / [b]shift+Tab[/b] focus   [b]esc[/b] back"
+        )
 
     def _last_session_id(self) -> str | None:
         latest = None

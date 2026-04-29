@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from .anthropic_usage import UsageData
 from .logger import get_logger
@@ -327,6 +327,37 @@ class Aggregator:
         while self.recent_usage and self.recent_usage[0][0] < cutoff:
             self.recent_usage.popleft()
 
+    def cost_per_day_per_model(
+        self, days: int = 7
+    ) -> tuple[list[date], dict[str, list[float]]]:
+        """Aggregate cost from the long-window archive into per-(date, model)
+        buckets.
+
+        Returns ``(dates, per_model)`` where ``dates`` is a chronological
+        list of length ``days`` ending today (UTC) and ``per_model`` is
+        a {model: [cost_for_each_date]} dict aligned with that list.
+        Models present in the archive but with zero cost on a given day
+        still get a 0.0 entry so the lists stay equal length — that's
+        what plotext's stacked_bar expects.
+        """
+        today = datetime.now(tz=timezone.utc).date()
+        dates: list[date] = [
+            today - timedelta(days=i) for i in range(days - 1, -1, -1)
+        ]
+        date_index = {d: i for i, d in enumerate(dates)}
+
+        per_model: dict[str, list[float]] = {}
+        for ts, rec, cost in self._long_window:
+            ts_utc = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            d = ts_utc.date()
+            idx = date_index.get(d)
+            if idx is None:
+                continue
+            model = rec.model or "(unknown)"
+            series = per_model.setdefault(model, [0.0] * days)
+            series[idx] += cost
+        return dates, per_model
+
     def active_session_count(self, max_idle: timedelta = timedelta(minutes=30)) -> int:
         """Sessions whose last_seen is within max_idle of now."""
         cutoff = datetime.now(tz=timezone.utc) - max_idle
@@ -454,6 +485,69 @@ class Aggregator:
         # Rough estimate: 1 token ~ 4 chars for code/text. Anthropic
         # tokenizer is closer to ~3.5 for English prose, ~4-5 for code,
         # so this is within ~20% — fine for "is this file expensive".
+        for stats in files.values():
+            stats["tokens_est"] = stats["chars"] // 4
+        return files
+
+    def count_file_writes_in_session(
+        self, session_id: str
+    ) -> dict[str, dict[str, int]]:
+        """Per-file Write/Edit tool stats for a session.
+
+        Returns {file_path: {'writes': N, 'edits': M, 'chars': C,
+        'tokens_est': T}} where 'writes' is the count of full-content
+        Write calls and 'edits' lumps Edit and NotebookEdit (both modify
+        existing content, just at different granularity). 'chars' sums
+        the bytes actually written: Write.content, Edit.new_string,
+        NotebookEdit.new_source. tokens_est is chars/4.
+        """
+        from pathlib import Path
+        from .paths import PROJECTS_DIR
+        import json
+
+        sess = self.sessions.get(session_id)
+        if sess is None:
+            return {}
+        path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
+        if not path.is_file():
+            return {}
+        try:
+            text = path.read_text()
+        except OSError:
+            return {}
+
+        files: dict[str, dict[str, int]] = {}
+        for line in text.splitlines():
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            msg = obj.get("message") or {}
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+            for item in content:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("type") != "tool_use":
+                    continue
+                name = item.get("name")
+                if name not in ("Write", "Edit", "NotebookEdit"):
+                    continue
+                inp = item.get("input") or {}
+                fp = inp.get("file_path") or inp.get("notebook_path") or "?"
+                bucket = files.setdefault(
+                    fp, {"writes": 0, "edits": 0, "chars": 0, "tokens_est": 0}
+                )
+                if name == "Write":
+                    bucket["writes"] += 1
+                    bucket["chars"] += len(inp.get("content") or "")
+                elif name == "Edit":
+                    bucket["edits"] += 1
+                    bucket["chars"] += len(inp.get("new_string") or "")
+                else:  # NotebookEdit
+                    bucket["edits"] += 1
+                    bucket["chars"] += len(inp.get("new_source") or "")
         for stats in files.values():
             stats["tokens_est"] = stats["chars"] // 4
         return files
