@@ -719,18 +719,23 @@ class UsageMonitorApp(App):
         # convention as the Projects tab — the deleted block stays at
         # the bottom, dimmed, but doesn't disappear.
         from pathlib import Path
+
+        def _resolved_path(s) -> str | None:
+            # Prefer the captured cwd (ground truth for this session's
+            # actual working dir) over slug-decode, which only knows
+            # about the project root and would mark deeper subdir
+            # sessions as 'existing' even when their cwd is gone.
+            return s.cwd or decode_project_path(s.project_slug)
+
+        def _exists(s) -> bool:
+            p = _resolved_path(s)
+            return bool(p and Path(p).is_dir())
+
         rows: list[tuple[str, tuple[str, ...]]] = []
         epoch = datetime.min.replace(tzinfo=timezone.utc)
         sorted_sessions = sorted(
             self.aggregator.sessions.values(),
-            key=lambda s: (
-                bool(s.cwd and Path(s.cwd).is_dir())
-                or bool(
-                    decode_project_path(s.project_slug)
-                    and Path(decode_project_path(s.project_slug) or "").is_dir()
-                ),
-                s.last_seen or epoch,
-            ),
+            key=lambda s: (_exists(s), s.last_seen or epoch),
             reverse=True,
         )
         for s in sorted_sessions:
@@ -742,14 +747,14 @@ class UsageMonitorApp(App):
             )
             cache_pct = (s.sums.cache_read / total_in * 100) if total_in else 0.0
             per_turn = (s.sums.cost_usd / s.sums.turns) if s.sums.turns else 0.0
-            # Prefer cwd basename (ground truth) over slug guess for the
-            # project label.
-            real_path = s.cwd or decode_project_path(s.project_slug)
+            # Use the same resolved path the sort key inspected so the
+            # ✓/✗ marker and the row's group always agree.
+            real_path = _resolved_path(s)
             if real_path:
                 project_name = real_path.rsplit("/", 1)[-1]
             else:
                 project_name = decode_project_slug(s.project_slug)
-            exists = bool(real_path and Path(real_path).is_dir())
+            exists = _exists(s)
             ctx_limit = _context_limit_for(s.last_context_model, s.max_context_tokens)
             style = "" if exists else "dim"
 
