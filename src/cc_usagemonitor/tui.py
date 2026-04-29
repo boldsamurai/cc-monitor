@@ -579,7 +579,6 @@ class UsageMonitorApp(App):
                 yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
                 with Horizontal(id="models-charts"):
                     yield BarChart(id="chart-cost")
-                    yield BarChart(id="chart-cache")
                     yield PlotextPlot(id="chart-cost-time")
         with Horizontal(id="status-bar"):
             yield Static("", id="status-left")
@@ -1020,34 +1019,17 @@ class UsageMonitorApp(App):
         total_cost = sum(s.cost_usd for s in per_model.values()) or 1.0
 
         cost_items: list[tuple[str, float, str]] = []
-        cache_items: list[tuple[str, float, str]] = []
         for model, sums in per_model.items():
             label = model or "(unknown)"
             pct_cost = sums.cost_usd / total_cost * 100
             cost_suffix = f"${sums.cost_usd:,.0f} ({pct_cost:.0f}%)"
             cost_items.append((label, sums.cost_usd, cost_suffix))
-
-            input_total = (
-                sums.input
-                + sums.cache_read
-                + sums.cache_write_5m
-                + sums.cache_write_1h
-            )
-            cache_pct = (
-                sums.cache_read / input_total * 100 if input_total else 0.0
-            )
-            cache_items.append((label, cache_pct, f"{cache_pct:.1f}%"))
-
         cost_items.sort(key=lambda t: -t[1])
-        cache_items.sort(key=lambda t: -t[1])
 
         try:
             chart_cost = self.query_one("#chart-cost", BarChart)
             chart_cost.title = "Cost share"
             chart_cost.items = cost_items
-            chart_cache = self.query_one("#chart-cache", BarChart)
-            chart_cache.title = "Cache hit %"
-            chart_cache.items = cache_items
         except Exception:
             pass
 
