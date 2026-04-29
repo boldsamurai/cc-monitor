@@ -577,11 +577,13 @@ class UsageMonitorApp(App):
         # so all _fmt_* helpers see the user's preference on the very
         # first refresh tick rather than after a reload.
         _apply_format_config(date_format=cfg.get("date_format"))
+        self.watch(self, "theme", self._on_theme_change)
 
-        # Apply persisted view preferences. These are read once on
-        # startup — Settings changes persist immediately but only take
-        # visible effect on the next launch (filters & default tab
-        # would feel jarring to mutate mid-session).
+        self._setup_tables()
+
+        # Apply persisted view preferences AFTER _setup_tables so the
+        # filter watchers (which fire _refresh_view) find an initialized
+        # _row_cache. Doing this earlier blew up with AttributeError.
         self.filter_hide_deleted = bool(cfg.get("hide_missing_by_default", False))
         if cfg.get("persist_filters", False):
             saved = cfg.get("last_filters") or {}
@@ -602,9 +604,6 @@ class UsageMonitorApp(App):
                 self.query_one("#main-tabs", Tabs).active = default_tab
             except Exception:
                 pass
-        self.watch(self, "theme", self._on_theme_change)
-
-        self._setup_tables()
         self._update_filter_hint()
         self._update_status_right()
         self.run_worker(self._consume_queue(), exclusive=False)
