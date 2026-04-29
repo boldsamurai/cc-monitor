@@ -42,6 +42,7 @@ class ProjectDetailScreen(Screen):
         Binding("2", "show_tab('tab-activity')", "Activity"),
         Binding("3", "show_tab('tab-usage')", "Usage"),
         Binding("f1", "copy_path", "Copy project path"),
+        Binding("f2", "copy_session_id", "Copy session ID"),
         Binding("f3", "open_explorer", "Open in file manager"),
     ]
 
@@ -161,7 +162,8 @@ class ProjectDetailScreen(Screen):
                 id="pd-footer-left",
             )
             yield Static(
-                "[b]Esc[/b] back   [b]F1[/b] copy path   [b]F3[/b] open in file manager",
+                "[b]Esc[/b] back   [b]F1[/b] copy path   "
+                "[b]F2[/b] copy session ID   [b]F3[/b] open",
                 id="pd-footer-right",
             )
 
@@ -529,6 +531,28 @@ class ProjectDetailScreen(Screen):
             self.app.notify(f"Copy failed: {e}", severity="error")
             return
         self.app.notify(f"Copied {path}", timeout=2)
+
+    def action_copy_session_id(self) -> None:
+        """Copy the session_id of the cursor row in the Sessions table.
+        Context-aware — only meaningful in the Sessions tab; bails with
+        a hint otherwise."""
+        try:
+            table = self.query_one("#pd-sessions-table", DataTable)
+        except Exception:
+            self.app.notify("No sessions table on this screen", severity="warning")
+            return
+        keys = list(table.rows.keys())
+        idx = table.cursor_row
+        if not (0 <= idx < len(keys)):
+            self.app.notify("Move the cursor onto a session row first", severity="warning")
+            return
+        session_id = str(keys[idx].value)
+        try:
+            self.app.copy_to_clipboard(session_id)
+        except Exception as e:
+            self.app.notify(f"Copy failed: {e}", severity="error")
+            return
+        self.app.notify(f"Copied {session_id}", timeout=2)
 
     def action_open_explorer(self) -> None:
         """Open the project directory in the OS file manager. Uses
