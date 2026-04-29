@@ -60,12 +60,7 @@ def _fmt_turn_tick(v: int) -> str:
     return str(v)
 
 
-def _fmt_dt(ts: datetime | None) -> str:
-    if ts is None:
-        return "-"
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    return ts.astimezone().strftime("%d-%m-%Y %H:%M:%S")
+from .formatting import format_datetime_full as _fmt_dt  # noqa: F401
 
 
 def _fmt_duration(start: datetime | None, end: datetime | None) -> str:
