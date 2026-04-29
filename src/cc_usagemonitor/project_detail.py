@@ -158,7 +158,8 @@ class ProjectDetailScreen(Screen):
 
         with Horizontal(id="pd-footer"):
             yield Static(
-                "[b]1[/b] Sessions   [b]2[/b] Activity   [b]3[/b] Usage",
+                "[b]1[/b] Sessions   [b]2[/b] Activity   [b]3[/b] Usage    "
+                "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back",
                 id="pd-footer-left",
             )
             # Footer text is rebuilt in _update_footer based on the
