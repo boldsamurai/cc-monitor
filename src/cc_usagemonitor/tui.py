@@ -635,6 +635,13 @@ class UsageMonitorApp(App):
             switcher.current = active
         except Exception:
             return
+        # Models tab is a flat global aggregate; nothing to filter, so
+        # hide the filter bar (saves a row, signals the no-op state).
+        try:
+            bar = self.query_one("#filter-bar")
+            bar.display = active != "models"
+        except Exception:
+            pass
         self._refresh_view()
         # Move keyboard focus into the table of the newly-activated tab.
         try:
