@@ -42,6 +42,7 @@ class ProjectDetailScreen(Screen):
         Binding("2", "show_tab('tab-activity')", "Activity"),
         Binding("3", "show_tab('tab-usage')", "Usage"),
         Binding("f1", "copy_path", "Copy project path"),
+        Binding("f3", "open_explorer", "Open in file manager"),
     ]
 
     CSS = """
@@ -160,7 +161,7 @@ class ProjectDetailScreen(Screen):
                 id="pd-footer-left",
             )
             yield Static(
-                "[b]Esc[/b] back   [b]F1[/b] copy project path",
+                "[b]Esc[/b] back   [b]F1[/b] copy path   [b]F3[/b] open in file manager",
                 id="pd-footer-right",
             )
 
@@ -185,6 +186,12 @@ class ProjectDetailScreen(Screen):
         self._populate_sessions_table()
         self._populate_charts()
         self._populate_usage_tables()
+        # Sessions table is the natural starting point — auto-focus
+        # so Enter drills further without needing Tab first.
+        try:
+            self.query_one("#pd-sessions-table", DataTable).focus()
+        except Exception:
+            pass
 
     def _populate_sessions_table(self) -> None:
         try:
@@ -522,6 +529,33 @@ class ProjectDetailScreen(Screen):
             self.app.notify(f"Copy failed: {e}", severity="error")
             return
         self.app.notify(f"Copied {path}", timeout=2)
+
+    def action_open_explorer(self) -> None:
+        """Open the project directory in the OS file manager. Uses
+        xdg-open on Linux, 'open' on macOS, 'explorer' on Windows.
+        Path-only — never executes anything from the project."""
+        path = self._project_path()
+        if not path:
+            self.app.notify("Project path unknown", severity="warning")
+            return
+        if not Path(path).is_dir():
+            self.app.notify(
+                f"Path no longer exists: {path}", severity="warning"
+            )
+            return
+        import sys
+        import subprocess
+        try:
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            elif sys.platform == "win32":
+                subprocess.Popen(["explorer", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as e:
+            self.app.notify(f"Open failed: {e}", severity="error")
+            return
+        self.app.notify(f"Opened {path}", timeout=2)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         # Enter on a session row drills further into per-session detail.
