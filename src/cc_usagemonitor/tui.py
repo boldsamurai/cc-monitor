@@ -18,6 +18,7 @@ from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
 from .pricing import PricingTable
 from .project_slug import decode_project_path, decode_project_slug
+from .project_detail import ProjectDetailScreen
 from .session_detail import SessionDetailScreen
 from .tailer import Tailer
 
@@ -520,14 +521,20 @@ class UsageMonitorApp(App):
         save_config(cfg)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        # Enter on a sessions row drills down into the detail screen.
-        if event.data_table.id != "t-sessions":
-            return
+        # Enter on a sessions / projects row drills down into the
+        # respective detail screen. Both DataTables sit on the same
+        # screen; dispatch by widget id.
         if event.row_key is None or event.row_key.value is None:
             return
-        self.push_screen(
-            SessionDetailScreen(str(event.row_key.value), self.aggregator)
-        )
+        table_id = event.data_table.id
+        if table_id == "t-sessions":
+            self.push_screen(
+                SessionDetailScreen(str(event.row_key.value), self.aggregator)
+            )
+        elif table_id == "t-projects":
+            self.push_screen(
+                ProjectDetailScreen(str(event.row_key.value), self.aggregator)
+            )
 
     def on_tabbed_content_tab_activated(
         self, event: TabbedContent.TabActivated
