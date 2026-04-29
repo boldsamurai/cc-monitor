@@ -25,6 +25,13 @@ from .project_slug import decode_project_path, decode_project_slug
 # reads as one unified panel rather than a patchwork of shades.
 _PANEL_RGB: tuple[int, int, int] = (36, 47, 56)  # #242F38
 _PLOTEXT_THEME_NAME = "cc-monitor-panel"
+# Data series color cycle (plotext _sequence). Exported so legends can
+# colorize model names with the exact RGBs plotext picks for each
+# stacked-bar segment.
+_PLOTEXT_COLOR_CYCLE: list[tuple[int, int, int]] = [
+    (0, 130, 200), (60, 180, 75), (230, 25, 75), (255, 225, 25),
+    (245, 130, 48), (145, 30, 180), (70, 240, 240), (240, 50, 230),
+]
 try:
     from plotext._dict import themes as _plotext_themes
     if _PLOTEXT_THEME_NAME not in _plotext_themes:
@@ -33,10 +40,7 @@ try:
             _PANEL_RGB,        # axes color
             (224, 224, 224),   # ticks/foreground
             "default",         # default style
-            [                  # data series color cycle (plotext _sequence)
-                (0, 130, 200), (60, 180, 75), (230, 25, 75), (255, 225, 25),
-                (245, 130, 48), (145, 30, 180), (70, 240, 240), (240, 50, 230),
-            ],
+            list(_PLOTEXT_COLOR_CYCLE),  # data series color cycle
         )
 except Exception:
     pass
