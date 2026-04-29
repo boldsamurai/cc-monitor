@@ -32,7 +32,11 @@ from .pricing import PricingTable
 log = get_logger(__name__)
 from .project_slug import decode_project_path, decode_project_slug
 from .project_detail import ProjectDetailScreen
-from .session_detail import SessionDetailScreen
+from .session_detail import (
+    SessionDetailScreen,
+    _PLOTEXT_COLOR_CYCLE,
+    _PLOTEXT_THEME_NAME,
+)
 from .tailer import Tailer
 
 
@@ -447,11 +451,19 @@ class UsageMonitorApp(App):
     #t-models { height: 1fr; }
     #models-charts { height: 50%; }
     /* Two plotext stacked-bars side by side — tokens and cost over the
-       same 7-day window, splitting horizontal space 50/50. */
+       same 7-day window, splitting horizontal space 50/50. Each is
+       wrapped with a Static legend below so model→color mapping is
+       discoverable at a glance. */
+    .chart-with-legend { width: 1fr; height: 100%; }
     #chart-tokens-time, #chart-cost-time {
-        width: 1fr;
+        height: 1fr;
         padding: 1 1;
         border: round $primary;
+        background: $panel;
+    }
+    .chart-legend {
+        height: auto;
+        padding: 0 2;
         background: $panel;
     }
     #status-bar {
@@ -549,8 +561,22 @@ class UsageMonitorApp(App):
             with Container(id="models"):
                 yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
                 with Horizontal(id="models-charts"):
-                    yield PlotextPlot(id="chart-tokens-time")
-                    yield PlotextPlot(id="chart-cost-time")
+                    with Vertical(classes="chart-with-legend"):
+                        tokens_plot = PlotextPlot(id="chart-tokens-time")
+                        tokens_plot.theme = _PLOTEXT_THEME_NAME
+                        yield tokens_plot
+                        yield Static(
+                            "", id="chart-tokens-legend",
+                            classes="chart-legend",
+                        )
+                    with Vertical(classes="chart-with-legend"):
+                        cost_plot = PlotextPlot(id="chart-cost-time")
+                        cost_plot.theme = _PLOTEXT_THEME_NAME
+                        yield cost_plot
+                        yield Static(
+                            "", id="chart-cost-legend",
+                            classes="chart-legend",
+                        )
         with Horizontal(id="status-bar"):
             yield Static("", id="status-left")
             yield Static("", id="status-right")
@@ -992,6 +1018,7 @@ class UsageMonitorApp(App):
         # spend vs. raw volume without a third redundant table summary.
         self._refresh_per_day_chart(
             "#chart-cost-time",
+            "#chart-cost-legend",
             self.aggregator.cost_per_day_per_model,
             title="Cost / day per model",
             ylabel="$",
@@ -999,6 +1026,7 @@ class UsageMonitorApp(App):
         )
         self._refresh_per_day_chart(
             "#chart-tokens-time",
+            "#chart-tokens-legend",
             self.aggregator.tokens_per_day_per_model,
             title="Tokens / day per model",
             ylabel="tokens",
@@ -1008,6 +1036,7 @@ class UsageMonitorApp(App):
     def _refresh_per_day_chart(
         self,
         chart_id: str,
+        legend_id: str,
         source_method,
         *,
         title: str,
@@ -1018,9 +1047,12 @@ class UsageMonitorApp(App):
 
         Used for both Cost/day and Tokens/day in the Models tab — same
         layout, only the source method and y-axis formatter differ.
+        Updates a sibling Static (``legend_id``) with colored bullets
+        so model→color mapping is discoverable.
         """
         try:
             plot = self.query_one(chart_id, PlotextPlot)
+            legend_widget = self.query_one(legend_id, Static)
         except Exception:
             return
         dates, per_model = source_method(days=7)
@@ -1031,6 +1063,7 @@ class UsageMonitorApp(App):
             p.clear_figure()
             p.title(f"{title} (no data in last 7d)")
             plot.refresh()
+            legend_widget.update("")
             return
 
         # Drop models contributing <1% of total — at typical opus/haiku
@@ -1069,20 +1102,27 @@ class UsageMonitorApp(App):
             ]
             tick_labels = [tick_fmt(v) for v in tick_positions]
 
-        # plotext's stacked_bar in this version doesn't accept a `label`
-        # kwarg for the legend, so encode the stack order in the title
-        # instead. Bottom-up = largest-to-smallest by total.
-        legend = "  •  ".join(series_names)
         p = plot.plt
         p.clear_data()
         p.clear_figure()
         p.stacked_bar(labels, series_values)
-        p.title(f"{title} (last 7d) — {legend}")
+        p.title(f"{title} (last 7d)")
         p.xlabel("date")
         p.ylabel(ylabel)
         if tick_positions:
             p.yticks(tick_positions, tick_labels)
         plot.refresh()
+
+        # Build a Rich-markup legend whose dot colors match plotext's
+        # stacked_bar color cycle — series order = color cycle index.
+        # Without this the user has to guess which color is which model
+        # since plotext's stacked_bar in this version has no built-in
+        # legend support.
+        parts: list[str] = []
+        for i, name in enumerate(series_names):
+            r, g, b = _PLOTEXT_COLOR_CYCLE[i % len(_PLOTEXT_COLOR_CYCLE)]
+            parts.append(f"[rgb({r},{g},{b})]●[/] {name}")
+        legend_widget.update("   ".join(parts))
 
     def _refresh_projects_table(self) -> None:
         """Aggregate every session by its project_slug. Sums cost /
