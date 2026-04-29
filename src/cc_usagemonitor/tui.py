@@ -109,6 +109,84 @@ def _context_limit_for(model: str, observed_max: int = 0) -> int:
     return 200_000
 
 
+def _open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
+    """Spawn a new terminal window in cwd running command (detached).
+
+    Returns (ok, message). Cross-platform best-effort:
+    - $TERMINAL env var if set
+    - macOS: osascript + Terminal.app
+    - Windows: start cmd
+    - Linux/BSD: tries kitty / alacritty / wezterm / gnome-terminal /
+      konsole / xterm / x-terminal-emulator in that order
+    """
+    import os
+    import shlex
+    import shutil
+    import subprocess
+    import sys
+
+    if sys.platform == "darwin":
+        cmd_str = " ".join(shlex.quote(c) for c in command)
+        script = (
+            f'tell application "Terminal" to do script '
+            f'"cd {shlex.quote(cwd)} && {cmd_str}"'
+        )
+        try:
+            subprocess.Popen(["osascript", "-e", script])
+            return True, "Opened in Terminal.app"
+        except Exception as e:
+            return False, f"osascript failed: {e}"
+
+    if sys.platform == "win32":
+        cmd_str = " ".join(shlex.quote(c) for c in command)
+        try:
+            subprocess.Popen(
+                f'start "" cmd /k "cd /d \"{cwd}\" && {cmd_str}"',
+                shell=True,
+            )
+            return True, "Opened in cmd"
+        except Exception as e:
+            return False, f"start failed: {e}"
+
+    # Linux / BSD path — try $TERMINAL first, then common emulators.
+    candidates: list[str] = []
+    env_term = os.environ.get("TERMINAL")
+    if env_term:
+        candidates.append(env_term)
+    candidates += [
+        "kitty", "alacritty", "wezterm",
+        "gnome-terminal", "konsole",
+        "xterm", "x-terminal-emulator",
+    ]
+    for term in candidates:
+        if not shutil.which(term):
+            continue
+        try:
+            if term == "kitty":
+                subprocess.Popen([term, "--directory", cwd, *command])
+            elif term == "alacritty":
+                subprocess.Popen(
+                    [term, "--working-directory", cwd, "-e", *command]
+                )
+            elif term == "wezterm":
+                subprocess.Popen(
+                    [term, "start", "--cwd", cwd, "--", *command]
+                )
+            elif term == "gnome-terminal":
+                subprocess.Popen(
+                    [term, "--working-directory", cwd, "--", *command]
+                )
+            elif term == "konsole":
+                subprocess.Popen([term, "--workdir", cwd, "-e", *command])
+            else:
+                # xterm / x-terminal-emulator — generic '-e' form
+                subprocess.Popen([term, "-e", *command], cwd=cwd)
+            return True, f"Opened in {term}"
+        except Exception as e:
+            return False, f"{term} failed: {e}"
+    return False, "No terminal emulator found in PATH"
+
+
 class FilterInput(Input):
     """Search Input with extra word-deletion bindings.
 
@@ -479,6 +557,10 @@ class UsageMonitorApp(App):
         Binding("d", "cycle_filter('date')", "Date filter"),
         Binding("c", "cycle_filter('cost')", "Cost filter"),
         Binding("m", "cycle_filter('model')", "Model filter"),
+        # Open actions — context-aware (cursor row + active tab).
+        Binding("f1", "open_in_explorer", "Open in file manager"),
+        Binding("f2", "open_claude_primary", "Open Claude Code"),
+        Binding("f3", "open_claude_resume_last", "Resume last (project)"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -566,6 +648,7 @@ class UsageMonitorApp(App):
 
         self._setup_tables()
         self._update_filter_hint()
+        self._update_status_right()
         self.run_worker(self._consume_queue(), exclusive=False)
         self.run_worker(self._tailer_runner(), exclusive=False)
         self.set_interval(0.5, self._refresh_view)
@@ -642,12 +725,37 @@ class UsageMonitorApp(App):
             bar.display = active != "models"
         except Exception:
             pass
+        self._update_status_right()
         self._refresh_view()
         # Move keyboard focus into the table of the newly-activated tab.
         try:
             self.query_one(f"#t-{active}", DataTable).focus()
         except Exception:
             pass
+
+    def _update_status_right(self) -> None:
+        """Tab-specific F-key hints in the status bar."""
+        try:
+            right = self.query_one("#status-right", Static)
+        except Exception:
+            return
+        active = self._active_tab()
+        nav = "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back"
+        if active == "sessions":
+            keys = (
+                "[b]F1[/b] open dir   "
+                "[b]F2[/b] resume session"
+            )
+        elif active == "projects":
+            keys = (
+                "[b]F1[/b] open dir   "
+                "[b]F2[/b] new claude   "
+                "[b]F3[/b] resume last"
+            )
+        else:
+            keys = ""
+        parts = [keys, nav, "[b]q[/b] Quit"] if keys else [nav, "[b]q[/b] Quit"]
+        right.update("   ".join(parts))
 
     SESSIONS_COLS = [
         ("Session", "sid"),
@@ -1094,6 +1202,150 @@ class UsageMonitorApp(App):
             self.query_one("#filter-search", Input).focus()
         except Exception:
             pass
+
+    # ----- open actions (file manager / Claude Code) -----
+
+    def _active_tab(self) -> str:
+        try:
+            return self.query_one("#main-tabs", Tabs).active
+        except Exception:
+            return "sessions"
+
+    def _cursor_row_key(self, table_id: str) -> str | None:
+        """row_key.value of the cursor row in the named DataTable, or None."""
+        try:
+            t = self.query_one(f"#t-{table_id}", DataTable)
+        except Exception:
+            return None
+        keys = list(t.rows.keys())
+        idx = t.cursor_row
+        if not (0 <= idx < len(keys)):
+            return None
+        return str(keys[idx].value)
+
+    def _project_path_for_session(self, session_id: str) -> str | None:
+        sess = self.aggregator.sessions.get(session_id)
+        if sess is None:
+            return None
+        return sess.cwd or decode_project_path(sess.project_slug)
+
+    def _project_path_for_slug(self, slug: str) -> str | None:
+        # The Projects table aggregates per slug; pull the cwd off any
+        # session in that project (we already capture it on ingest).
+        for sess in self.aggregator.sessions.values():
+            if sess.project_slug == slug and sess.cwd:
+                return sess.cwd
+        return decode_project_path(slug)
+
+    def _last_session_id_in_project(self, slug: str) -> str | None:
+        latest = None
+        latest_ts: datetime | None = None
+        for sess in self.aggregator.sessions.values():
+            if sess.project_slug != slug:
+                continue
+            if sess.last_seen is None:
+                continue
+            ts = sess.last_seen
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if latest_ts is None or ts > latest_ts:
+                latest_ts = ts
+                latest = sess.session_id
+        return latest
+
+    def _open_dir_in_file_manager(self, path: str | None) -> None:
+        from pathlib import Path
+        import subprocess
+        import sys
+        if not path or not Path(path).is_dir():
+            self.notify(
+                "Path missing on disk — can't open",
+                severity="warning",
+            )
+            return
+        try:
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            elif sys.platform == "win32":
+                subprocess.Popen(["explorer", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+            self.notify(f"Opened {path}", timeout=2)
+        except Exception as e:
+            self.notify(f"Open failed: {e}", severity="error")
+
+    def _resolve_open_path(self) -> str | None:
+        """Path under the cursor for the active tab. Sessions tab uses
+        the session's cwd; Projects tab uses any session's cwd in that
+        slug. Models tab returns None (nothing path-shaped to open)."""
+        active = self._active_tab()
+        if active == "sessions":
+            sid = self._cursor_row_key("sessions")
+            return self._project_path_for_session(sid) if sid else None
+        if active == "projects":
+            slug = self._cursor_row_key("projects")
+            return self._project_path_for_slug(slug) if slug else None
+        return None
+
+    def action_open_in_explorer(self) -> None:
+        self._open_dir_in_file_manager(self._resolve_open_path())
+
+    def action_open_claude_primary(self) -> None:
+        """Sessions tab → resume cursor session.
+        Projects tab → start a fresh Claude Code session in the project."""
+        active = self._active_tab()
+        if active == "sessions":
+            sid = self._cursor_row_key("sessions")
+            if not sid:
+                self.notify("Move the cursor onto a row first", severity="warning")
+                return
+            path = self._project_path_for_session(sid)
+            if not path:
+                self.notify("Project path unknown", severity="warning")
+                return
+            ok, msg = _open_terminal_with(path, ["claude", "--resume", sid])
+        elif active == "projects":
+            slug = self._cursor_row_key("projects")
+            if not slug:
+                self.notify("Move the cursor onto a row first", severity="warning")
+                return
+            path = self._project_path_for_slug(slug)
+            if not path:
+                self.notify("Project path unknown", severity="warning")
+                return
+            ok, msg = _open_terminal_with(path, ["claude"])
+        else:
+            return
+        if ok:
+            self.notify(msg, timeout=2)
+        else:
+            self.notify(msg, severity="error")
+
+    def action_open_claude_resume_last(self) -> None:
+        """Projects tab only — resume the most recent session of the
+        cursor project by id (not the interactive picker)."""
+        if self._active_tab() != "projects":
+            return
+        slug = self._cursor_row_key("projects")
+        if not slug:
+            self.notify("Move the cursor onto a row first", severity="warning")
+            return
+        path = self._project_path_for_slug(slug)
+        if not path:
+            self.notify("Project path unknown", severity="warning")
+            return
+        last_sid = self._last_session_id_in_project(slug)
+        if not last_sid:
+            self.notify(
+                "No previous session recorded for this project",
+                severity="warning",
+            )
+            return
+        ok, msg = _open_terminal_with(path, ["claude", "--resume", last_sid])
+        if ok:
+            self.notify(msg, timeout=2)
+        else:
+            self.notify(msg, severity="error")
 
     def action_cycle_filter(self, name: str) -> None:
         """Toggle hide_deleted, or cycle date/cost/model values."""
