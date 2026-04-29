@@ -41,9 +41,9 @@ class ProjectDetailScreen(Screen):
         Binding("1", "show_tab('tab-sessions')", "Sessions"),
         Binding("2", "show_tab('tab-activity')", "Activity"),
         Binding("3", "show_tab('tab-usage')", "Usage"),
-        Binding("f1", "copy_path", "Copy project path"),
-        Binding("f2", "copy_session_id", "Copy session ID"),
-        Binding("f3", "open_explorer", "Open in file manager"),
+        Binding("f1", "open_explorer", "Open in file manager"),
+        Binding("f2", "copy_path", "Copy project path"),
+        Binding("f3", "copy_session_id", "Copy session ID"),
     ]
 
     CSS = """
@@ -161,9 +161,12 @@ class ProjectDetailScreen(Screen):
                 "[b]1[/b] Sessions   [b]2[/b] Activity   [b]3[/b] Usage",
                 id="pd-footer-left",
             )
+            # Footer text is rebuilt in _update_footer based on the
+            # active tab (F3 only meaningful on Sessions). Initial value
+            # matches the default Sessions tab.
             yield Static(
-                "[b]Esc[/b] back   [b]F1[/b] copy path   "
-                "[b]F2[/b] copy session ID   [b]F3[/b] open",
+                "[b]Esc[/b] back   [b]F1[/b] open   [b]F2[/b] copy path"
+                "   [b]F3[/b] copy session ID",
                 id="pd-footer-right",
             )
 
@@ -534,17 +537,30 @@ class ProjectDetailScreen(Screen):
 
     def action_copy_session_id(self) -> None:
         """Copy the session_id of the cursor row in the Sessions table.
-        Context-aware — only meaningful in the Sessions tab; bails with
-        a hint otherwise."""
+        Only fires when the Sessions tab is active — bails with a
+        no-op notify in any other tab so the keybinding doesn't quietly
+        copy something stale."""
+        try:
+            tabs = self.query_one(TabbedContent)
+        except Exception:
+            return
+        if tabs.active != "tab-sessions":
+            self.app.notify(
+                "Copy session ID only works on the Sessions tab",
+                severity="warning",
+            )
+            return
         try:
             table = self.query_one("#pd-sessions-table", DataTable)
         except Exception:
-            self.app.notify("No sessions table on this screen", severity="warning")
             return
         keys = list(table.rows.keys())
         idx = table.cursor_row
         if not (0 <= idx < len(keys)):
-            self.app.notify("Move the cursor onto a session row first", severity="warning")
+            self.app.notify(
+                "Move the cursor onto a session row first",
+                severity="warning",
+            )
             return
         session_id = str(keys[idx].value)
         try:
@@ -553,6 +569,25 @@ class ProjectDetailScreen(Screen):
             self.app.notify(f"Copy failed: {e}", severity="error")
             return
         self.app.notify(f"Copied {session_id}", timeout=2)
+
+    def on_tabbed_content_tab_activated(
+        self, event: TabbedContent.TabActivated
+    ) -> None:
+        # Show F3 hint only while the Sessions tab is in front — keeps
+        # the footer honest about what the keybinding actually does.
+        self._update_footer()
+
+    def _update_footer(self) -> None:
+        try:
+            tabs = self.query_one(TabbedContent)
+            footer = self.query_one("#pd-footer-right", Static)
+        except Exception:
+            return
+        common = "[b]Esc[/b] back   [b]F1[/b] open   [b]F2[/b] copy path"
+        if tabs.active == "tab-sessions":
+            footer.update(common + "   [b]F3[/b] copy session ID")
+        else:
+            footer.update(common)
 
     def action_open_explorer(self) -> None:
         """Open the project directory in the OS file manager. Uses
