@@ -26,6 +26,11 @@ from .aggregator import Aggregator, BlockInfo, TokenSums
 from .parser import humanize_model_name
 from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
+from .formatting import (
+    apply_config as _apply_format_config,
+    format_datetime as _fmt_datetime,
+    format_time as _fmt_ts,
+)
 from .launchers import open_file, open_in_file_manager, open_terminal_with
 from .logger import LOG_DIR, LOG_FILE, get_logger
 from .pricing import PricingTable
@@ -47,22 +52,6 @@ def _fmt_int(n: int) -> str:
 
 def _fmt_usd(v: float) -> str:
     return f"${v:.4f}"
-
-
-def _fmt_ts(ts: datetime | None) -> str:
-    if ts is None:
-        return "-"
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    return ts.astimezone().strftime("%H:%M:%S")
-
-
-def _fmt_datetime(ts: datetime | None) -> str:
-    if ts is None:
-        return "-"
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    return ts.astimezone().strftime("%d-%m-%Y %H:%M")
 
 
 def _fmt_duration(start: datetime | None, end: datetime | None) -> str:
@@ -499,6 +488,7 @@ class UsageMonitorApp(App):
         Binding("f2", "open_claude_primary", "Open Claude Code", show=False),
         Binding("f3", "open_claude_resume_last", "Resume last (project)", show=False),
         Binding("l", "open_log", "Open log file"),
+        Binding("comma", "open_settings", "Settings"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -583,6 +573,13 @@ class UsageMonitorApp(App):
                 self.theme = saved_theme
             except Exception:
                 pass
+        # Push date format / time zone into the formatting module's
+        # global state so all _fmt_* helpers see the user's preferences
+        # on the very first refresh tick rather than after a reload.
+        _apply_format_config(
+            date_format=cfg.get("date_format"),
+            time_zone=cfg.get("time_zone"),
+        )
         self.watch(self, "theme", self._on_theme_change)
 
         self._setup_tables()
@@ -703,7 +700,7 @@ class UsageMonitorApp(App):
         left.update(actions)
         right.update(
             "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-            "[b]l[/b] log   [b]q[/b] quit"
+            "[b],[/b] settings   [b]l[/b] log   [b]q[/b] quit"
         )
 
     SESSIONS_COLS = [
@@ -1253,9 +1250,10 @@ class UsageMonitorApp(App):
         self._apply_rows("#t-projects", self.PROJECTS_COLS, rows)
 
     def _fmt_dt(self, ts: datetime | None) -> str:
-        if ts is None:
-            return "-"
-        return ts.astimezone().strftime("%d-%m-%Y %H:%M")
+        # Thin wrapper — Projects tab cells were calling this method form
+        # before the formatting module existed. Keeps the call sites
+        # readable rather than threading the import everywhere.
+        return _fmt_datetime(ts)
 
     def action_show_tab(self, tab_id: str) -> None:
         try:
@@ -1393,6 +1391,11 @@ class UsageMonitorApp(App):
         self.notify(
             fallback_msg, severity="information" if ok else "warning"
         )
+
+    def action_open_settings(self) -> None:
+        """Push the Settings overlay onto the screen stack."""
+        from .settings_screen import SettingsScreen
+        self.push_screen(SettingsScreen())
 
     def action_open_claude_resume_last(self) -> None:
         """Projects tab only — resume the most recent session of the
