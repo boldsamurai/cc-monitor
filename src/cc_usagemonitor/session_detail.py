@@ -281,7 +281,8 @@ class SessionDetailScreen(Screen):
         with Horizontal(id="detail-footer"):
             yield Static(
                 "[b]1[/b] Usage   [b]2[/b] Time   [b]3[/b] Turn"
-                "   [b]4[/b] Distribution",
+                "   [b]4[/b] Distribution    "
+                "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back",
                 id="footer-left",
             )
             yield Static(

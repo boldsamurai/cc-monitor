@@ -462,7 +462,8 @@ class UsageMonitorApp(App):
                     yield BarChart(id="chart-cache")
         with Horizontal(id="status-bar"):
             yield Static(
-                "[b]1[/b] Sessions  [b]2[/b] Projects  [b]3[/b] Models",
+                "[b]1[/b] Sessions  [b]2[/b] Projects  [b]3[/b] Models   "
+                " [b]Tab[/b] focus next  [b]Shift+Tab[/b] back",
                 id="status-left",
             )
             yield Static("[b]r[/b] Refresh  [b]q[/b] Quit", id="status-right")
