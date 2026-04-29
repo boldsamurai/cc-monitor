@@ -9,9 +9,17 @@ from rich.table import Table
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import DataTable, Header, Input, Static, TabbedContent, TabPane
+from textual.widgets import (
+    ContentSwitcher,
+    DataTable,
+    Header,
+    Input,
+    Static,
+    Tab,
+    Tabs,
+)
 
 from .aggregator import Aggregator, BlockInfo, TokenSums
 from .anthropic_usage import UsageData, get_usage
@@ -401,25 +409,28 @@ class UsageMonitorApp(App):
         background: $panel;
         border-bottom: solid $primary;
     }
-    TabbedContent { height: 1fr; background: $panel; }
-    TabbedContent Tabs { background: $panel; }
-    TabbedContent TabPane { background: $panel; }
-    /* Filter bar — its own row between BlockPanel and the tab strip.
-       Search Input on the left, status hint on the right. */
+    /* Tabs + filter bar + content switcher — three vertical bands.
+       Tabs on top, filter bar one line below them, table content fills
+       the rest. */
+    #main-tabs { background: $panel; }
+    #main-content { height: 1fr; background: $panel; }
+    #main-content > Container { background: $panel; }
     #filter-bar {
-        height: 3;
+        height: 1;
         padding: 0 2;
         background: $panel;
     }
     #filter-search {
-        width: 36;
-        height: 3;
+        width: 24;
+        height: 1;
+        border: none;
+        padding: 0 1;
         background: $panel-lighten-1;
         margin-right: 2;
     }
     #filter-controls {
         width: 1fr;
-        height: 3;
+        height: 1;
         content-align: left middle;
         color: $text;
     }
@@ -487,9 +498,19 @@ class UsageMonitorApp(App):
         yield Header(show_clock=True)
         yield SummaryPanel(id="summary")
         yield BlockPanel(id="block")
+        # Tabs strip first, then filter bar in its own row, then content
+        # switcher with the actual tables. Decoupling Tabs from the
+        # bundled TabbedContent lets us slip the filter bar between them
+        # without competing for horizontal space.
+        yield Tabs(
+            Tab("Sessions [1]", id="sessions"),
+            Tab("Projects [2]", id="projects"),
+            Tab("Models [3]", id="models"),
+            id="main-tabs",
+        )
         with Horizontal(id="filter-bar"):
             yield Input(
-                placeholder="search…  (/ to focus)",
+                placeholder="search…  (/)",
                 id="filter-search",
             )
             yield Static(
@@ -499,12 +520,12 @@ class UsageMonitorApp(App):
                 "[b]m[/b] model: all",
                 id="filter-controls",
             )
-        with TabbedContent(initial="sessions"):
-            with TabPane("Sessions [1]", id="sessions"):
+        with ContentSwitcher(initial="sessions", id="main-content"):
+            with Container(id="sessions"):
                 yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
-            with TabPane("Projects [2]", id="projects"):
+            with Container(id="projects"):
                 yield DataTable(id="t-projects", cursor_type="row", zebra_stripes=True)
-            with TabPane("Models [3]", id="models"):
+            with Container(id="models"):
                 yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
                 with Horizontal(id="models-charts"):
                     yield BarChart(id="chart-cost")
@@ -589,16 +610,19 @@ class UsageMonitorApp(App):
                 ProjectDetailScreen(str(event.row_key.value), self.aggregator)
             )
 
-    def on_tabbed_content_tab_activated(
-        self, event: TabbedContent.TabActivated
-    ) -> None:
-        # The newly-shown tab may be stale (we only refresh the active tab on
-        # the timer). Force a refresh now so the user sees current numbers.
+    def on_tabs_tab_activated(self, event: Tabs.TabActivated) -> None:
+        # Switch the ContentSwitcher to the newly-activated pane and
+        # force-refresh that table.
+        if event.tab is None:
+            return
+        active = event.tab.id
+        try:
+            switcher = self.query_one("#main-content", ContentSwitcher)
+            switcher.current = active
+        except Exception:
+            return
         self._refresh_view()
-        # Move keyboard focus into the table of the newly-activated tab so
-        # arrow keys keep working — without this, switching with 1-4 leaves
-        # focus on the previous (now hidden) table and the user has to Tab.
-        active = event.tabbed_content.active
+        # Move keyboard focus into the table of the newly-activated tab.
         try:
             self.query_one(f"#t-{active}", DataTable).focus()
         except Exception:
@@ -695,7 +719,10 @@ class UsageMonitorApp(App):
         # Refresh only the visible tab — keeps the UI responsive even at
         # hundreds of rows. The other tables are still in-sync from previous
         # refreshes; they'll catch up the moment the user switches tabs.
-        active = self.query_one(TabbedContent).active
+        try:
+            active = self.query_one("#main-tabs", Tabs).active
+        except Exception:
+            active = "sessions"
         if active == "sessions":
             self._refresh_sessions_table()
         elif active == "models":
@@ -1026,7 +1053,10 @@ class UsageMonitorApp(App):
         return ts.astimezone().strftime("%d-%m-%Y %H:%M")
 
     def action_show_tab(self, tab_id: str) -> None:
-        self.query_one(TabbedContent).active = tab_id
+        try:
+            self.query_one("#main-tabs", Tabs).active = tab_id
+        except Exception:
+            pass
 
     def action_refresh(self) -> None:
         self._refresh_view()
@@ -1065,7 +1095,7 @@ class UsageMonitorApp(App):
         if event.input.id != "filter-search":
             return
         try:
-            active = self.query_one(TabbedContent).active
+            active = self.query_one("#main-tabs", Tabs).active
             self.query_one(f"#t-{active}", DataTable).focus()
         except Exception:
             pass
