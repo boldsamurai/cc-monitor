@@ -24,8 +24,8 @@ from textual.widgets import (
 from .aggregator import Aggregator, BlockInfo, TokenSums
 from .anthropic_usage import UsageData, get_usage
 from .config import load_config, save_config
-from .launchers import open_in_file_manager, open_terminal_with
-from .logger import get_logger
+from .launchers import open_file, open_in_file_manager, open_terminal_with
+from .logger import LOG_FILE, get_logger
 from .pricing import PricingTable
 
 log = get_logger(__name__)
@@ -487,6 +487,7 @@ class UsageMonitorApp(App):
         Binding("f1", "open_in_explorer", "Open in file manager"),
         Binding("f2", "open_claude_primary", "Open Claude Code"),
         Binding("f3", "open_claude_resume_last", "Resume last (project)"),
+        Binding("L", "open_log", "Open log file"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -669,6 +670,8 @@ class UsageMonitorApp(App):
             return
         active = self._active_tab()
         nav = "[b]Tab[/b] focus next  [b]Shift+Tab[/b] back"
+        # 'L' on every tab — log opens regardless of context.
+        log_hint = "[b]L[/b] log"
         if active == "sessions":
             keys = (
                 "[b]F1[/b] open dir   "
@@ -682,7 +685,7 @@ class UsageMonitorApp(App):
             )
         else:
             keys = ""
-        parts = [keys, nav, "[b]q[/b] Quit"] if keys else [nav, "[b]q[/b] Quit"]
+        parts = [p for p in (keys, log_hint, nav, "[b]q[/b] Quit") if p]
         right.update("   ".join(parts))
 
     SESSIONS_COLS = [
@@ -1233,6 +1236,11 @@ class UsageMonitorApp(App):
             self.notify(msg, timeout=2)
         else:
             self.notify(msg, severity="error")
+
+    def action_open_log(self) -> None:
+        """Open the rotating log file in the user's default text editor."""
+        ok, msg = open_file(LOG_FILE)
+        self.notify(msg, severity="information" if ok else "warning")
 
     def action_open_claude_resume_last(self) -> None:
         """Projects tab only — resume the most recent session of the
