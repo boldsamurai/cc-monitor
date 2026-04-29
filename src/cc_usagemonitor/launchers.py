@@ -91,6 +91,28 @@ def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
     return False, "No terminal emulator found in PATH"
 
 
+def open_file(path: str | Path) -> tuple[bool, str]:
+    """Open a file in the user's default app — text editor for .log/.md,
+    image viewer for images, etc. Same xdg-open / open / start dispatch
+    as open_in_file_manager but for files instead of directories."""
+    log.info("open_file path=%s", path)
+    p = Path(path)
+    if not p.exists():
+        log.warning("open_file: file not found: %s", p)
+        return False, f"File not found: {p}"
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", str(p)])
+        elif sys.platform == "win32":
+            subprocess.Popen(f'start "" "{p}"', shell=True)
+        else:
+            subprocess.Popen(["xdg-open", str(p)])
+        return True, f"Opened {p}"
+    except Exception as e:
+        log.error("open_file failed: %s", e)
+        return False, f"Open failed: {e}"
+
+
 def open_in_file_manager(path: str | None) -> tuple[bool, str]:
     """xdg-open on Linux, 'open' on macOS, explorer on Windows."""
     log.info("open_in_file_manager path=%s", path)
