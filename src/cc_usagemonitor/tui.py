@@ -448,7 +448,26 @@ class UsageMonitorApp(App):
         Binding("1", "show_tab('sessions')", "Sessions"),
         Binding("2", "show_tab('projects')", "Projects"),
         Binding("3", "show_tab('models')", "Models"),
+        # Filters — only fire when search Input doesn't have focus.
+        Binding("slash", "focus_search", "Search"),
+        Binding("h", "cycle_filter('hide_deleted')", "Hide deleted"),
+        Binding("d", "cycle_filter('date')", "Date filter"),
+        Binding("c", "cycle_filter('cost')", "Cost filter"),
+        Binding("m", "cycle_filter('model')", "Model filter"),
     ]
+
+    # Filter state — watched so any change forces a table refresh.
+    filter_search: reactive[str] = reactive("")
+    filter_hide_deleted: reactive[bool] = reactive(False)
+    # Cycle order kept here so bindings stay short (single state name).
+    _FILTER_CYCLES: dict[str, list[str]] = {
+        "date": ["all", "24h", "7d", "30d"],
+        "cost": ["all", "1", "10", "100"],
+        "model": ["all", "opus", "sonnet", "haiku"],
+    }
+    filter_date: reactive[str] = reactive("all")
+    filter_cost: reactive[str] = reactive("all")
+    filter_model: reactive[str] = reactive("all")
 
     def __init__(
         self,
@@ -523,6 +542,8 @@ class UsageMonitorApp(App):
         self.watch(self, "theme", self._on_theme_change)
 
         self._setup_tables()
+        # Render the initial filter hint (default state: no filters).
+        self._update_filter_hint()
         self.run_worker(self._consume_queue(), exclusive=False)
         self.run_worker(self._tailer_runner(), exclusive=False)
         self.set_interval(0.5, self._refresh_view)
@@ -773,10 +794,6 @@ class UsageMonitorApp(App):
         from pathlib import Path
 
         def _resolved_path(s) -> str | None:
-            # Prefer the captured cwd (ground truth for this session's
-            # actual working dir) over slug-decode, which only knows
-            # about the project root and would mark deeper subdir
-            # sessions as 'existing' even when their cwd is gone.
             return s.cwd or decode_project_path(s.project_slug)
 
         def _exists(s) -> bool:
@@ -790,7 +807,20 @@ class UsageMonitorApp(App):
             key=lambda s: (_exists(s), s.last_seen or epoch),
             reverse=True,
         )
+        # Filter constants resolved once per refresh so each row only
+        # pays for cheap comparisons.
+        date_cutoff = self._date_filter_cutoff()
+        cost_min = self._cost_filter_min()
+        model_substr = self._model_filter_substr()
+        search_q = self.filter_search.strip().lower()
         for s in sorted_sessions:
+            # Apply filters before formatting so we skip expensive cell
+            # work for hidden rows.
+            if not self._session_matches_filters(
+                s, _resolved_path(s), _exists(s),
+                date_cutoff, cost_min, model_substr, search_q,
+            ):
+                continue
             total_in = (
                 s.sums.cache_read
                 + s.sums.input
@@ -974,7 +1004,12 @@ class UsageMonitorApp(App):
             ),
             reverse=True,
         )
+        search_q = self.filter_search.strip().lower()
         for slug, entry in ordered:
+            if not self._project_matches_filters(
+                slug, entry, existence.get(slug, False), search_q
+            ):
+                continue
             sessions_n = entry["sessions"]
             per_session = entry["cost"] / sessions_n if sessions_n else 0.0
             exists = existence.get(slug, False)
@@ -1017,6 +1052,153 @@ class UsageMonitorApp(App):
             self.query_one("#main-tabs", Tabs).active = tab_id
         except Exception:
             pass
+
+    # ----- filter bar wiring -----
+
+    def action_focus_search(self) -> None:
+        try:
+            self.query_one("#filter-search", Input).focus()
+        except Exception:
+            pass
+
+    def action_cycle_filter(self, name: str) -> None:
+        """Toggle hide_deleted, or cycle date/cost/model values."""
+        if name == "hide_deleted":
+            self.filter_hide_deleted = not self.filter_hide_deleted
+            return
+        cycle = self._FILTER_CYCLES.get(name)
+        if cycle is None:
+            return
+        attr = f"filter_{name}"
+        current = getattr(self, attr)
+        try:
+            idx = cycle.index(current)
+        except ValueError:
+            idx = -1
+        setattr(self, attr, cycle[(idx + 1) % len(cycle)])
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "filter-search":
+            self.filter_search = event.value
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        # Enter in the search box → drop focus back into the active table
+        # so navigation continues without an extra Tab keypress.
+        if event.input.id != "filter-search":
+            return
+        try:
+            active = self.query_one("#main-tabs", Tabs).active
+            self.query_one(f"#t-{active}", DataTable).focus()
+        except Exception:
+            pass
+
+    def watch_filter_search(self, _old: str, _new: str) -> None:
+        self._refresh_view()
+        self._update_filter_hint()
+
+    def watch_filter_hide_deleted(self, _old: bool, _new: bool) -> None:
+        self._refresh_view()
+        self._update_filter_hint()
+
+    def watch_filter_date(self, _old: str, _new: str) -> None:
+        self._refresh_view()
+        self._update_filter_hint()
+
+    def watch_filter_cost(self, _old: str, _new: str) -> None:
+        self._refresh_view()
+        self._update_filter_hint()
+
+    def watch_filter_model(self, _old: str, _new: str) -> None:
+        self._refresh_view()
+        self._update_filter_hint()
+
+    # Filter helpers ---------------------------------------------------
+
+    def _date_filter_cutoff(self) -> datetime | None:
+        """Convert filter_date ('all'/'24h'/'7d'/'30d') to a UTC cutoff."""
+        now = datetime.now(tz=timezone.utc)
+        return {
+            "24h": now - timedelta(hours=24),
+            "7d": now - timedelta(days=7),
+            "30d": now - timedelta(days=30),
+        }.get(self.filter_date)
+
+    def _cost_filter_min(self) -> float | None:
+        if self.filter_cost == "all":
+            return None
+        try:
+            return float(self.filter_cost)
+        except ValueError:
+            return None
+
+    def _model_filter_substr(self) -> str | None:
+        return None if self.filter_model == "all" else self.filter_model
+
+    def _session_matches_filters(
+        self, s, resolved_path, exists,
+        date_cutoff, cost_min, model_substr, search_q,
+    ) -> bool:
+        if self.filter_hide_deleted and not exists:
+            return False
+        if date_cutoff is not None:
+            ts = s.last_seen
+            if ts is None:
+                return False
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts < date_cutoff:
+                return False
+        if cost_min is not None and s.sums.cost_usd < cost_min:
+            return False
+        if model_substr is not None:
+            if not any(model_substr in m.lower() for m in s.by_model):
+                return False
+        if search_q:
+            haystacks = [s.session_id.lower()]
+            if resolved_path:
+                haystacks.append(resolved_path.lower())
+            if not any(search_q in h for h in haystacks):
+                return False
+        return True
+
+    def _project_matches_filters(
+        self, slug: str, entry: dict, exists: bool, search_q: str,
+    ) -> bool:
+        if self.filter_hide_deleted and not exists:
+            return False
+        date_cutoff = self._date_filter_cutoff()
+        if date_cutoff is not None:
+            ts = entry.get("last_seen")
+            if ts is None:
+                return False
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts < date_cutoff:
+                return False
+        cost_min = self._cost_filter_min()
+        if cost_min is not None and entry["cost"] < cost_min:
+            return False
+        # Model filter doesn't apply at the project level (sessions
+        # within a project can use multiple models). Skip silently.
+        if search_q:
+            cwd = entry.get("cwd") or ""
+            name = (cwd.rsplit("/", 1)[-1] if cwd else slug).lower()
+            if search_q not in name and search_q not in cwd.lower():
+                return False
+        return True
+
+    def _update_filter_hint(self) -> None:
+        try:
+            ctrl = self.query_one("#filter-controls", Static)
+        except Exception:
+            return
+        hide_marker = "✓" if self.filter_hide_deleted else " "
+        ctrl.update(
+            f"[b]h[/b] [{hide_marker}] hide deleted   "
+            f"[b]d[/b] date: {self.filter_date}   "
+            f"[b]c[/b] cost: {'≥$' + self.filter_cost if self.filter_cost != 'all' else 'all'}   "
+            f"[b]m[/b] model: {self.filter_model}"
+        )
 
     def action_refresh(self) -> None:
         self._refresh_view()
