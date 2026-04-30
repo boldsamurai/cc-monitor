@@ -152,7 +152,10 @@ class SettingsScreen(Screen):
                 )
 
                 yield Static("Plan", classes="settings-row")
-                current_plan = self._cfg.get("plan", "none")
+                # Default to 'auto' — Anthropic doesn't publish per-plan
+                # token limits, so static presets are off by orders of
+                # magnitude under modern cache-heavy workloads.
+                current_plan = self._cfg.get("plan", "auto")
                 # API on → Plan irrelevant, disable radio so the user
                 # sees this isn't worth touching. Toggling API off
                 # re-enables it live (see on_switch_changed).
@@ -164,12 +167,18 @@ class SettingsScreen(Screen):
                         yield RadioButton(p, value=(p == current_plan))
                 yield Static(
                     "Used only when API integration is OFF (local "
-                    "fallback for the 5h-block progress bars). With "
-                    "API ON, this setting is ignored.\n"
-                    "'none' = no progress bars (raw burn only). "
-                    "'pro/max5/max20' = static plan limits "
-                    "(19k/$18, 88k/$35, 220k/$140 per 5h). "
-                    "'auto' = P90 of your last 8d. Restart required.",
+                    "fallback for the 5h-block cost bar). With API "
+                    "ON, this setting is ignored.\n\n"
+                    "[b]Anthropic doesn't publish per-plan token "
+                    "limits[/b] — static 'pro/max5/max20' presets "
+                    "(19k/88k/220k tokens) are community estimates "
+                    "and are wildly off once cache_read kicks in. "
+                    "[b]'auto'[/b] (default, recommended) computes "
+                    "P90 from your last 8d so the limit adapts to "
+                    "your actual workflow. Cost limits ($18/$35/$140) "
+                    "are published, so the cost progress bar is "
+                    "trustworthy on every preset.\n"
+                    "Restart required.",
                     classes="setting-note",
                 )
 

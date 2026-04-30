@@ -101,20 +101,27 @@ def main() -> None:
     # back to whatever the user persisted via the Settings screen, then
     # the historical defaults if config is empty.
     cfg = load_config()
-    plan_name = args.plan or cfg.get("plan", "none")
+    # Default to 'auto' — Anthropic doesn't publish per-plan token
+    # limits, so static presets (pro/max5/max20) all show wildly off
+    # percentages once cache_read tokens kick in. P90 of the user's
+    # last 8d is the only offline metric that adapts to actual usage.
+    plan_name = args.plan or cfg.get("plan", "auto")
     plan = PLAN_LIMITS.get(plan_name, PLAN_LIMITS["none"])
     aggregator.token_limit = args.max_5h_tokens or plan["tokens"]
     aggregator.cost_limit = args.max_5h_cost or plan["cost"]
 
-    # --plan auto needs the historical archive populated to compute P90,
-    # so silently turn on --from-start and recompute periodically.
-    auto_limits = plan_name == "auto"
-    if auto_limits and not args.from_start:
-        args.from_start = True
-
     # CLI --no-api always disables; otherwise honor the persisted
     # Settings toggle (defaults to enabled).
     use_api = False if args.no_api else cfg.get("use_api", True)
+
+    # 'auto' needs the 8-day archive populated to compute P90, so
+    # silently turn on --from-start and recompute periodically. BUT
+    # only when API is off — with API on, Plan is ignored anyway and
+    # --from-start would just waste startup time re-reading every
+    # JSONL for no benefit.
+    auto_limits = plan_name == "auto" and not use_api
+    if auto_limits and not args.from_start:
+        args.from_start = True
 
     tailer = Tailer(queue, poll_interval=args.poll, from_start=args.from_start)
 
