@@ -59,15 +59,35 @@ class SettingsScreen(Screen):
         text-style: italic;
     }
     /* Default RadioSet has a heavy border that boxes off the panel
-       into disconnected slabs — drop it so the options sit inline. */
+       into disconnected slabs — drop it so the options sit inline.
+       Compact spacing + color-coded selection so the active option
+       stands out against the muted ones. */
     RadioSet {
         background: $panel;
         border: none;
         padding: 0 0 1 0;
         height: auto;
     }
-    RadioSet:focus {
-        border: none;
+    RadioSet:focus { border: none; }
+    RadioButton {
+        height: 1;
+        padding: 0 1;
+        background: transparent;
+        color: $text-muted;
+    }
+    RadioButton.-on {
+        color: $primary;
+        text-style: bold;
+        background: $primary 15%;
+    }
+    /* Horizontal flavor for short option lists — Date format / Default
+       tab fit on one row, no need to stack them vertically. */
+    .radio-horizontal {
+        layout: horizontal;
+    }
+    .radio-horizontal RadioButton {
+        width: auto;
+        margin: 0 1 0 0;
     }
     /* Switches sit inline beneath their preceding Static label so the
        layout matches the RadioSet groups (heading on top, control
@@ -120,7 +140,9 @@ class SettingsScreen(Screen):
 
                 yield Static("Date format", classes="settings-row")
                 current_date_fmt = self._cfg.get("date_format", "DD-MM-YYYY")
-                with RadioSet(id="date-format-radio"):
+                with RadioSet(
+                    id="date-format-radio", classes="radio-horizontal"
+                ):
                     for fmt in DATE_FORMATS:
                         yield RadioButton(
                             fmt, value=(fmt == current_date_fmt)
@@ -131,7 +153,9 @@ class SettingsScreen(Screen):
 
                 yield Static("Default tab on startup", classes="settings-row")
                 current_default_tab = self._cfg.get("default_tab", "sessions")
-                with RadioSet(id="default-tab-radio"):
+                with RadioSet(
+                    id="default-tab-radio", classes="radio-horizontal"
+                ):
                     for t in _DEFAULT_TABS:
                         yield RadioButton(t, value=(t == current_default_tab))
 
