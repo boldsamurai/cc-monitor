@@ -1,14 +1,51 @@
 [project]
 name = "cc-usagemonitor"
 version = "0.1.0"
-description = "Real-time token usage monitor for Claude Code sessions"
+description = "Real-time token usage and cost monitor for Claude Code sessions, in your terminal."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
+authors = [
+    { name = "Adam Czarnowski", email = "adam.czarnowski@wizipisi.ai" },
+]
+keywords = [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "tui",
+    "monitor",
+    "usage",
+    "cost",
+    "tokens",
+    "textual",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: System :: Monitoring",
+    "Topic :: Terminals",
+]
 dependencies = [
     "textual>=0.86",
     "keyring>=24.0",
     "plotext>=5.0",
     "textual-plotext>=1.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/boldsamurai/cc-monitor"
+Repository = "https://github.com/boldsamurai/cc-monitor"
+Issues = "https://github.com/boldsamurai/cc-monitor/issues"
 
 [project.scripts]
 cc-usagemonitor = "cc_usagemonitor.__main__:main"
@@ -20,6 +57,15 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cc_usagemonitor"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/cc_usagemonitor",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
