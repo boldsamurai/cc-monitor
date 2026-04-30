@@ -29,11 +29,6 @@ PLAN_LIMITS = {
 def main() -> None:
     parser = argparse.ArgumentParser(prog="cc-usagemonitor")
     parser.add_argument(
-        "--from-start",
-        action="store_true",
-        help="Replay all existing JSONL content (default: only tail new lines).",
-    )
-    parser.add_argument(
         "--poll",
         type=float,
         default=0.5,
@@ -124,16 +119,19 @@ def main() -> None:
         # the endpoint accepts. API-key users would just get 401 spam.
         use_api = has_oauth
 
-    # 'auto' needs the 8-day archive populated to compute P90, so
-    # silently turn on --from-start and recompute periodically. BUT
-    # only when API is off — with API on, Plan is ignored anyway and
-    # --from-start would just waste startup time re-reading every
-    # JSONL for no benefit.
+    # 'auto' plan needs the 8-day archive populated to compute P90.
+    # Replay mode is always on (see Tailer below), so this flag is
+    # purely a signal to recompute P90 periodically as the archive
+    # rolls forward in time.
     auto_limits = plan_name == "auto" and not use_api
-    if auto_limits and not args.from_start:
-        args.from_start = True
 
-    tailer = Tailer(queue, poll_interval=args.poll, from_start=args.from_start)
+    # Replay every existing JSONL on startup. Tail-only mode (the old
+    # default) starts with empty tables and accumulates state only
+    # while the app is running, which is useless for almost everyone:
+    # closing the terminal wipes the in-memory archive, so the next
+    # launch sees nothing again. Replay is slightly slower at startup
+    # but presents the user's actual history immediately.
+    tailer = Tailer(queue, poll_interval=args.poll, from_start=True)
 
     run_app(
         aggregator, tailer, queue,
