@@ -896,12 +896,10 @@ class UsageMonitorApp(App):
         self.run_worker(self._poll_api_usage_async, exclusive=False)
 
     def _recompute_auto_limits(self) -> None:
-        result = self.aggregator.auto_detect_limits_p90()
-        if result is None:
+        cost_p90 = self.aggregator.auto_detect_limits_p90()
+        if cost_p90 is None:
             return
-        token_limit, cost_limit = result
-        self.aggregator.token_limit = token_limit
-        self.aggregator.cost_limit = cost_limit
+        self.aggregator.cost_limit = cost_p90
 
     def _on_theme_change(self, new_theme: str) -> None:
         log.info("theme changed to %s", new_theme)
@@ -1223,10 +1221,9 @@ class UsageMonitorApp(App):
             and info is not None
             and info.pct_cost is not None
         ):
-            # Local-only path. Only the cost bar is meaningful — token
-            # presets are unreliable in cache-heavy modern usage (see
-            # BlockPanel._render_local_only) so we deliberately skip
-            # pct_tokens here.
+            # Local-only path: cost is the only published authoritative
+            # ceiling Anthropic gives us, so the threshold notification
+            # tracks it directly.
             key = f"local_5h:{info.start.isoformat()}"
             active_keys.add(key)
             self._maybe_notify_threshold(key, info.pct_cost, "5h block")
