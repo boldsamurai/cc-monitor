@@ -217,6 +217,49 @@ class Aggregator:
             tuple[str, str], tuple[int, object]
         ] = {}
 
+    # ----- snapshot / restore for cross-run persistence -----
+
+    # Fields persisted across runs. Pricing is loaded fresh, api_usage
+    # is re-fetched, _session_cache is cheap to rebuild — none belong
+    # in the snapshot. revision is preserved so the TUI's _last_data_
+    # revision gate works correctly on restore.
+    _SNAPSHOT_FIELDS = (
+        "sessions",
+        "spans_by_id",
+        "spans_by_session",
+        "_pending_correlation",
+        "recent_usage",
+        "by_skill",
+        "by_agent",
+        "_long_window",
+        "token_limit",
+        "cost_limit",
+        "revision",
+    )
+
+    def snapshot(self) -> dict:
+        """Return a dict of state for cross-run persistence. The dict is
+        pickled by state.save() — keep values to plain Python / dataclass
+        instances so unpickling doesn't depend on third-party state."""
+        return {
+            field: getattr(self, field)
+            for field in self._SNAPSHOT_FIELDS
+        }
+
+    def restore(self, data: dict) -> None:
+        """Replace runtime state from a snapshot dict produced by
+        ``snapshot()``. Tolerates missing keys (older snapshots that
+        predate a new field) — those just stay at their __init__
+        defaults so a forward-compat snapshot still works without a
+        SCHEMA_VERSION bump."""
+        for field in self._SNAPSHOT_FIELDS:
+            if field in data:
+                setattr(self, field, data[field])
+        log.info(
+            "aggregator restored: %d sessions, %d archive records",
+            len(self.sessions), len(self._long_window),
+        )
+
     def reset_state(self) -> None:
         """Drop all accumulated runtime state but keep configuration
         (token/cost limits, api_usage). After this, a follow-up
