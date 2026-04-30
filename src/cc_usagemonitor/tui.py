@@ -640,6 +640,11 @@ class UsageMonitorApp(App):
         # don't try to pop a screen that's no longer at the top of
         # the stack.
         self._loading_dismissed = False
+        # Per-table user sort preference set by clicking column headers.
+        # {table_id: (column_key_value, reverse_bool)}. _apply_rows
+        # re-applies this after every refresh so our default order
+        # (e.g., sessions by last_seen desc) doesn't undo the click.
+        self._user_sort: dict[str, tuple[str, bool]] = {}
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -1146,6 +1151,46 @@ class UsageMonitorApp(App):
                 table.move_cursor(row=new_idx, column=saved_col)
             except Exception:
                 pass
+
+        # Re-apply user's column-header sort if any. Without this, our
+        # default sort (by last_seen desc, etc.) would clobber the
+        # user's click on the next refresh tick.
+        sort_pref = self._user_sort.get(table_id)
+        if sort_pref is not None:
+            col_key, reverse = sort_pref
+            try:
+                table.sort(col_key, reverse=reverse)
+            except Exception:
+                pass
+
+    def on_data_table_header_selected(
+        self, event: DataTable.HeaderSelected,
+    ) -> None:
+        """Click a column header to sort by it; click the same one
+        again to reverse the direction. Only applies to main-view
+        tables (#t-sessions / #t-projects / #t-models)."""
+        table = event.data_table
+        # Some DataTables in the app are read-only inside detail
+        # screens — don't track those, just let Textual sort once.
+        table_id = f"#{table.id}" if table.id else None
+        if table_id not in ("#t-sessions", "#t-projects", "#t-models"):
+            return
+        col_key_value = (
+            event.column_key.value
+            if hasattr(event.column_key, "value")
+            else str(event.column_key)
+        )
+        prev = self._user_sort.get(table_id)
+        if prev is not None and prev[0] == col_key_value:
+            reverse = not prev[1]
+        else:
+            reverse = False
+        try:
+            table.sort(event.column_key, reverse=reverse)
+        except Exception as e:
+            log.warning("sort failed for %s/%s: %s", table_id, col_key_value, e)
+            return
+        self._user_sort[table_id] = (col_key_value, reverse)
 
     def _refresh_sessions_table(self) -> None:
         # Sort: existing-project sessions on top, then deleted ones, both
