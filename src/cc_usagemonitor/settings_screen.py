@@ -17,7 +17,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, RadioButton, RadioSet, Static, Switch
+from textual.widgets import Button, Checkbox, RadioButton, RadioSet, Static
 
 from . import __version__
 from .config import CONFIG_FILE, load_config, save_config
@@ -81,20 +81,34 @@ class SettingsScreen(Screen):
         background: $primary 15%;
     }
     /* Horizontal flavor for short option lists — Date format / Default
-       tab fit on one row, no need to stack them vertically. */
+       tab fit on one row, no need to stack them vertically. Explicit
+       height: 2 (one row of buttons + one row of bottom padding) so
+       the container doesn't reserve scroll-area space below. */
     .radio-horizontal {
         layout: horizontal;
+        height: 2;
+        padding: 0 0 1 0;
     }
     .radio-horizontal RadioButton {
         width: auto;
         margin: 0 1 0 0;
     }
-    /* Switches sit inline beneath their preceding Static label so the
-       layout matches the RadioSet groups (heading on top, control
-       below) rather than label-left/switch-right horizontal rows. */
-    Switch {
+    /* Checkboxes for boolean prefs — text-based, fit naturally inline
+       with the surrounding settings rows. Match RadioButton styling
+       so the Behavior section reads as one consistent block. */
+    Checkbox {
         background: $panel;
+        border: none;
+        height: 1;
+        padding: 0 1;
         margin: 0 0 1 0;
+        color: $text-muted;
+    }
+    Checkbox:focus { border: none; }
+    Checkbox.-on {
+        color: $primary;
+        text-style: bold;
+        background: $primary 15%;
     }
     #hook-status-text, #diagnostics-text {
         padding: 1 0;
@@ -159,22 +173,15 @@ class SettingsScreen(Screen):
                     for t in _DEFAULT_TABS:
                         yield RadioButton(t, value=(t == current_default_tab))
 
-                yield Static(
+                yield Checkbox(
                     "Persist filters between sessions",
-                    classes="settings-row",
-                )
-                yield Switch(
                     value=self._cfg.get("persist_filters", False),
-                    id="persist-filters-switch",
+                    id="persist-filters-check",
                 )
-
-                yield Static(
+                yield Checkbox(
                     "Hide missing projects/sessions by default",
-                    classes="settings-row",
-                )
-                yield Switch(
                     value=self._cfg.get("hide_missing_by_default", False),
-                    id="hide-missing-switch",
+                    id="hide-missing-check",
                 )
 
                 # ===== Diagnostics =====
@@ -369,12 +376,12 @@ class SettingsScreen(Screen):
             self._cfg["default_tab"] = label
             save_config(self._cfg)
 
-    def on_switch_changed(self, event: Switch.Changed) -> None:
-        sid = event.switch.id
-        if sid == "persist-filters-switch":
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        cid = event.checkbox.id
+        if cid == "persist-filters-check":
             self._cfg["persist_filters"] = bool(event.value)
             save_config(self._cfg)
-        elif sid == "hide-missing-switch":
+        elif cid == "hide-missing-check":
             self._cfg["hide_missing_by_default"] = bool(event.value)
             save_config(self._cfg)
 
