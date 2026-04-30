@@ -94,6 +94,13 @@ class SortPickerScreen(ModalScreen):
         margin: 0 1;
         min-width: 12;
     }
+    /* Modal footer with key hints — same style as the rest of the
+       app's footers (see tui.py / project_detail.py). */
+    .sort-footer {
+        padding: 1 0 0 0;
+        text-align: center;
+        color: $text-muted;
+    }
     """
 
     def __init__(
@@ -136,6 +143,11 @@ class SortPickerScreen(ModalScreen):
                     "Reset", id="sort-reset", variant="warning",
                 )
                 yield Button("Cancel", id="sort-cancel")
+            yield Static(
+                "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
+                "[b]↵[/b] activate   [b]esc[/b] cancel",
+                classes="sort-footer",
+            )
 
     # ----- actions -----
 
