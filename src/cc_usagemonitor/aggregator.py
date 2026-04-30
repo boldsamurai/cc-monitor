@@ -191,6 +191,15 @@ class Aggregator:
         # Authoritative usage data from Anthropic /api/oauth/usage. When
         # populated, the TUI prefers it over local-only token/cost limits.
         self.api_usage: UsageData | None = None
+        # Monotonic counter bumped by every state-mutating ingest. The
+        # TUI's _refresh_view reads this and skips full table rebuilds
+        # when it hasn't changed since the previous tick. Without this,
+        # the 0.5s tick walks all sessions on every fire even if no
+        # JSONL line was added — cheap per session but at hundreds of
+        # sessions it eats enough main-thread time to make mouse
+        # clicks feel laggy. Per-session counters live on SessionState
+        # so detail-screen caches can scope-invalidate.
+        self.revision: int = 0
 
     def reset_state(self) -> None:
         """Drop all accumulated runtime state but keep configuration
@@ -206,6 +215,9 @@ class Aggregator:
         self.by_skill.clear()
         self.by_agent.clear()
         self._long_window.clear()
+        # Bump so _refresh_view paints empty tables instead of stale
+        # rows on the very next tick.
+        self.revision += 1
         log.info("aggregator state reset (force re-scan)")
 
     # ----- ingest -----
@@ -213,8 +225,13 @@ class Aggregator:
     def ingest(self, item) -> None:
         if isinstance(item, UsageRecord):
             self._ingest_usage(item)
+            self.revision += 1
         elif isinstance(item, HookEvent):
             self._ingest_event(item)
+            # Hook events bump last_seen on existing sessions, which
+            # affects sort order on the Sessions tab — also a state
+            # change worth marking.
+            self.revision += 1
 
     def _ingest_usage(self, rec: UsageRecord) -> None:
         price = self.pricing.for_model(rec.model)
