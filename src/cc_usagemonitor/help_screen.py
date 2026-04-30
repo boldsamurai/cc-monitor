@@ -10,7 +10,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Static
+from textual.widgets import Button, Static
 
 
 # (heading, [(keys, description)]) pairs. Order is the on-screen order.
@@ -106,6 +106,21 @@ class HelpScreen(Screen):
         padding: 0 1;
         text-align: right;
     }
+    /* Compact footer back button. Mouse users get a clickable hit
+       target; keyboard users still see the same 'esc back' hint on
+       the right. Border off + height:1 keeps the footer one row. */
+    .back-btn {
+        width: auto;
+        min-width: 10;
+        height: 1;
+        padding: 0 1;
+        margin: 0 1 0 1;
+        border: none;
+        background: $boost;
+        color: $text;
+    }
+    .back-btn:hover { background: $primary 30%; }
+    .back-btn:focus { background: $primary 30%; }
     """
 
     def compose(self) -> ComposeResult:
@@ -121,7 +136,12 @@ class HelpScreen(Screen):
                             yield Static(keys, classes="help-key")
                             yield Static(desc, classes="help-desc")
             with Horizontal(id="help-footer"):
+                yield Button("← Back", id="back-btn", classes="back-btn")
                 yield Static(
                     "[b]esc[/b] / [b]ctrl+h[/b] back",
                     id="help-footer-right",
                 )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back-btn":
+            self.app.pop_screen()
