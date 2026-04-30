@@ -122,6 +122,34 @@ class FilterInput(Input):
     ]
 
 
+class FilterButton(Static):
+    """Clickable filter cycle. Click delegates to the app's
+    action_cycle_filter — same code path as the keyboard shortcuts
+    (h, d, c, m) so the two input modes can't drift apart.
+
+    Subclasses Static (not Button) because the existing layout uses
+    a single 1-row strip; Button widgets default to a 3-row bordered
+    box that would break the visual.
+    """
+
+    DEFAULT_CSS = """
+    FilterButton {
+        width: auto;
+        height: 1;
+        padding: 0 1;
+        margin: 0 1 0 0;
+    }
+    FilterButton:hover { background: $primary 30%; }
+    """
+
+    def __init__(self, filter_name: str, **kwargs) -> None:
+        super().__init__("", **kwargs)
+        self.filter_name = filter_name
+
+    def on_click(self) -> None:
+        self.app.action_cycle_filter(self.filter_name)
+
+
 def _ctx_cell(used: int, limit: int) -> Text:
     """Render '████░░░░ 22%' as a Text cell for DataTable.
 
@@ -731,13 +759,11 @@ class UsageMonitorApp(App):
                 placeholder="search…  (/)",
                 id="filter-search",
             )
-            yield Static(
-                "[b]h[/b] [ ] hide missing   "
-                "[b]d[/b] date: all   "
-                "[b]c[/b] cost: all   "
-                "[b]m[/b] model: all",
-                id="filter-controls",
-            )
+            with Horizontal(id="filter-controls"):
+                yield FilterButton("hide_deleted", id="filter-ctl-hide")
+                yield FilterButton("date", id="filter-ctl-date")
+                yield FilterButton("cost", id="filter-ctl-cost")
+                yield FilterButton("model", id="filter-ctl-model")
             yield Static("", id="filter-count", classes="filter-count")
         with ContentSwitcher(initial="sessions", id="main-content"):
             with Container(id="sessions"):
@@ -2263,17 +2289,24 @@ class UsageMonitorApp(App):
         return True
 
     def _update_filter_hint(self) -> None:
-        try:
-            ctrl = self.query_one("#filter-controls", Static)
-        except Exception:
-            return
-        hide_marker = "✓" if self.filter_hide_deleted else " "
-        ctrl.update(
-            f"[b]h[/b] [{hide_marker}] hide missing   "
-            f"[b]d[/b] date: {self.filter_date}   "
-            f"[b]c[/b] cost: {self._cost_label()}   "
-            f"[b]m[/b] model: {self.filter_model}"
-        )
+        # Each of the four filter buttons gets its own labelled state.
+        # Same content as the legacy single-Static hint, just split so
+        # mouse users can click each segment independently.
+        labels = {
+            "hide": (
+                f"[b]h[/b] [{'✓' if self.filter_hide_deleted else ' '}] "
+                f"hide missing"
+            ),
+            "date": f"[b]d[/b] date: {self.filter_date}",
+            "cost": f"[b]c[/b] cost: {self._cost_label()}",
+            "model": f"[b]m[/b] model: {self.filter_model}",
+        }
+        for slug, text in labels.items():
+            try:
+                btn = self.query_one(f"#filter-ctl-{slug}", FilterButton)
+            except Exception:
+                continue
+            btn.update(text)
 
     def _cost_label(self) -> str:
         """Pretty-print the cost filter for the hint: '$1K' instead of
