@@ -286,6 +286,26 @@ class SettingsScreen(Screen):
                         variant="warning",
                     )
 
+                # ===== Export =====
+                yield Static("Export", classes="settings-heading")
+                yield Static(
+                    "Dump the in-memory archive to ~/.cache/cc-usagemonitor/"
+                    "exports/. CSV writes three files (sessions, projects, "
+                    "models); JSON writes one combined file. Numbers are "
+                    "raw — no $-signs or K/M shortening — so pandas / "
+                    "Excel can sort and sum directly.",
+                    classes="setting-note",
+                )
+                with Horizontal(classes="button-row"):
+                    yield Button(
+                        "Export CSV", id="export-csv-btn",
+                        variant="primary",
+                    )
+                    yield Button(
+                        "Export JSON", id="export-json-btn",
+                        variant="primary",
+                    )
+
                 # ===== Paths =====
                 yield Static("Paths", classes="settings-heading")
                 for label, path in self._paths():
@@ -487,6 +507,12 @@ class SettingsScreen(Screen):
             else:
                 self._force_rescan()
             return
+        if btn.id == "export-csv-btn":
+            self._run_export("csv")
+            return
+        if btn.id == "export-json-btn":
+            self._run_export("json")
+            return
         if "path-open-btn" in btn.classes and btn.name:
             path = Path(btn.name)
             if path.is_dir():
@@ -525,6 +551,46 @@ class SettingsScreen(Screen):
         except Exception:
             return
         label.update(self._build_hook_status_text())
+
+    def _run_export(self, fmt: str) -> None:
+        """Dump aggregator state to disk and toast the resulting path.
+
+        Single-shot synchronous write — even at thousands of sessions the
+        CSV / JSON output is small enough (KBs) that doing it in a worker
+        is overkill. If the export ever grows, move it onto a Textual
+        worker thread.
+        """
+        agg = getattr(self.app, "aggregator", None)
+        if agg is None:
+            log.warning("export: app missing aggregator")
+            self.app.notify(
+                "Export failed: aggregator unavailable.",
+                severity="error",
+            )
+            return
+        from .export import export_csv, export_json
+        try:
+            result = export_csv(agg) if fmt == "csv" else export_json(agg)
+        except Exception as e:
+            log.exception("export failed")
+            self.app.notify(
+                f"Export failed: {e}", severity="error",
+            )
+            return
+        # Toast: file count + directory. The directory is the most
+        # actionable bit (user can open it in their file manager).
+        if len(result.paths) == 1:
+            msg = f"Wrote {result.paths[0].name} to {result.directory}"
+        else:
+            msg = (
+                f"Wrote {len(result.paths)} files to {result.directory}"
+            )
+        self.app.notify(
+            msg,
+            title=f"Export ({result.fmt.upper()}) complete",
+            severity="information",
+            timeout=8,
+        )
 
     def _force_rescan(self) -> None:
         """Drop in-memory state on both Aggregator and Tailer so the
