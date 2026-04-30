@@ -332,6 +332,9 @@ class BlockPanel(Static):
                 f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
                 f"${info.burn_cost_per_min:,.2f}/min"
             ))
+            projection = self._format_projection(info)
+            if projection is not None:
+                lines.append(projection)
 
         # Surface API failures inline rather than dropping back to a
         # local-only view.
@@ -348,6 +351,25 @@ class BlockPanel(Static):
             ))
 
         return Group(*lines)
+
+    def _format_projection(self, info: BlockInfo) -> Text | None:
+        """Render the 'at this rate, ~$X by HH:MM' projection line.
+
+        Pure linear extrapolation from the current burn rate × the
+        block's remaining minutes. Returns None when there's no
+        meaningful projection (zero burn or zero remaining time).
+        """
+        if info.burn_cost_per_min <= 0 or info.minutes_remaining <= 0:
+            return None
+        projected_total = (
+            info.sums.cost_usd
+            + info.burn_cost_per_min * info.minutes_remaining
+        )
+        end_local = info.end.astimezone()
+        return Text.from_markup(
+            f"[dim]Projection: ${projected_total:,.2f} by "
+            f"{end_local.strftime('%H:%M')} (at current burn rate)[/dim]"
+        )
 
     def _progress_line(self, label: str, pct: float, suffix: str) -> Text:
         pct = max(0.0, pct)
@@ -405,14 +427,21 @@ class BlockPanel(Static):
 
         if not self.has_plan:
             # API-key (pay-as-you-go) — no plan limits, no 5h block in
-            # any meaningful sense. Just the raw burn-rate line.
-            return Group(
+            # any meaningful sense. Just the raw burn-rate line plus
+            # an end-of-block projection where applicable (the local
+            # 5h window from JSONL gaps still gives us a coherent
+            # 'how much by then' even without a plan attached).
+            payg_lines: list[Text] = [
                 Text.from_markup(
                     "[b]💳  Pay-as-you-go[/b]  "
                     "[dim](API key — no plan limits)[/dim]"
                 ),
                 raw_stats,
-            )
+            ]
+            projection = self._format_projection(info)
+            if projection is not None:
+                payg_lines.append(projection)
+            return Group(*payg_lines)
 
         # OAuth user with --no-api. Block boundaries are inferred
         # locally — show them inline so users understand 'this is the
@@ -451,6 +480,9 @@ class BlockPanel(Static):
                 f"${sums.cost_usd:,.2f} / ${info.cost_limit or 0:,.0f}",
             ))
         lines.append(raw_stats)
+        projection = self._format_projection(info)
+        if projection is not None:
+            lines.append(projection)
         return Group(*lines)
 
     @staticmethod
@@ -502,7 +534,7 @@ class UsageMonitorApp(App):
         border-bottom: solid $primary;
     }
     BlockPanel {
-        height: 7;
+        height: 8;
         padding: 1 2;
         background: $panel;
         border-bottom: solid $primary;
