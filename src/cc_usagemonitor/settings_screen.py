@@ -55,6 +55,20 @@ log = get_logger(__name__)
 
 
 _DEFAULT_TABS = ["sessions", "projects", "models"]
+# UI refresh tick. Strings (not floats) so they map cleanly to
+# RadioButton labels; parsed back to float at save time.
+_REFRESH_INTERVALS = ["0.5s", "1s", "2s", "5s"]
+
+
+def _parse_interval(label: str) -> float:
+    return float(label.rstrip("s"))
+
+
+def _format_interval(value: float) -> str:
+    # 0.5 → '0.5s', 1.0 → '1s'
+    if value == int(value):
+        return f"{int(value)}s"
+    return f"{value}s"
 
 
 class SettingsScreen(Screen):
@@ -200,6 +214,24 @@ class SettingsScreen(Screen):
                     for t in _DEFAULT_TABS:
                         yield RadioButton(t, value=(t == current_default_tab))
 
+                yield Static("Refresh interval (UI tick)", classes="settings-row")
+                current_interval = _format_interval(
+                    float(self._cfg.get("refresh_interval", 0.5))
+                )
+                if current_interval not in _REFRESH_INTERVALS:
+                    # Honor manually-edited config values that don't
+                    # match a preset (e.g., 3s) by inserting them at
+                    # the front so the active option stays visible.
+                    _REFRESH_INTERVALS.insert(0, current_interval)
+                with RadioSet(
+                    id="refresh-interval-radio",
+                    classes="radio-horizontal",
+                ):
+                    for opt in _REFRESH_INTERVALS:
+                        yield RadioButton(
+                            opt, value=(opt == current_interval)
+                        )
+
                 yield CircleCheckbox(
                     "Persist filters between sessions",
                     value=self._cfg.get("persist_filters", False),
@@ -209,6 +241,16 @@ class SettingsScreen(Screen):
                     "Hide missing projects/sessions by default",
                     value=self._cfg.get("hide_missing_by_default", False),
                     id="hide-missing-check",
+                )
+                yield CircleCheckbox(
+                    "Confirm before quit",
+                    value=self._cfg.get("confirm_on_quit", True),
+                    id="confirm-quit-check",
+                )
+                yield CircleCheckbox(
+                    "Confirm before destructive actions (Force re-scan)",
+                    value=self._cfg.get("confirm_destructive", True),
+                    id="confirm-destructive-check",
                 )
 
                 # ===== Diagnostics =====
@@ -402,6 +444,12 @@ class SettingsScreen(Screen):
         elif rs_id == "default-tab-radio":
             self._cfg["default_tab"] = label
             save_config(self._cfg)
+        elif rs_id == "refresh-interval-radio":
+            try:
+                self._cfg["refresh_interval"] = _parse_interval(label)
+                save_config(self._cfg)
+            except ValueError:
+                log.warning("rejected refresh interval %r", label)
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         cid = event.checkbox.id
@@ -410,6 +458,12 @@ class SettingsScreen(Screen):
             save_config(self._cfg)
         elif cid == "hide-missing-check":
             self._cfg["hide_missing_by_default"] = bool(event.value)
+            save_config(self._cfg)
+        elif cid == "confirm-quit-check":
+            self._cfg["confirm_on_quit"] = bool(event.value)
+            save_config(self._cfg)
+        elif cid == "confirm-destructive-check":
+            self._cfg["confirm_destructive"] = bool(event.value)
             save_config(self._cfg)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -420,7 +474,18 @@ class SettingsScreen(Screen):
             self.app.bell()
             return
         if btn.id == "rescan-btn":
-            self._force_rescan()
+            if self._cfg.get("confirm_destructive", True):
+                from .confirm_screen import ConfirmScreen
+                self.app.push_screen(
+                    ConfirmScreen(
+                        "Force re-scan? Wyczyści cały cache w pamięci "
+                        "i ponownie odczyta wszystkie JSONLe od początku.",
+                        yes_label="Re-scan", no_label="Cancel",
+                    ),
+                    self._handle_rescan_confirm,
+                )
+            else:
+                self._force_rescan()
             return
         if "path-open-btn" in btn.classes and btn.name:
             path = Path(btn.name)
@@ -431,6 +496,10 @@ class SettingsScreen(Screen):
             if not ok:
                 log.warning("settings: open failed: %s", msg)
             return
+
+    def _handle_rescan_confirm(self, confirmed: bool | None) -> None:
+        if confirmed:
+            self._force_rescan()
 
     # ----- persistence helpers -----
 
