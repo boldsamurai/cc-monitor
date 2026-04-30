@@ -845,8 +845,10 @@ class UsageMonitorApp(App):
         if saved_theme:
             try:
                 self.theme = saved_theme
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(
+                    "could not apply saved theme %r: %s", saved_theme, e,
+                )
         # Push date format into the formatting module's global state
         # so all _fmt_* helpers see the user's preference on the very
         # first refresh tick rather than after a reload.

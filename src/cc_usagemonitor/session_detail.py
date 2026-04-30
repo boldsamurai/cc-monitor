@@ -18,7 +18,10 @@ from textual_plotext import PlotextPlot
 from .aggregator import Aggregator, SessionState, TokenSums
 from .parser import humanize_model_name
 from .launchers import open_in_file_manager, open_terminal_with
+from .logger import get_logger
 from .project_slug import decode_project_path, decode_project_slug
+
+log = get_logger(__name__)
 
 # Register a fixed plotext theme matching Textual's $panel (#242F38).
 # All surface widgets in the detail screen (info panel, charts, tabs,
@@ -43,8 +46,11 @@ try:
             "default",         # default style
             list(_PLOTEXT_COLOR_CYCLE),  # data series color cycle
         )
-except Exception:
-    pass
+except Exception as e:
+    # plotext._dict is a private API — newer plotext releases could
+    # restructure it. Charts still render with the default theme; log
+    # so a silent visual regression isn't invisible.
+    log.warning("could not register plotext theme: %s", e)
 
 
 def _fmt_int(n: int) -> str:

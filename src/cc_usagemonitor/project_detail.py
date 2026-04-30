@@ -23,7 +23,10 @@ from textual_plotext import PlotextPlot
 from .aggregator import Aggregator, SessionState, TokenSums
 from .parser import humanize_model_name
 from .launchers import open_terminal_with
+from .logger import get_logger
 from .project_slug import decode_project_path
+
+log = get_logger(__name__)
 from .session_detail import (
     SessionDetailScreen,
     _PLOTEXT_THEME_NAME,
@@ -328,8 +331,12 @@ class ProjectDetailScreen(Screen):
             p.title("Cumulative tokens over time (K)")
             p.xlabel("time")
             p.xticks(tick_secs, labels)
-        except Exception:
-            pass
+        except Exception as e:
+            # Plot widgets may not be mounted yet on the very first
+            # populate, or plotext may reject an empty/odd dataset. The
+            # chart just stays blank — surface to the log so a stuck
+            # render isn't invisible.
+            log.warning("project activity chart render failed: %s", e)
 
     def _populate_usage_tables(self) -> None:
         # Skills + Agents — sum TokenSums across all sessions in this
