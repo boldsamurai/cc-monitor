@@ -720,10 +720,9 @@ class UsageMonitorApp(App):
         Binding("l", "open_log", "Open log file"),
         Binding("comma", "open_settings", "Settings"),
         Binding("ctrl+h", "open_help", "Help"),
-        # Capital S — keyboard equivalent of clicking a column header.
-        # Sort by the column under the cursor. Cycle: asc / desc /
-        # reset. Lowercase 's' stays bound to 'resume last session'.
-        Binding("S", "sort_by_cursor_column", "Sort by column"),
+        # Capital S — open the sort-by-column modal picker. Lowercase
+        # 's' stays bound to 'resume last session'.
+        Binding("S", "open_sort_picker", "Sort by column"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -797,7 +796,7 @@ class UsageMonitorApp(App):
             yield Static("", id="filter-count", classes="filter-count")
         with ContentSwitcher(initial="sessions", id="main-content"):
             with Container(id="sessions"):
-                yield DataTable(id="t-sessions", cursor_type="cell", zebra_stripes=True)
+                yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
                 yield Static(
                     "[dim]No Claude Code sessions tracked yet.\n"
                     "Start a Claude Code session in any project — "
@@ -806,7 +805,7 @@ class UsageMonitorApp(App):
                     classes="empty-state",
                 )
             with Container(id="projects"):
-                yield DataTable(id="t-projects", cursor_type="cell", zebra_stripes=True)
+                yield DataTable(id="t-projects", cursor_type="row", zebra_stripes=True)
                 yield Static(
                     "[dim]No projects detected yet.\n"
                     "Open Claude Code in any directory to track usage.[/dim]",
@@ -814,7 +813,7 @@ class UsageMonitorApp(App):
                     classes="empty-state",
                 )
             with Container(id="models"):
-                yield DataTable(id="t-models", cursor_type="cell", zebra_stripes=True)
+                yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
                 yield Static(
                     "[dim]No model usage recorded yet.\n"
                     "Run any Claude Code turn to populate this view.[/dim]",
@@ -937,19 +936,15 @@ class UsageMonitorApp(App):
         cfg["theme"] = new_theme
         save_config(cfg)
 
-    def on_data_table_cell_selected(
-        self, event: DataTable.CellSelected,
-    ) -> None:
-        # Enter on a cell in sessions / projects drills down into the
-        # respective detail screen. cursor_type='cell' means CellSelected
-        # is the right event (RowSelected only fires for row cursor).
-        if event.cell_key is None:
-            return
-        row_key = event.cell_key.row_key
-        if row_key is None or row_key.value is None:
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        # Enter on a sessions / projects row drills down into the
+        # respective detail screen. cursor_type='row' fires
+        # RowSelected; cell-level navigation isn't needed for the
+        # main view's table-of-records semantic.
+        if event.row_key is None or event.row_key.value is None:
             return
         table_id = event.data_table.id
-        key = str(row_key.value)
+        key = str(event.row_key.value)
         if table_id == "t-sessions":
             log.info("drill-in: SessionDetailScreen(%s)", key[:8])
             self.push_screen(SessionDetailScreen(key, self.aggregator))
@@ -1314,34 +1309,88 @@ class UsageMonitorApp(App):
         )
         self._cycle_sort(table, table_id, event.column_key, col_key_value)
 
-    def action_sort_by_cursor_column(self) -> None:
-        """Keyboard equivalent of clicking a column header — sort by
-        whichever column the cursor is currently on. cursor_type='cell'
-        on the main tables lets the user navigate columns with arrow
-        keys; this action runs the same asc/desc/reset cycle.
-        """
+    def action_open_sort_picker(self) -> None:
+        """Push a modal column picker for the active tab. User picks a
+        column + direction with arrow keys + Enter; the modal returns
+        a (col_key, reverse) tuple, the string 'reset', or None."""
         active = self._active_tab()
         if active not in ("sessions", "projects", "models"):
             return
+        cols_per_tab = {
+            "sessions": self.SESSIONS_COLS,
+            "projects": self.PROJECTS_COLS,
+            "models": self.MODELS_COLS,
+        }
+        table_id = f"#t-{active}"
+        current = self._user_sort.get(table_id)
+        current_col = current[0] if current else None
+        current_reverse = current[1] if current else False
+
+        from .sort_picker import SortPickerScreen
+        picker = SortPickerScreen(
+            columns=cols_per_tab[active],
+            current_col=current_col,
+            current_reverse=current_reverse,
+        )
+
+        def _on_picker_dismissed(result) -> None:
+            if result is None:
+                return  # user cancelled
+            if result == "reset":
+                self._reset_sort_for(table_id)
+                return
+            col_key_value, reverse = result
+            self._apply_sort_for(table_id, col_key_value, reverse)
+
+        self.push_screen(picker, _on_picker_dismissed)
+
+    def _apply_sort_for(
+        self, table_id: str, col_key_value: str, reverse: bool,
+    ) -> None:
+        """Apply a sort directly without the asc → desc → reset cycle.
+        Used by the modal picker, where the user explicitly chose
+        column + direction so we just honor that choice."""
         try:
-            table = self.query_one(f"#t-{active}", DataTable)
+            table = self.query_one(table_id, DataTable)
         except Exception:
             return
-        coord = table.cursor_coordinate
-        if coord is None:
+        col_key = None
+        for ck in table.columns.keys():
+            ck_value = ck.value if hasattr(ck, "value") else str(ck)
+            if ck_value == col_key_value:
+                col_key = ck
+                break
+        if col_key is None:
+            log.warning("apply_sort: column %r not in %s", col_key_value, table_id)
             return
-        col_keys = list(table.columns.keys())
-        if not (0 <= coord.column < len(col_keys)):
+        try:
+            table.sort(
+                col_key, reverse=reverse, key=_sort_key_factory(reverse),
+            )
+        except Exception as e:
+            log.warning(
+                "apply_sort failed for %s/%s: %s",
+                table_id, col_key_value, e,
+            )
             return
-        col_key = col_keys[coord.column]
-        col_key_value = (
-            col_key.value if hasattr(col_key, "value") else str(col_key)
-        )
-        table_id = f"#t-{active}"
+        self._user_sort[table_id] = (col_key_value, reverse)
         log.info(
-            "kbd sort: table=%s col=%s", table_id, col_key_value,
+            "applied sort %s by %s reverse=%s (modal)",
+            table_id, col_key_value, reverse,
         )
-        self._cycle_sort(table, table_id, col_key, col_key_value)
+
+    def _reset_sort_for(self, table_id: str) -> None:
+        """Drop user sort for a table and force-rebuild in default order."""
+        if table_id in self._user_sort:
+            del self._user_sort[table_id]
+        try:
+            table = self.query_one(table_id, DataTable)
+            table.clear()
+            self._row_cache[table_id].clear()
+        except Exception as e:
+            log.warning("sort reset failed for %s: %s", table_id, e)
+        self._refresh_view()
+        log.info("sort reset on %s (modal)", table_id)
 
     def _cycle_sort(
         self,
