@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
+from rich.table import Table
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -98,12 +100,13 @@ class SortPickerScreen(ModalScreen):
         margin: 0 1;
         min-width: 12;
     }
-    /* Modal footer with key hints — same style as the rest of the
-       app's footers (see tui.py / project_detail.py). */
+    /* Modal footer with key hints rendered as a Rich 2x2 grid so
+       the columns align across rows. content-align centers the
+       grid horizontally inside the modal box. */
     .sort-footer {
         padding: 1 0 0 0;
-        text-align: center;
         color: $text-muted;
+        content-align: center middle;
     }
     """
 
@@ -148,11 +151,28 @@ class SortPickerScreen(ModalScreen):
                 )
                 yield Button("Cancel", id="sort-cancel")
             yield Static(
-                "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-                "[b]↵[/b] activate   [b]r[/b] reset   "
-                "[b]esc[/b] cancel",
+                self._build_footer_table(),
                 classes="sort-footer",
             )
+
+    def _build_footer_table(self) -> Table:
+        """2x2 Rich grid for the modal's keyboard hints. Plain
+        newline-separated text with hand-tuned spaces wouldn't align
+        cleanly between rows because hint widths differ — a Table.grid
+        with two columns lines them up automatically.
+        """
+        grid = Table.grid(padding=(0, 4))
+        grid.add_column(justify="left")
+        grid.add_column(justify="left")
+        grid.add_row(
+            Text.from_markup("[b]Tab[/b] / [b]shift+Tab[/b] focus"),
+            Text.from_markup("[b]↵[/b] activate"),
+        )
+        grid.add_row(
+            Text.from_markup("[b]r[/b] reset"),
+            Text.from_markup("[b]esc[/b] cancel"),
+        )
+        return grid
 
     # ----- actions -----
 
