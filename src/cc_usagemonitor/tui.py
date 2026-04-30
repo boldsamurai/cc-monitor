@@ -188,9 +188,11 @@ def _fmt_token_tick(v: float) -> str:
 
 
 class SummaryPanel(Static):
-    """Top panel: totals + rolling weekly aggregate + live rate."""
+    """Top panel: totals + daily/weekly aggregates + live rate."""
 
     sums: reactive[TokenSums] = reactive(TokenSums)
+    sums_today: reactive[TokenSums] = reactive(TokenSums)
+    sums_yesterday: reactive[TokenSums] = reactive(TokenSums)
     sums_7d: reactive[TokenSums] = reactive(TokenSums)
     session_count: reactive[int] = reactive(0)
     active_count: reactive[int] = reactive(0)
@@ -222,26 +224,25 @@ class SummaryPanel(Static):
             Text("Cost", style="dim"),
             Text("Turns", style="dim"),
         )
-        s = self.sums
-        table.add_row(
-            "Total (all-time)",
-            _human(s.input),
-            _human(s.output),
-            _human(s.cache_read),
-            _human(s.cache_write_5m + s.cache_write_1h),
-            _human_usd(s.cost_usd),
-            f"{s.turns:,}",
-        )
-        w = self.sums_7d
-        table.add_row(
-            "Last 7d",
-            _human(w.input),
-            _human(w.output),
-            _human(w.cache_read),
-            _human(w.cache_write_5m + w.cache_write_1h),
-            _human_usd(w.cost_usd),
-            f"{w.turns:,}",
-        )
+        # Order: tightest window first (Today), broadest last
+        # (Total). Lets the eye scan from 'what's happening now' down
+        # to 'lifetime spend'.
+        rows: list[tuple[str, TokenSums]] = [
+            ("Today", self.sums_today),
+            ("Yesterday", self.sums_yesterday),
+            ("Last 7d", self.sums_7d),
+            ("Total (all-time)", self.sums),
+        ]
+        for label, s in rows:
+            table.add_row(
+                label,
+                _human(s.input),
+                _human(s.output),
+                _human(s.cache_read),
+                _human(s.cache_write_5m + s.cache_write_1h),
+                _human_usd(s.cost_usd),
+                f"{s.turns:,}",
+            )
 
         return Group(header, Text(""), table)
 
@@ -495,7 +496,7 @@ class UsageMonitorApp(App):
        bar all read as one unified surface. */
     Screen { layout: vertical; background: $panel; }
     SummaryPanel {
-        height: 8;
+        height: 10;
         padding: 1 2;
         background: $panel;
         border-bottom: solid $primary;
@@ -601,6 +602,7 @@ class UsageMonitorApp(App):
         Binding("f3", "open_claude_resume_last", "Resume last (project)", show=False),
         Binding("l", "open_log", "Open log file"),
         Binding("comma", "open_settings", "Settings"),
+        Binding("question_mark", "open_help", "Help"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -875,7 +877,8 @@ class UsageMonitorApp(App):
         left.update(actions)
         right.update(
             "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-            "[b],[/b] settings   [b]l[/b] log   [b]q[/b] quit"
+            "[b]?[/b] help   [b],[/b] settings   "
+            "[b]l[/b] log   [b]q[/b] quit"
         )
 
     SESSIONS_COLS = [
@@ -969,6 +972,19 @@ class UsageMonitorApp(App):
         summary = self.query_one("#summary", SummaryPanel)
         summary.sums = agg.total_sums()
         summary.sums_7d = agg.sums_in_window(timedelta(days=7))
+        # Today / Yesterday windows use the user's local date as the
+        # boundary so 'today' lines up with the wall clock instead of
+        # UTC. Convert local-midnight to UTC before passing in.
+        now_local = datetime.now().astimezone()
+        local_midnight = now_local.replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+        today_start_utc = local_midnight.astimezone(timezone.utc)
+        yesterday_start_utc = today_start_utc - timedelta(days=1)
+        summary.sums_today = agg.sums_in_range(today_start_utc)
+        summary.sums_yesterday = agg.sums_in_range(
+            yesterday_start_utc, today_start_utc,
+        )
         summary.rate_tokens = agg.recent_token_rate_per_min()
         summary.rate_cost = agg.recent_cost_per_min()
         summary.rate_turns = agg.recent_turns_per_min()
@@ -1649,6 +1665,11 @@ class UsageMonitorApp(App):
         """Push the Settings overlay onto the screen stack."""
         from .settings_screen import SettingsScreen
         self.push_screen(SettingsScreen())
+
+    def action_open_help(self) -> None:
+        """Push the keyboard-shortcut cheatsheet."""
+        from .help_screen import HelpScreen
+        self.push_screen(HelpScreen())
 
     def action_open_claude_resume_last(self) -> None:
         """Projects tab only — resume the most recent session of the

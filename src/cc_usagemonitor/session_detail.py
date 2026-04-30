@@ -92,6 +92,7 @@ class SessionDetailScreen(Screen):
         # screen so users coming from the main view don't accidentally
         # exit the program with muscle memory from the table view.
         Binding("q", "app.pop_screen", "Back"),
+        Binding("question_mark", "open_help", "Help"),
         # Digit keys switch chart tabs (mirrors the main view's pattern).
         Binding("1", "show_tab('tab-usage')", "Usage"),
         Binding("2", "show_tab('tab-time')", "Time"),
@@ -334,7 +335,8 @@ class SessionDetailScreen(Screen):
                 id="footer-left",
             )
             yield Static(
-                "[b]Tab[/b] / [b]shift+Tab[/b] focus   [b]esc[/b] back",
+                "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
+                "[b]?[/b] help   [b]esc[/b] back",
                 id="footer-right",
             )
 
@@ -526,6 +528,10 @@ class SessionDetailScreen(Screen):
         except Exception:
             # No tabs yet (e.g. session has no turns -> charts skipped).
             pass
+
+    def action_open_help(self) -> None:
+        from .help_screen import HelpScreen
+        self.app.push_screen(HelpScreen())
 
     def _project_path(self) -> str | None:
         sess = self.aggregator.sessions.get(self.session_id)

@@ -441,6 +441,25 @@ class Aggregator:
                 sums.add(rec, cost)
         return sums
 
+    def sums_in_range(
+        self, start: datetime, end: datetime | None = None
+    ) -> TokenSums:
+        """Aggregate tokens/cost for records whose ts falls in
+        ``[start, end)``. ``end=None`` means 'up to now'.
+
+        Used by the SummaryPanel's daily/weekly rows where the bucket
+        boundaries are calendar-aligned (midnight today, last Monday)
+        rather than rolling-by-now windows.
+        """
+        sums = TokenSums()
+        if end is None:
+            end = datetime.now(tz=timezone.utc)
+        for ts, rec, cost in self._long_window:
+            ts_utc = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            if start <= ts_utc < end:
+                sums.add(rec, cost)
+        return sums
+
     def turns_for_session(
         self, session_id: str
     ) -> list[tuple[datetime, UsageRecord, float]]:
