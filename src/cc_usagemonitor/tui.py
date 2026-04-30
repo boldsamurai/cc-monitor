@@ -256,12 +256,22 @@ class BlockPanel(Static):
 
     info: reactive[BlockInfo | None] = reactive(None, layout=True)
     api_usage: reactive[UsageData | None] = reactive(None, layout=True)
+    # Set to False when the user disables Anthropic API in Settings or
+    # via --no-api. Without this, render() would forever show 'Waiting
+    # for first API response…' because api_usage stays None.
+    api_enabled: reactive[bool] = reactive(True, layout=True)
 
     BAR_W = 30
 
     def render(self) -> RenderableType:
         api = self.api_usage
         info = self.info
+
+        # API explicitly disabled — render the local-only block view
+        # (raw burn rate, plus plan-driven 5h progress bars when limits
+        # are configured). No 'Waiting…' message; nothing's waiting.
+        if not self.api_enabled:
+            return self._render_local_only(info)
 
         # No API data at all (likely API user without OAuth or first-startup
         # before the initial fetch returns).
@@ -359,6 +369,46 @@ class BlockPanel(Static):
         else:
             line.append(f"  {pct_str}")
         return line
+
+    def _render_local_only(self, info: BlockInfo | None) -> RenderableType:
+        """Local-only block view used when Anthropic API integration is
+        disabled. Shows whatever local 5h-block data we have plus
+        plan-driven progress bars when limits are configured.
+        """
+        if info is None:
+            return Group(
+                Text("⏱  Local 5h block", style="bold"),
+                Text(
+                    "Waiting for first JSONL ingest…",
+                    style="dim italic",
+                ),
+            )
+        sums = info.sums
+        lines: list[Text] = [Text.from_markup(
+            "[b]⏱  Local 5h block[/b]  "
+            "[dim](API integration disabled — Plan-driven limits)[/dim]"
+        )]
+        # Plan-driven progress bars only when limits are configured.
+        # Without a plan ('none'), pct_tokens / pct_cost stay None.
+        if info.pct_tokens is not None:
+            lines.append(self._progress_line(
+                "5h tok ", info.pct_tokens,
+                f"{_human(sums.total_tokens)} / {_human(info.token_limit or 0)}",
+            ))
+        if info.pct_cost is not None:
+            lines.append(self._progress_line(
+                "5h $   ", info.pct_cost,
+                f"${sums.cost_usd:,.2f} / ${info.cost_limit or 0:,.0f}",
+            ))
+        # Always include the raw stats line — the user might be on
+        # 'none' plan and just want to see the burn rate.
+        lines.append(Text.from_markup(
+            f"[b]Local[/b]   tokens={_human(sums.total_tokens)}  ·  "
+            f"cost=${sums.cost_usd:,.2f}  ·  "
+            f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
+            f"${info.burn_cost_per_min:,.2f}/min"
+        ))
+        return Group(*lines)
 
     @staticmethod
     def _eta_verdict(eta_min: float, block_remaining_min: float) -> tuple[str, str]:
@@ -816,6 +866,10 @@ class UsageMonitorApp(App):
         block_panel = self.query_one("#block", BlockPanel)
         block_panel.info = agg.block_info()
         block_panel.api_usage = agg.api_usage
+        # Surface the API-enabled state on every refresh so a Settings
+        # toggle would show up next tick (currently off-by-restart, but
+        # cheap to wire here in case we later allow live toggling).
+        block_panel.api_enabled = self.use_api
         block_panel.refresh()
 
         # Refresh only the visible tab — keeps the UI responsive even at

@@ -144,19 +144,32 @@ class SettingsScreen(Screen):
                         id="use-api-switch",
                     )
                 yield Static(
-                    "Polls /api/oauth/usage every 60s for "
-                    "authoritative 5h/7d utilization. Restart required.",
+                    "When ON: BlockPanel uses authoritative 5h/7d data "
+                    "polled from Anthropic every 60s — Plan below is "
+                    "ignored.\nWhen OFF: BlockPanel falls back to local "
+                    "estimates driven by Plan. Restart required.",
                     classes="setting-note",
                 )
 
                 yield Static("Plan", classes="settings-row")
                 current_plan = self._cfg.get("plan", "none")
-                with RadioSet(id="plan-radio"):
+                # API on → Plan irrelevant, disable radio so the user
+                # sees this isn't worth touching. Toggling API off
+                # re-enables it live (see on_switch_changed).
+                api_on = self._cfg.get("use_api", True)
+                plan_radio = RadioSet(id="plan-radio")
+                plan_radio.disabled = api_on
+                with plan_radio:
                     for p in _PLAN_CHOICES:
                         yield RadioButton(p, value=(p == current_plan))
                 yield Static(
-                    "5h-block limit preset for the BlockPanel "
-                    "progress bars. Restart required.",
+                    "Used only when API integration is OFF (local "
+                    "fallback for the 5h-block progress bars). With "
+                    "API ON, this setting is ignored.\n"
+                    "'none' = no progress bars (raw burn only). "
+                    "'pro/max5/max20' = static plan limits "
+                    "(19k/$18, 88k/$35, 220k/$140 per 5h). "
+                    "'auto' = P90 of your last 8d. Restart required.",
                     classes="setting-note",
                 )
 
@@ -377,8 +390,16 @@ class SettingsScreen(Screen):
     def on_switch_changed(self, event: Switch.Changed) -> None:
         sid = event.switch.id
         if sid == "use-api-switch":
-            self._cfg["use_api"] = bool(event.value)
+            api_on = bool(event.value)
+            self._cfg["use_api"] = api_on
             save_config(self._cfg)
+            # Mirror the visual gating: Plan is irrelevant under API ON
+            # so disable its RadioSet; re-enable when API toggles off.
+            try:
+                plan_radio = self.query_one("#plan-radio", RadioSet)
+                plan_radio.disabled = api_on
+            except Exception:
+                pass
         elif sid == "persist-filters-switch":
             self._cfg["persist_filters"] = bool(event.value)
             save_config(self._cfg)
