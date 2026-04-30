@@ -720,6 +720,10 @@ class UsageMonitorApp(App):
         Binding("l", "open_log", "Open log file"),
         Binding("comma", "open_settings", "Settings"),
         Binding("ctrl+h", "open_help", "Help"),
+        # Capital S — keyboard equivalent of clicking a column header.
+        # Sort by the column under the cursor. Cycle: asc / desc /
+        # reset. Lowercase 's' stays bound to 'resume last session'.
+        Binding("S", "sort_by_cursor_column", "Sort by column"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -793,7 +797,7 @@ class UsageMonitorApp(App):
             yield Static("", id="filter-count", classes="filter-count")
         with ContentSwitcher(initial="sessions", id="main-content"):
             with Container(id="sessions"):
-                yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
+                yield DataTable(id="t-sessions", cursor_type="cell", zebra_stripes=True)
                 yield Static(
                     "[dim]No Claude Code sessions tracked yet.\n"
                     "Start a Claude Code session in any project — "
@@ -802,7 +806,7 @@ class UsageMonitorApp(App):
                     classes="empty-state",
                 )
             with Container(id="projects"):
-                yield DataTable(id="t-projects", cursor_type="row", zebra_stripes=True)
+                yield DataTable(id="t-projects", cursor_type="cell", zebra_stripes=True)
                 yield Static(
                     "[dim]No projects detected yet.\n"
                     "Open Claude Code in any directory to track usage.[/dim]",
@@ -810,7 +814,7 @@ class UsageMonitorApp(App):
                     classes="empty-state",
                 )
             with Container(id="models"):
-                yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
+                yield DataTable(id="t-models", cursor_type="cell", zebra_stripes=True)
                 yield Static(
                     "[dim]No model usage recorded yet.\n"
                     "Run any Claude Code turn to populate this view.[/dim]",
@@ -933,14 +937,19 @@ class UsageMonitorApp(App):
         cfg["theme"] = new_theme
         save_config(cfg)
 
-    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        # Enter on a sessions / projects row drills down into the
-        # respective detail screen. Both DataTables sit on the same
-        # screen; dispatch by widget id.
-        if event.row_key is None or event.row_key.value is None:
+    def on_data_table_cell_selected(
+        self, event: DataTable.CellSelected,
+    ) -> None:
+        # Enter on a cell in sessions / projects drills down into the
+        # respective detail screen. cursor_type='cell' means CellSelected
+        # is the right event (RowSelected only fires for row cursor).
+        if event.cell_key is None:
+            return
+        row_key = event.cell_key.row_key
+        if row_key is None or row_key.value is None:
             return
         table_id = event.data_table.id
-        key = str(event.row_key.value)
+        key = str(row_key.value)
         if table_id == "t-sessions":
             log.info("drill-in: SessionDetailScreen(%s)", key[:8])
             self.push_screen(SessionDetailScreen(key, self.aggregator))
@@ -1287,14 +1296,8 @@ class UsageMonitorApp(App):
     def on_data_table_header_selected(
         self, event: DataTable.HeaderSelected,
     ) -> None:
-        """Three-state cycle on click:
-          1) Ascending sort by clicked column
-          2) Descending sort by same column
-          3) Reset — drop user sort, restore the tab's default order
-        Clicking a different column starts a fresh asc/desc/reset
-        cycle on that column. Only applies to main-view tables
-        (#t-sessions / #t-projects / #t-models); detail-screen
-        tables get Textual's stock single-shot behavior."""
+        """Three-state click cycle on the column header:
+        asc → desc → reset → asc on next click."""
         table = event.data_table
         table_id_raw = table.id
         log.info(
@@ -1309,15 +1312,56 @@ class UsageMonitorApp(App):
             if hasattr(event.column_key, "value")
             else str(event.column_key)
         )
+        self._cycle_sort(table, table_id, event.column_key, col_key_value)
+
+    def action_sort_by_cursor_column(self) -> None:
+        """Keyboard equivalent of clicking a column header — sort by
+        whichever column the cursor is currently on. cursor_type='cell'
+        on the main tables lets the user navigate columns with arrow
+        keys; this action runs the same asc/desc/reset cycle.
+        """
+        active = self._active_tab()
+        if active not in ("sessions", "projects", "models"):
+            return
+        try:
+            table = self.query_one(f"#t-{active}", DataTable)
+        except Exception:
+            return
+        coord = table.cursor_coordinate
+        if coord is None:
+            return
+        col_keys = list(table.columns.keys())
+        if not (0 <= coord.column < len(col_keys)):
+            return
+        col_key = col_keys[coord.column]
+        col_key_value = (
+            col_key.value if hasattr(col_key, "value") else str(col_key)
+        )
+        table_id = f"#t-{active}"
+        log.info(
+            "kbd sort: table=%s col=%s", table_id, col_key_value,
+        )
+        self._cycle_sort(table, table_id, col_key, col_key_value)
+
+    def _cycle_sort(
+        self,
+        table: DataTable,
+        table_id: str,
+        col_key,
+        col_key_value: str,
+    ) -> None:
+        """Apply the asc → desc → reset cycle to a sortable table.
+        Shared by the header-click handler and the keyboard action so
+        both paths agree on direction-tracking + reset semantics.
+        """
         prev = self._user_sort.get(table_id)
         if prev is not None and prev[0] == col_key_value:
             if prev[1]:
-                # 3rd click on the same column: reset to default order.
-                # Forcibly clear the table + row cache so _apply_rows on
-                # the next refresh tick MUST rebuild from scratch (a
-                # plain refresh would short-circuit on matching insertion
-                # order if Textual's internal rows dict didn't
-                # actually reorder during sort).
+                # 3rd press on same column: reset to default order.
+                # Forcibly clear so _apply_rows MUST rebuild on the
+                # next refresh — Textual's table.sort() may not
+                # reorder the internal rows dict, so a plain refresh
+                # would short-circuit on matching insertion order.
                 del self._user_sort[table_id]
                 try:
                     table.clear()
@@ -1327,24 +1371,23 @@ class UsageMonitorApp(App):
                 log.info("sort reset on %s", table_id)
                 self._refresh_view()
                 return
-            # 2nd click: flip to descending.
-            reverse = True
+            reverse = True  # 2nd press: flip
         else:
-            # 1st click on this column: ascending.
-            reverse = False
+            reverse = False  # 1st press
         try:
-            # Direction-aware key so empty/dash cells stay at the
-            # bottom of the visible list regardless of asc vs desc.
             table.sort(
-                event.column_key,
+                col_key,
                 reverse=reverse,
                 key=_sort_key_factory(reverse),
             )
         except Exception as e:
-            log.warning("sort failed for %s/%s: %s", table_id, col_key_value, e)
+            log.warning(
+                "sort failed for %s/%s: %s", table_id, col_key_value, e,
+            )
             return
         log.info(
-            "sorted %s by %s reverse=%s", table_id, col_key_value, reverse,
+            "sorted %s by %s reverse=%s",
+            table_id, col_key_value, reverse,
         )
         self._user_sort[table_id] = (col_key_value, reverse)
 

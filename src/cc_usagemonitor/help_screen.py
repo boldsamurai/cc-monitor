@@ -32,6 +32,8 @@ _SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("n", "Open new Claude Code session in project (Projects tab)"),
         ("s", "Resume last session (Projects) or selected session (Sessions)"),
         ("↵ (Enter)", "Drill into session/project detail"),
+        ("←/→/↑/↓", "Move cell cursor (cell-level navigation)"),
+        ("Click header / S", "Sort by column (cycle asc / desc / reset)"),
         ("l", "Tail the log file (less +F in a new terminal)"),
         (",", "Open Settings"),
         ("r", "Force-refresh visible tab"),
