@@ -58,30 +58,13 @@ guard.
 
 ## Screenshots
 
-> Screenshots are generated locally and committed to `docs/screenshots/`.
-> If you're cloning fresh and they're missing, see the
-> [generation note](#generating-screenshots) below.
-
 | Main view (Sessions tab) | Session detail |
 | :---: | :---: |
-| ![Sessions tab](docs/screenshots/main-sessions.png) | ![Session detail](docs/screenshots/session-detail.png) |
+| ![Sessions tab](https://raw.githubusercontent.com/boldsamurai/cc-monitor/main/docs/screenshots/main-sessions.png) | ![Session detail](https://raw.githubusercontent.com/boldsamurai/cc-monitor/main/docs/screenshots/session-detail.png) |
 
 | Project detail | Settings |
 | :---: | :---: |
-| ![Project detail](docs/screenshots/project-detail.png) | ![Settings](docs/screenshots/settings.png) |
-
-### Generating screenshots
-
-The Textual framework ships `App.save_screenshot()`. Run the app, navigate to
-the screen you want, then press `ctrl+p` / `s` (Textual's built-in screenshot
-shortcut) — you'll get an SVG file. Convert with any rasterizer:
-
-```bash
-# requires librsvg
-rsvg-convert -o main-sessions.png screenshot.svg
-```
-
-Drop the result in `docs/screenshots/` matching the filenames above.
+| ![Project detail](https://raw.githubusercontent.com/boldsamurai/cc-monitor/main/docs/screenshots/project-detail.png) | ![Settings](https://raw.githubusercontent.com/boldsamurai/cc-monitor/main/docs/screenshots/settings.png) |
 
 ## Installation
 
