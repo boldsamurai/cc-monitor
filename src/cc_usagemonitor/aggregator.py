@@ -15,6 +15,49 @@ BLOCK_DURATION = timedelta(hours=5)
 LONG_WINDOW = timedelta(days=8)  # 192h, matches Maciek-roboblog's P90 window
 
 
+def _top_of_hour(ts: datetime) -> datetime:
+    """Truncate a timestamp to the start of its hour.
+
+    Anthropic anchors 5h session blocks at the top of the first
+    message's hour — see Maciek-roboblog README: 'If you start at
+    14:35, your session ends at 19:00.' Without this anchoring, our
+    locally-inferred block_end drifts by up to 59 minutes from the
+    server's reset_at, and the BlockPanel's projection 'by HH:MM'
+    line disagrees with the API's '5h resets HH:MM' line.
+    """
+    return ts.replace(minute=0, second=0, microsecond=0)
+
+
+def _iter_blocks(
+    records: list[tuple[datetime, "UsageRecord", float]],
+):
+    """Yield (block_start, block_end, [record_indices]) for the input.
+
+    Block detection rule (matches Anthropic's behavior):
+      - First record opens a block anchored at its top-of-hour.
+      - Each subsequent record either falls into the current block
+        (ts < block_end) or opens a new one (ts >= block_end), again
+        anchored at top-of-hour.
+
+    Records must be in chronological order — the long-window deque
+    already maintains that invariant.
+    """
+    if not records:
+        return
+    block_start = _top_of_hour(records[0][0])
+    block_end = block_start + BLOCK_DURATION
+    indices: list[int] = []
+    for i, (ts, _rec, _cost) in enumerate(records):
+        if ts >= block_end:
+            yield (block_start, block_end, indices)
+            block_start = _top_of_hour(ts)
+            block_end = block_start + BLOCK_DURATION
+            indices = []
+        indices.append(i)
+    if indices:
+        yield (block_start, block_end, indices)
+
+
 def _percentile(values: list[float], p: float) -> float:
     """Linear interpolation percentile (NumPy's default behavior)."""
     if not values:
@@ -709,30 +752,23 @@ class Aggregator:
         if not self._long_window:
             return None
         records = list(self._long_window)
-        # Identify block boundaries: a new block starts after a >=5h gap.
         block_token_totals: list[int] = []
         block_cost_totals: list[float] = []
-        cur_tokens = 0
-        cur_cost = 0.0
-        prev_ts: datetime | None = None
-        for ts, rec, cost in records:
-            if prev_ts is not None and ts - prev_ts >= BLOCK_DURATION:
-                block_token_totals.append(cur_tokens)
-                block_cost_totals.append(cur_cost)
-                cur_tokens = 0
-                cur_cost = 0.0
-            cur_tokens += (
-                rec.input_tokens
-                + rec.output_tokens
-                + rec.cache_read_tokens
-                + rec.cache_write_5m_tokens
-                + rec.cache_write_1h_tokens
-            )
-            cur_cost += cost
-            prev_ts = ts
-        if cur_tokens:
-            block_token_totals.append(cur_tokens)
-            block_cost_totals.append(cur_cost)
+        for _start, _end, indices in _iter_blocks(records):
+            tokens = 0
+            cost = 0.0
+            for i in indices:
+                _ts, rec, c = records[i]
+                tokens += (
+                    rec.input_tokens
+                    + rec.output_tokens
+                    + rec.cache_read_tokens
+                    + rec.cache_write_5m_tokens
+                    + rec.cache_write_1h_tokens
+                )
+                cost += c
+            block_token_totals.append(tokens)
+            block_cost_totals.append(cost)
 
         if len(block_token_totals) < 3:
             return None
@@ -746,35 +782,32 @@ class Aggregator:
     def block_info(self) -> BlockInfo | None:
         """Compute the current 5-hour block from the long-window archive.
 
-        A block starts at the first record after a >=5h gap (or at the very
-        first record). The "current" block is the latest such span that
-        contains the most recent record. Returns None if no record is
-        within the last 5 hours.
+        Block boundaries follow Anthropic's convention (matches Maciek-
+        roboblog): a block starts at the top-of-hour of the first message
+        and lasts exactly 5 hours. Each new message that lands after the
+        previous block's end starts a new block (also anchored to its own
+        top-of-hour). The "current" block is the latest one whose end is
+        in the future.
         """
         if not self._long_window:
             return None
 
-        # Walk forward and identify block_start of the most recent block.
         sorted_records = list(self._long_window)  # already sorted
-        block_start = sorted_records[0][0]
-        prev_ts = sorted_records[0][0]
-        for ts, _rec, _cost in sorted_records[1:]:
-            if ts - prev_ts >= BLOCK_DURATION:
-                block_start = ts
-            prev_ts = ts
+        blocks = list(_iter_blocks(sorted_records))
+        if not blocks:
+            return None
+        block_start, block_end, indices = blocks[-1]
 
         now = datetime.now(tz=timezone.utc)
-        block_end = block_start + BLOCK_DURATION
-        # If the latest record is older than block_end, the block has elapsed
-        # already — no active block.
-        latest_ts = sorted_records[-1][0]
-        if now - latest_ts > BLOCK_DURATION and now > block_end:
+        # If the most recent block already ended, there's no active
+        # block to report on. The next message will open a new one.
+        if now >= block_end:
             return None
 
         sums = TokenSums()
-        for ts, rec, cost in sorted_records:
-            if ts >= block_start:
-                sums.add(rec, cost)
+        for i in indices:
+            _ts, rec, cost = sorted_records[i]
+            sums.add(rec, cost)
 
         elapsed_min = max(1.0, (now - block_start).total_seconds() / 60.0)
         remaining_min = max(0.0, (block_end - now).total_seconds() / 60.0)
