@@ -305,6 +305,10 @@ class SettingsScreen(Screen):
                         "Export JSON", id="export-json-btn",
                         variant="primary",
                     )
+                with Horizontal(classes="button-row"):
+                    yield Button(
+                        "Open export folder", id="export-open-btn",
+                    )
 
                 # ===== Paths =====
                 yield Static("Paths", classes="settings-heading")
@@ -513,6 +517,9 @@ class SettingsScreen(Screen):
         if btn.id == "export-json-btn":
             self._run_export("json")
             return
+        if btn.id == "export-open-btn":
+            self._open_export_folder()
+            return
         if "path-open-btn" in btn.classes and btn.name:
             path = Path(btn.name)
             if path.is_dir():
@@ -551,6 +558,22 @@ class SettingsScreen(Screen):
         except Exception:
             return
         label.update(self._build_hook_status_text())
+
+    def _open_export_folder(self) -> None:
+        """Open ~/.cache/cc-usagemonitor/exports/ in the file manager.
+
+        Mkdir first — the dir doesn't exist before the first export, and
+        most file managers refuse to open a missing path.
+        """
+        from .export import export_dir
+        path = export_dir()
+        path.mkdir(parents=True, exist_ok=True)
+        ok, msg = open_in_file_manager(str(path))
+        if not ok:
+            log.warning("could not open export dir: %s", msg)
+            self.app.notify(
+                f"Could not open {path}: {msg}", severity="error",
+            )
 
     def _run_export(self, fmt: str) -> None:
         """Dump aggregator state to disk and toast the resulting path.
