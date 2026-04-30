@@ -47,6 +47,13 @@ class Tailer:
         self.from_start = from_start
         self._session_tails: dict[Path, _FileTail] = {}
         self._event_tail: _FileTail | None = None
+        # Flips True after the first poll iteration completes — the UI
+        # uses this to hide the 'replaying historical sessions' banner
+        # once the initial archive replay is done. Doesn't reset on
+        # Force re-scan (the in-memory state was just cleared, but the
+        # banner already came down on first launch and hiding it again
+        # would just confuse).
+        self.initial_scan_done: bool = False
 
     def reset_tails(self) -> None:
         """Forget all per-file tail positions and switch to from-start
@@ -69,6 +76,12 @@ class Tailer:
         while True:
             await self._scan_sessions()
             await self._scan_event_log()
+            # Mark replay as complete after the very first sweep so the
+            # UI loading banner can come down. Subsequent iterations
+            # are incremental tails, no longer 'loading'.
+            if not self.initial_scan_done:
+                self.initial_scan_done = True
+                log.info("tailer initial replay complete")
             await asyncio.sleep(self.poll_interval)
 
     async def _scan_sessions(self) -> None:

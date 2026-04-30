@@ -532,6 +532,16 @@ class UsageMonitorApp(App):
         color: $text;
     }
     DataTable { height: 1fr; background: $panel; }
+    /* Loading banner shown until Tailer.initial_scan_done — collapses
+       to height: 0 when display: none toggled in _refresh_view, so it
+       doesn't reserve a row of empty space after replay completes. */
+    #loading-banner {
+        height: 1;
+        padding: 0 2;
+        background: $primary 25%;
+        color: $text;
+        text-align: center;
+    }
     #t-models { height: 1fr; }
     /* Two plotext stacked-bars side by side — tokens and cost over the
        same 7-day window, splitting horizontal space 50/50. A single
@@ -621,6 +631,15 @@ class UsageMonitorApp(App):
         yield Header(show_clock=True)
         yield SummaryPanel(id="summary")
         yield BlockPanel(id="block")
+        # Loading banner — shown until the Tailer's first replay sweep
+        # finishes. With --from-start as the only mode, every launch
+        # does a full archive replay; for users with many JSONLs this
+        # can take a few seconds and a frozen-looking UI is alarming.
+        yield Static(
+            "[b]⏳ Replaying historical JSONLs…[/b]  "
+            "[dim]initial archive load[/dim]",
+            id="loading-banner",
+        )
         # Tabs strip first, then filter bar in its own row, then content
         # switcher with the actual tables. Decoupling Tabs from the
         # bundled TabbedContent lets us slip the filter bar between them
@@ -911,6 +930,15 @@ class UsageMonitorApp(App):
 
     def _refresh_view(self) -> None:
         agg = self.aggregator
+        # Hide loading banner once Tailer's first sweep completes. Cheap
+        # to check on every tick — sets display once and stays hidden.
+        if self.tailer.initial_scan_done:
+            try:
+                banner = self.query_one("#loading-banner", Static)
+                if banner.display:
+                    banner.display = False
+            except Exception:
+                pass
         summary = self.query_one("#summary", SummaryPanel)
         summary.sums = agg.total_sums()
         summary.sums_7d = agg.sums_in_window(timedelta(days=7))
