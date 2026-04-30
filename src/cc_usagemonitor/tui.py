@@ -403,13 +403,14 @@ class BlockPanel(Static):
             f"resets {end_local.strftime('%H:%M')} "
             f"(in {remaining_str})[/dim]"
         )]
-        # Plan-driven progress bars only when limits are configured.
-        # Without a plan ('none'), pct_tokens / pct_cost stay None.
-        if info.pct_tokens is not None:
-            lines.append(self._progress_line(
-                "5h tok ", info.pct_tokens,
-                f"{_human(sums.total_tokens)} / {_human(info.token_limit or 0)}",
-            ))
+        # Plan-driven progress bar — cost only. We deliberately don't
+        # show a token-percentage bar here: Anthropic's preset 'token'
+        # limits (pro=19k, max5=88k, max20=220k) are community guesses
+        # from a pre-cache-heavy era. With cache_read tokens dominating
+        # modern Claude Code usage, those presets render as 13K%+ —
+        # actively misleading. Cost is a published, real number; auto
+        # plan gives a P90-derived sensible token line via the raw
+        # 'Local' line below.
         if info.pct_cost is not None:
             lines.append(self._progress_line(
                 "5h $   ", info.pct_cost,
