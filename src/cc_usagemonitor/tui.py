@@ -170,25 +170,49 @@ def _fmt_dollar_tick(v: float) -> str:
     return f"${v:.2f}"
 
 
-_SORT_NUMERIC_RX = __import__("re").compile(
+_re = __import__("re")
+_SORT_NUMERIC_RX = _re.compile(
     r"([-+]?\d+(?:[.,]\d+)*)\s*([KMBT]?)"
 )
 _SORT_K_FACTOR = {"": 1.0, "K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}
+# Duration tokens like '1d 5h', '2h 4m', '30m', '45s' produced by
+# _fmt_duration. Lowercase d/h/m/s are duration suffixes; uppercase M
+# is millions and stays for the numeric branch.
+_SORT_DURATION_RX = _re.compile(r"(\d+)\s*([dhms])\b")
+_SORT_DURATION_UNITS = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+
+
+def _parse_duration_seconds(s: str) -> int | None:
+    """Parse a Duration cell ('2h 4m', '1d 5h', '30s') into total
+    seconds for numeric sorting. Returns None when the string has no
+    duration tokens (lets the caller fall back to the regular numeric
+    branch)."""
+    matches = _SORT_DURATION_RX.findall(s)
+    if not matches:
+        return None
+    total = 0
+    for n, unit in matches:
+        try:
+            total += int(n) * _SORT_DURATION_UNITS[unit]
+        except (ValueError, KeyError):
+            continue
+    return total
 
 
 def _sort_key(value):
     """Normalize a DataTable cell value (str / rich.Text / Text-like)
     to something safely comparable across rows.
 
-    Strategy:
-      1. Convert to plain string.
-      2. If the string starts with an extractable number (with an
-         optional K/M/B/T suffix), return the numeric value so cost /
-         token / percentage columns sort by magnitude.
-      3. Otherwise return the lowercase string for stable
-         alphabetical ordering.
-    Returns a tuple ``(0, number)`` or ``(1, string)`` so numerics
-    cluster ahead of textual rows when a column mixes both.
+    Order of attempts:
+      1. Duration string ('2h 4m', '30s', …) → total seconds. Has to
+         go before the generic numeric branch because '5h' would
+         otherwise be parsed as plain '5'.
+      2. Numeric string ('$22,252.04', '5.42M', '12%', '45,123') →
+         the magnitude it represents. K/M/B/T suffixes scaled.
+      3. Anything else → lowercase string for stable alphabetic
+         ordering.
+    Returns ``(kind, value)`` tuples so numerics cluster ahead of
+    textual rows when a column mixes both.
     """
     if value is None:
         return (1, "")
@@ -197,6 +221,9 @@ def _sort_key(value):
         # Empty / placeholder cells come after real values, both for
         # ascending and descending — pin to the high end.
         return (2, "")
+    dur = _parse_duration_seconds(s)
+    if dur is not None:
+        return (0, dur)
     m = _SORT_NUMERIC_RX.match(s.lstrip("$"))
     if m:
         try:
@@ -1246,17 +1273,20 @@ class UsageMonitorApp(App):
     def on_data_table_header_selected(
         self, event: DataTable.HeaderSelected,
     ) -> None:
-        """Click a column header to sort by it; click the same one
-        again to reverse the direction. Only applies to main-view
-        tables (#t-sessions / #t-projects / #t-models)."""
+        """Three-state cycle on click:
+          1) Ascending sort by clicked column
+          2) Descending sort by same column
+          3) Reset — drop user sort, restore the tab's default order
+        Clicking a different column starts a fresh asc/desc/reset
+        cycle on that column. Only applies to main-view tables
+        (#t-sessions / #t-projects / #t-models); detail-screen
+        tables get Textual's stock single-shot behavior."""
         table = event.data_table
         table_id_raw = table.id
         log.info(
             "header_selected: table=%s col=%s",
             table_id_raw, event.column_key,
         )
-        # Some DataTables in the app are read-only inside detail
-        # screens — don't track those, just let Textual sort once.
         table_id = f"#{table_id_raw}" if table_id_raw else None
         if table_id not in ("#t-sessions", "#t-projects", "#t-models"):
             return
@@ -1267,15 +1297,23 @@ class UsageMonitorApp(App):
         )
         prev = self._user_sort.get(table_id)
         if prev is not None and prev[0] == col_key_value:
-            reverse = not prev[1]
+            if prev[1]:
+                # 3rd click on the same column: reset to default
+                # order. _refresh_view rebuilds via _apply_rows and
+                # the missing _user_sort entry skips re-application.
+                del self._user_sort[table_id]
+                log.info("sort reset on %s", table_id)
+                self._refresh_view()
+                return
+            # 2nd click: flip to descending.
+            reverse = True
         else:
+            # 1st click on this column: ascending.
             reverse = False
         try:
-            # key=_sort_key normalizes Text vs str cell values to a
-            # comparable form. Numeric prefix is extracted when present
-            # so '$0.5573' / '5.42M' / '$22,252.04' sort by their actual
-            # magnitude rather than alphabetically by the rendered
-            # string.
+            # key=_sort_key normalizes Text vs str cell values, parses
+            # K/M/B/T suffixes for magnitude sort, and converts duration
+            # strings ('2h 4m') to seconds.
             table.sort(
                 event.column_key, reverse=reverse, key=_sort_key,
             )
