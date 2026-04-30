@@ -28,6 +28,10 @@ class SortPickerScreen(ModalScreen):
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),
         Binding("q", "cancel", "Cancel", show=False),
+        # 'r' shortcut wires the Reset button to the keyboard so the
+        # user can drop the active sort without tabbing across the
+        # buttons row.
+        Binding("r", "reset", "Reset"),
     ]
 
     CSS = """
@@ -145,7 +149,8 @@ class SortPickerScreen(ModalScreen):
                 yield Button("Cancel", id="sort-cancel")
             yield Static(
                 "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-                "[b]↵[/b] activate   [b]esc[/b] cancel",
+                "[b]↵[/b] activate   [b]r[/b] reset   "
+                "[b]esc[/b] cancel",
                 classes="sort-footer",
             )
 
@@ -153,6 +158,9 @@ class SortPickerScreen(ModalScreen):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+    def action_reset(self) -> None:
+        self.dismiss("reset")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id
