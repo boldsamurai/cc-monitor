@@ -518,6 +518,15 @@ class UsageMonitorApp(App):
         padding: 0 2;
         background: $panel;
     }
+    /* Count summary on the far left of the filter bar — shows
+       'visible / total' so the user can see at a glance how much
+       the active filters are hiding. */
+    .filter-count {
+        width: auto;
+        height: 1;
+        padding: 0 2 0 0;
+        color: $accent;
+    }
     #filter-search {
         width: 24;
         height: 1;
@@ -647,6 +656,7 @@ class UsageMonitorApp(App):
             id="main-tabs",
         )
         with Horizontal(id="filter-bar"):
+            yield Static("", id="filter-count", classes="filter-count")
             yield FilterInput(
                 placeholder="search…  (/)",
                 id="filter-search",
@@ -1017,6 +1027,46 @@ class UsageMonitorApp(App):
         # empty but 'No sessions yet' would be misleading.
         if self.tailer.initial_scan_done:
             self._update_empty_states()
+        self._update_filter_count()
+
+    def _update_filter_count(self) -> None:
+        """Render 'X / Y items' on the left of the filter bar so the
+        active-filter blast radius is visible at a glance.
+
+        - Sessions: visible row count vs total tracked sessions
+        - Projects: visible vs total unique project slugs
+        - Models: hidden (filter bar itself is hidden on Models tab)
+        """
+        try:
+            count_widget = self.query_one("#filter-count", Static)
+        except Exception:
+            return
+        active = self._active_tab()
+        agg = self.aggregator
+        if active == "sessions":
+            total = len(agg.sessions)
+            try:
+                visible = self.query_one(
+                    "#t-sessions", DataTable
+                ).row_count
+            except Exception:
+                visible = 0
+            count_widget.update(
+                f"[b]{visible}[/b] / {total} sessions"
+            )
+        elif active == "projects":
+            total = len({s.project_slug for s in agg.sessions.values()})
+            try:
+                visible = self.query_one(
+                    "#t-projects", DataTable
+                ).row_count
+            except Exception:
+                visible = 0
+            count_widget.update(
+                f"[b]{visible}[/b] / {total} projects"
+            )
+        else:
+            count_widget.update("")
 
     def _update_empty_states(self) -> None:
         """Swap DataTable for empty-state Static when a tab has 0 rows.
