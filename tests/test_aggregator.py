@@ -227,6 +227,132 @@ def test_block_info_returns_none_when_block_already_ended(agg):
     assert agg.block_info() is None
 
 
+# ----- session JSONL combined helper -----
+
+def _write_session_jsonl(tmp_path, project_slug: str, session_id: str, lines: list[dict]) -> None:
+    """Write a fake session JSONL where the parser will find it.
+
+    Aggregator's compute helpers use PROJECTS_DIR / slug / {session}.jsonl
+    so the test has to put the file there. tests redirect PROJECTS_DIR
+    via monkeypatch on the paths module.
+    """
+    import json
+    proj_dir = tmp_path / project_slug
+    proj_dir.mkdir(parents=True, exist_ok=True)
+    path = proj_dir / f"{session_id}.jsonl"
+    path.write_text("\n".join(json.dumps(line) for line in lines))
+
+
+def test_session_jsonl_stats_extracts_reads_writes_and_tools(
+    agg, tmp_path, monkeypatch,
+):
+    # Redirect PROJECTS_DIR so _compute_session_jsonl_stats reads our
+    # fixture file instead of the user's ~/.claude/projects.
+    from cc_usagemonitor import paths as paths_module
+    monkeypatch.setattr(paths_module, "PROJECTS_DIR", tmp_path)
+    # aggregator caches a reference at import time inside its helper,
+    # so monkeypatch the module-level too if it's already bound.
+    import cc_usagemonitor.aggregator as agg_mod
+    monkeypatch.setattr(agg_mod, "PROJECTS_DIR", tmp_path, raising=False)
+
+    project_slug = "-fake-proj"
+    session_id = "sess-abc"
+    # Register the session in agg so _compute_* finds it.
+    ts = datetime.now(tz=timezone.utc)
+    rec = _make_rec(ts, session_id=session_id)
+    rec.project_slug = project_slug
+    agg.ingest(rec)
+
+    _write_session_jsonl(tmp_path, project_slug, session_id, [
+        # Read 'a.py' twice with different result sizes.
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "tu1", "name": "Read",
+             "input": {"file_path": "/tmp/a.py"}},
+        ]}},
+        {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "tu1",
+             "content": "x" * 400},
+        ]}},
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "tu2", "name": "Read",
+             "input": {"file_path": "/tmp/a.py"}},
+        ]}},
+        {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "tu2",
+             "content": "y" * 200},
+        ]}},
+        # Write 'b.py' once.
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "tu3", "name": "Write",
+             "input": {"file_path": "/tmp/b.py", "content": "hello"}},
+        ]}},
+        # Edit 'a.py' once.
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "tu4", "name": "Edit",
+             "input": {"file_path": "/tmp/a.py",
+                       "new_string": "fix"}},
+        ]}},
+        # Bash tool just to populate counts.
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "tu5", "name": "Bash",
+             "input": {"command": "ls"}},
+        ]}},
+    ])
+
+    reads = agg.count_file_reads_in_session(session_id)
+    assert "/tmp/a.py" in reads
+    assert reads["/tmp/a.py"]["reads"] == 2
+    assert reads["/tmp/a.py"]["chars"] == 600
+    assert reads["/tmp/a.py"]["tokens_est"] == 150
+
+    writes = agg.count_file_writes_in_session(session_id)
+    assert writes["/tmp/b.py"]["writes"] == 1
+    assert writes["/tmp/b.py"]["chars"] == 5
+    assert writes["/tmp/a.py"]["edits"] == 1
+    assert writes["/tmp/a.py"]["chars"] == 3
+
+    tools = agg.count_tools_in_session(session_id)
+    # 2 Read + 1 Write + 1 Edit + 1 Bash
+    assert tools == {"Read": 2, "Write": 1, "Edit": 1, "Bash": 1}
+
+
+def test_session_jsonl_stats_uses_single_pass_cache(
+    agg, tmp_path, monkeypatch,
+):
+    # The three count_*_in_session methods now share a cache key, so
+    # calling all three after one ingest should compute exactly once.
+    import cc_usagemonitor.aggregator as agg_mod
+    monkeypatch.setattr(agg_mod, "PROJECTS_DIR", tmp_path, raising=False)
+
+    project_slug = "-fake-proj"
+    session_id = "sess-xyz"
+    ts = datetime.now(tz=timezone.utc)
+    rec = _make_rec(ts, session_id=session_id)
+    rec.project_slug = project_slug
+    agg.ingest(rec)
+    _write_session_jsonl(tmp_path, project_slug, session_id, [
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "t", "name": "Bash",
+             "input": {}},
+        ]}},
+    ])
+
+    # Wrap _compute_session_jsonl_stats so we can count invocations.
+    calls = {"n": 0}
+    real = agg._compute_session_jsonl_stats
+
+    def counted(sid):
+        calls["n"] += 1
+        return real(sid)
+
+    monkeypatch.setattr(agg, "_compute_session_jsonl_stats", counted)
+
+    agg.count_file_reads_in_session(session_id)
+    agg.count_file_writes_in_session(session_id)
+    agg.count_tools_in_session(session_id)
+    assert calls["n"] == 1
+
+
 # ----- per-session cache -----
 
 def test_session_cache_returns_same_object_until_revision_bump(agg):

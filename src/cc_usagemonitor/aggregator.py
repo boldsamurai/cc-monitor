@@ -618,38 +618,74 @@ class Aggregator:
     ) -> dict[str, dict[str, int]]:
         """Per-file Read tool stats for a session.
 
-        Returns a {file_path: {'reads': N, 'chars': total, 'tokens_est': T}}
-        dict where chars is the cumulative size of the tool_result content
-        and tokens_est is a rough chars/4 approximation. Useful for
-        spotting files that are read repeatedly and bloat the context.
+        Returns {file_path: {'reads': N, 'chars': total, 'tokens_est': T}}.
+        Backed by the combined session_jsonl_stats helper so calling all
+        three count_*_in_session methods opens the JSONL once, not three
+        times.
         """
-        return self._cached_for_session(
-            session_id, "count_file_reads",
-            lambda: self._compute_file_reads(session_id),
-        )
+        return self._session_jsonl_stats(session_id)["reads"]
 
-    def _compute_file_reads(
+    def count_file_writes_in_session(
         self, session_id: str
     ) -> dict[str, dict[str, int]]:
+        """Per-file Write/Edit tool stats for a session.
+
+        Returns {file_path: {'writes': N, 'edits': M, 'chars': C,
+        'tokens_est': T}}. 'writes' is full-content Write calls; 'edits'
+        lumps Edit and NotebookEdit. 'chars' sums Write.content,
+        Edit.new_string, NotebookEdit.new_source.
+        """
+        return self._session_jsonl_stats(session_id)["writes"]
+
+    def count_tools_in_session(self, session_id: str) -> dict[str, int]:
+        """Count tool_use blocks per tool name in a session's JSONL file.
+
+        Independent of the hook pipeline — reads tool_use entries directly
+        from the conversation log so it works retroactively for sessions
+        that predate the hook setup. Returns name -> count.
+        """
+        return self._session_jsonl_stats(session_id)["tools"]
+
+    def _session_jsonl_stats(self, session_id: str) -> dict:
+        """Single-pass extractor for every per-session derived stat that
+        needs the conversation JSONL.
+
+        Each call used to re-read and re-parse the same file three
+        separate times (count_file_reads / count_file_writes /
+        count_tools). For ProjectDetail that ran 3N file reads where
+        N = sessions in the project; this collapses it to N. The result
+        is cached on the session's revision so a second open is free.
+        """
+        return self._cached_for_session(
+            session_id, "session_jsonl_stats",
+            lambda: self._compute_session_jsonl_stats(session_id),
+        )
+
+    def _compute_session_jsonl_stats(self, session_id: str) -> dict:
         from .paths import PROJECTS_DIR
         import json
 
+        empty = {"reads": {}, "writes": {}, "tools": {}}
         sess = self.sessions.get(session_id)
         if sess is None:
-            return {}
+            return empty
         path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
         if not path.is_file():
-            return {}
+            return empty
         try:
             text = path.read_text()
         except OSError:
-            return {}
+            return empty
 
-        # Two-pass: collect tool_use_id -> file_path on the way down,
-        # then accumulate result chars as tool_result blocks reference
-        # back to those ids.
+        # All three derived dicts come from one walk over the JSONL.
+        # 'pending' correlates a Read's tool_use_id to its file_path so
+        # the later tool_result block can attribute its content size
+        # back to the right file.
+        reads: dict[str, dict[str, int]] = {}
+        writes: dict[str, dict[str, int]] = {}
+        tools: dict[str, int] = {}
         pending: dict[str, str] = {}
-        files: dict[str, dict[str, int]] = {}
+
         for line in text.splitlines():
             try:
                 obj = json.loads(line)
@@ -663,17 +699,38 @@ class Aggregator:
                 if not isinstance(item, dict):
                     continue
                 itype = item.get("type")
-                if itype == "tool_use" and item.get("name") == "Read":
-                    fp = (item.get("input") or {}).get("file_path") or "?"
-                    tool_id = item.get("id") or ""
-                    pending[tool_id] = fp
-                    bucket = files.setdefault(
-                        fp, {"reads": 0, "chars": 0, "tokens_est": 0}
-                    )
-                    bucket["reads"] += 1
+                if itype == "tool_use":
+                    name = item.get("name") or "?"
+                    tools[name] = tools.get(name, 0) + 1
+                    inp = item.get("input") or {}
+                    if name == "Read":
+                        fp = inp.get("file_path") or "?"
+                        pending[item.get("id") or ""] = fp
+                        bucket = reads.setdefault(
+                            fp, {"reads": 0, "chars": 0, "tokens_est": 0}
+                        )
+                        bucket["reads"] += 1
+                    elif name in ("Write", "Edit", "NotebookEdit"):
+                        fp = (
+                            inp.get("file_path")
+                            or inp.get("notebook_path")
+                            or "?"
+                        )
+                        bucket = writes.setdefault(
+                            fp,
+                            {"writes": 0, "edits": 0, "chars": 0, "tokens_est": 0},
+                        )
+                        if name == "Write":
+                            bucket["writes"] += 1
+                            bucket["chars"] += len(inp.get("content") or "")
+                        elif name == "Edit":
+                            bucket["edits"] += 1
+                            bucket["chars"] += len(inp.get("new_string") or "")
+                        else:  # NotebookEdit
+                            bucket["edits"] += 1
+                            bucket["chars"] += len(inp.get("new_source") or "")
                 elif itype == "tool_result":
-                    tool_id = item.get("tool_use_id") or ""
-                    fp = pending.get(tool_id)
+                    fp = pending.get(item.get("tool_use_id") or "")
                     if fp is None:
                         continue
                     result_content = item.get("content")
@@ -687,127 +744,15 @@ class Aggregator:
                         chars = len(result_content)
                     else:
                         chars = 0
-                    files[fp]["chars"] += chars
+                    reads[fp]["chars"] += chars
 
-        # Rough estimate: 1 token ~ 4 chars for code/text. Anthropic
-        # tokenizer is closer to ~3.5 for English prose, ~4-5 for code,
-        # so this is within ~20% — fine for "is this file expensive".
-        for stats in files.values():
+        # Rough estimate: 1 token ~ 4 chars (Anthropic tokenizer is
+        # ~3.5 for prose, ~4–5 for code; within 20% either way).
+        for stats in reads.values():
             stats["tokens_est"] = stats["chars"] // 4
-        return files
-
-    def count_file_writes_in_session(
-        self, session_id: str
-    ) -> dict[str, dict[str, int]]:
-        """Per-file Write/Edit tool stats for a session.
-
-        Returns {file_path: {'writes': N, 'edits': M, 'chars': C,
-        'tokens_est': T}} where 'writes' is the count of full-content
-        Write calls and 'edits' lumps Edit and NotebookEdit (both modify
-        existing content, just at different granularity). 'chars' sums
-        the bytes actually written: Write.content, Edit.new_string,
-        NotebookEdit.new_source. tokens_est is chars/4.
-        """
-        return self._cached_for_session(
-            session_id, "count_file_writes",
-            lambda: self._compute_file_writes(session_id),
-        )
-
-    def _compute_file_writes(
-        self, session_id: str
-    ) -> dict[str, dict[str, int]]:
-        from .paths import PROJECTS_DIR
-        import json
-
-        sess = self.sessions.get(session_id)
-        if sess is None:
-            return {}
-        path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
-        if not path.is_file():
-            return {}
-        try:
-            text = path.read_text()
-        except OSError:
-            return {}
-
-        files: dict[str, dict[str, int]] = {}
-        for line in text.splitlines():
-            try:
-                obj = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            msg = obj.get("message") or {}
-            content = msg.get("content")
-            if not isinstance(content, list):
-                continue
-            for item in content:
-                if not isinstance(item, dict):
-                    continue
-                if item.get("type") != "tool_use":
-                    continue
-                name = item.get("name")
-                if name not in ("Write", "Edit", "NotebookEdit"):
-                    continue
-                inp = item.get("input") or {}
-                fp = inp.get("file_path") or inp.get("notebook_path") or "?"
-                bucket = files.setdefault(
-                    fp, {"writes": 0, "edits": 0, "chars": 0, "tokens_est": 0}
-                )
-                if name == "Write":
-                    bucket["writes"] += 1
-                    bucket["chars"] += len(inp.get("content") or "")
-                elif name == "Edit":
-                    bucket["edits"] += 1
-                    bucket["chars"] += len(inp.get("new_string") or "")
-                else:  # NotebookEdit
-                    bucket["edits"] += 1
-                    bucket["chars"] += len(inp.get("new_source") or "")
-        for stats in files.values():
+        for stats in writes.values():
             stats["tokens_est"] = stats["chars"] // 4
-        return files
-
-    def count_tools_in_session(self, session_id: str) -> dict[str, int]:
-        """Count tool_use blocks per tool name in a session's JSONL file.
-
-        Independent of the hook pipeline — reads tool_use entries directly
-        from the conversation log so it works retroactively for sessions
-        that predate the hook setup. Returns name -> count, e.g.
-        {'Bash': 287, 'Edit': 142, 'Read': 89}.
-        """
-        return self._cached_for_session(
-            session_id, "count_tools",
-            lambda: self._compute_tools(session_id),
-        )
-
-    def _compute_tools(self, session_id: str) -> dict[str, int]:
-        from .paths import PROJECTS_DIR
-        import json
-
-        sess = self.sessions.get(session_id)
-        if sess is None:
-            return {}
-        path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
-        if not path.is_file():
-            return {}
-        counts: dict[str, int] = {}
-        try:
-            text = path.read_text()
-        except OSError:
-            return {}
-        for line in text.splitlines():
-            try:
-                obj = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-            msg = obj.get("message") or {}
-            content = msg.get("content")
-            if not isinstance(content, list):
-                continue
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "tool_use":
-                    name = item.get("name") or "?"
-                    counts[name] = counts.get(name, 0) + 1
-        return counts
+        return {"reads": reads, "writes": writes, "tools": tools}
 
     def load_full_session_turns(
         self, session_id: str
