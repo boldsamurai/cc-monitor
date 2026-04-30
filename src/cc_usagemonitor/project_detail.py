@@ -40,7 +40,7 @@ class ProjectDetailScreen(Screen):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
         Binding("q", "app.pop_screen", "Back"),
-        Binding("question_mark", "open_help", "Help"),
+        Binding("ctrl+h", "open_help", "Help"),
         Binding("1", "show_tab('tab-sessions')", "Sessions"),
         Binding("2", "show_tab('tab-usage')", "Usage"),
         Binding("3", "show_tab('tab-activity')", "Activity"),
@@ -713,7 +713,7 @@ class ProjectDetailScreen(Screen):
         left.update(actions)
         right.update(
             "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-            "[b]?[/b] help   [b]esc[/b] back"
+            "[b]ctrl+h[/b] help   [b]esc[/b] back"
         )
 
     def _last_session_id(self) -> str | None:
