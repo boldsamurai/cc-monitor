@@ -134,51 +134,30 @@ class SettingsScreen(Screen):
                 # ===== Behavior =====
                 yield Static("Behavior", classes="settings-heading")
 
-                with Horizontal(classes="switch-row"):
-                    yield Static(
-                        "Anthropic API integration",
-                        classes="switch-label",
-                    )
-                    yield Switch(
-                        value=self._cfg.get("use_api", True),
-                        id="use-api-switch",
-                    )
-                yield Static(
-                    "When ON: BlockPanel uses authoritative 5h/7d data "
-                    "polled from Anthropic every 60s — Plan below is "
-                    "ignored.\nWhen OFF: BlockPanel falls back to local "
-                    "estimates driven by Plan. Restart required.",
-                    classes="setting-note",
-                )
-
                 yield Static("Plan", classes="settings-row")
                 # Default to 'auto' — Anthropic doesn't publish per-plan
                 # token limits, so static presets are off by orders of
                 # magnitude under modern cache-heavy workloads.
                 current_plan = self._cfg.get("plan", "auto")
-                # API on → Plan irrelevant, disable radio so the user
-                # sees this isn't worth touching. Toggling API off
-                # re-enables it live (see on_switch_changed).
-                api_on = self._cfg.get("use_api", True)
-                plan_radio = RadioSet(id="plan-radio")
-                plan_radio.disabled = api_on
-                with plan_radio:
+                with RadioSet(id="plan-radio"):
                     for p in _PLAN_CHOICES:
                         yield RadioButton(p, value=(p == current_plan))
                 yield Static(
-                    "Used only when API integration is OFF (local "
-                    "fallback for the 5h-block cost bar). With API "
-                    "ON, this setting is ignored.\n\n"
+                    "Drives the local-mode 5h-block cost bar. Active "
+                    "only when Anthropic API integration falls back "
+                    "to local mode (auto-detected: no OAuth in "
+                    "keychain, or --no-api flag). With OAuth the "
+                    "Anthropic API gives authoritative data and Plan "
+                    "is ignored.\n\n"
                     "[b]Anthropic doesn't publish per-plan token "
                     "limits[/b] — static 'pro/max5/max20' presets "
-                    "(19k/88k/220k tokens) are community estimates "
-                    "and are wildly off once cache_read kicks in. "
-                    "[b]'auto'[/b] (default, recommended) computes "
-                    "P90 from your last 8d so the limit adapts to "
-                    "your actual workflow. Cost limits ($18/$35/$140) "
-                    "are published, so the cost progress bar is "
-                    "trustworthy on every preset.\n"
-                    "Restart required.",
+                    "(19k/88k/220k) are community estimates wildly "
+                    "off once cache_read kicks in. [b]'auto'[/b] "
+                    "(default) computes P90 from your last 8d so the "
+                    "limit adapts to your actual workflow. Cost "
+                    "limits ($18/$35/$140) are published, so the "
+                    "cost progress bar is trustworthy on every "
+                    "preset. Restart required.",
                     classes="setting-note",
                 )
 
@@ -334,12 +313,19 @@ class SettingsScreen(Screen):
                 f"[dim](from config / CLI)[/dim]"
             )
 
-        # API status — connected / disabled / waiting / error.
+        # API status — auto-detected based on OAuth credentials.
         use_api = getattr(self.app, "use_api", False)
-        if not use_api:
+        has_oauth = getattr(self.app, "has_oauth", False)
+        if not use_api and not has_oauth:
+            lines.append(
+                "[b]Anthropic API:[/b]   [yellow]pay-as-you-go[/yellow]  "
+                "[dim](no OAuth credentials — API-key user; "
+                "/api/oauth/usage doesn't apply)[/dim]"
+            )
+        elif not use_api:
             lines.append(
                 "[b]Anthropic API:[/b]   [yellow]disabled[/yellow]  "
-                "[dim](--no-api or Settings toggle off)[/dim]"
+                "[dim](--no-api flag — local mode)[/dim]"
             )
         elif agg is None or agg.api_usage is None:
             lines.append(
@@ -398,18 +384,7 @@ class SettingsScreen(Screen):
 
     def on_switch_changed(self, event: Switch.Changed) -> None:
         sid = event.switch.id
-        if sid == "use-api-switch":
-            api_on = bool(event.value)
-            self._cfg["use_api"] = api_on
-            save_config(self._cfg)
-            # Mirror the visual gating: Plan is irrelevant under API ON
-            # so disable its RadioSet; re-enable when API toggles off.
-            try:
-                plan_radio = self.query_one("#plan-radio", RadioSet)
-                plan_radio.disabled = api_on
-            except Exception:
-                pass
-        elif sid == "persist-filters-switch":
+        if sid == "persist-filters-switch":
             self._cfg["persist_filters"] = bool(event.value)
             save_config(self._cfg)
         elif sid == "hide-missing-switch":
