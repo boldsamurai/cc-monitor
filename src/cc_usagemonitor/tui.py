@@ -1008,8 +1008,8 @@ class UsageMonitorApp(App):
         left.update(actions)
         right.update(
             "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-            "[b]ctrl+h[/b] help   [b],[/b] settings   "
-            "[b]l[/b] log   [b]q[/b] quit"
+            "[b]S[/b] sort   [b]ctrl+h[/b] help   "
+            "[b],[/b] settings   [b]l[/b] log   [b]q[/b] quit"
         )
 
     SESSIONS_COLS = [
@@ -1157,12 +1157,9 @@ class UsageMonitorApp(App):
         self._update_filter_count()
 
     def _update_filter_count(self) -> None:
-        """Render 'X / Y items' on the left of the filter bar so the
-        active-filter blast radius is visible at a glance.
-
-        - Sessions: visible row count vs total tracked sessions
-        - Projects: visible vs total unique project slugs
-        - Models: hidden (filter bar itself is hidden on Models tab)
+        """Render 'X / Y items · sorted by Col ↓' on the right of the
+        filter bar so the active-filter blast radius and the active
+        sort state are visible at a glance.
         """
         try:
             count_widget = self.query_one("#filter-count", Static)
@@ -1178,9 +1175,7 @@ class UsageMonitorApp(App):
                 ).row_count
             except Exception:
                 visible = 0
-            count_widget.update(
-                f"[b]{visible}[/b] / {total} sessions"
-            )
+            base = f"[b]{visible}[/b] / {total} sessions"
         elif active == "projects":
             total = len({s.project_slug for s in agg.sessions.values()})
             try:
@@ -1189,11 +1184,28 @@ class UsageMonitorApp(App):
                 ).row_count
             except Exception:
                 visible = 0
-            count_widget.update(
-                f"[b]{visible}[/b] / {total} projects"
-            )
+            base = f"[b]{visible}[/b] / {total} projects"
         else:
             count_widget.update("")
+            return
+        # Append active-sort indicator. Map column key back to its
+        # display label so the user sees 'Cost' instead of 'cost'.
+        sort_pref = self._user_sort.get(f"#t-{active}")
+        if sort_pref is not None:
+            col_key, reverse = sort_pref
+            cols = {
+                "sessions": self.SESSIONS_COLS,
+                "projects": self.PROJECTS_COLS,
+            }.get(active, [])
+            label = next(
+                (lbl for lbl, k in cols if k == col_key), col_key,
+            )
+            arrow = "↓" if reverse else "↑"
+            base += (
+                f"  ·  [b]{label}[/b] {arrow}  "
+                f"[dim](S to change)[/dim]"
+            )
+        count_widget.update(base)
 
     def _update_empty_states(self) -> None:
         """Swap DataTable for empty-state Static when a tab has 0 rows.
