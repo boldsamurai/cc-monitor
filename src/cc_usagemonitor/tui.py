@@ -702,6 +702,15 @@ class UsageMonitorApp(App):
         # gets a new key and re-arms the toasts. Value is the set of
         # thresholds (80, 100) we've already fired for that window.
         self._notified_thresholds: dict[str, set[int]] = {}
+        # Aggregator revision we last rendered tables for. _tick skips
+        # the heavy table+summary rebuild when this matches the live
+        # value (i.e., no JSONL line was ingested in the last 0.5s).
+        # Block panel still updates every tick — the countdown ticks
+        # forward independently of ingestion.
+        self._last_data_revision: int = -1
+        # User-visible state changes (filter, tab, sort) bump this so
+        # the next tick rebuilds even when revision didn't move.
+        self._view_dirty: bool = True
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -824,7 +833,7 @@ class UsageMonitorApp(App):
             ui_tick = 0.5
         if ui_tick <= 0 or ui_tick > 60:
             ui_tick = 0.5
-        self.set_interval(ui_tick, self._refresh_view)
+        self.set_interval(ui_tick, self._tick)
         if self.auto_limits:
             # Recompute P90 limits every 30s — they shift as the rolling
             # 8-day window of historical blocks evolves.
@@ -1027,12 +1036,44 @@ class UsageMonitorApp(App):
                 log.exception("ingest crashed")
                 self.notify(f"Ingest error: {e}", severity="error")
 
+    def _tick(self) -> None:
+        """Timer-driven refresh, runs every ui_tick seconds.
+
+        Two-tier strategy: the cheap parts (LoadingScreen pop, block
+        panel countdown) always run because the user expects the
+        countdown to tick smoothly. The expensive parts (summary panel
+        + active table rebuild) only run when something actually
+        changed — either the aggregator ingested new data (revision
+        bump) or the user touched a filter/sort/tab (_view_dirty).
+        Without this gate the 0.5s tick walks every session every
+        500ms, which at hundreds of sessions blocks the main thread
+        long enough to make mouse clicks feel laggy.
+        """
+        self._maybe_dismiss_loading_screen()
+        self._refresh_block_panel()
+        if (
+            self.aggregator.revision != self._last_data_revision
+            or self._view_dirty
+        ):
+            self._refresh_heavy()
+            self._last_data_revision = self.aggregator.revision
+            self._view_dirty = False
+
     def _refresh_view(self) -> None:
-        agg = self.aggregator
-        # Pop the LoadingScreen modal once Tailer's first sweep
-        # completes. Guarded by a flag so a second tick doesn't try
-        # to pop again (LoadingScreen is no longer at the top of the
-        # stack by then).
+        """Force a full refresh — used by every interactive code path
+        (filter watchers, tab switches, sort modal). Bypasses the
+        revision gate that _tick uses."""
+        self._maybe_dismiss_loading_screen()
+        self._refresh_block_panel()
+        self._refresh_heavy()
+        self._last_data_revision = self.aggregator.revision
+        self._view_dirty = False
+
+    def _maybe_dismiss_loading_screen(self) -> None:
+        """Pop the LoadingScreen modal once Tailer's first sweep
+        completes. Guarded by a flag so a second tick doesn't try to
+        pop again (LoadingScreen is no longer at the top of the stack
+        by then)."""
         if not self._loading_dismissed and self.tailer.initial_scan_done:
             self._loading_dismissed = True
             try:
@@ -1041,6 +1082,26 @@ class UsageMonitorApp(App):
                     self.pop_screen()
             except Exception as e:
                 log.warning("could not dismiss LoadingScreen: %s", e)
+
+    def _refresh_block_panel(self) -> None:
+        """Always-on, cheap. block_info() is O(records) but bounded by
+        the 8-day deque, and the threshold check is a dict lookup."""
+        agg = self.aggregator
+        block_panel = self.query_one("#block", BlockPanel)
+        block_panel.info = agg.block_info()
+        block_panel.api_usage = agg.api_usage
+        # Surface the API-enabled state on every refresh so a Settings
+        # toggle would show up next tick (currently off-by-restart, but
+        # cheap to wire here in case we later allow live toggling).
+        block_panel.api_enabled = self.use_api
+        block_panel.has_plan = self.has_oauth
+        block_panel.refresh()
+        self._check_block_thresholds(block_panel.info, block_panel.api_usage)
+
+    def _refresh_heavy(self) -> None:
+        """Rebuild the summary panel and the active tab's table.
+        Skipped by _tick when nothing changed — see _tick docstring."""
+        agg = self.aggregator
         summary = self.query_one("#summary", SummaryPanel)
         summary.sums = agg.total_sums()
         summary.sums_7d = agg.sums_in_window(timedelta(days=7))
@@ -1063,17 +1124,6 @@ class UsageMonitorApp(App):
         summary.session_count = len(agg.sessions)
         summary.active_count = agg.active_session_count()
         summary.refresh()
-
-        block_panel = self.query_one("#block", BlockPanel)
-        block_panel.info = agg.block_info()
-        block_panel.api_usage = agg.api_usage
-        # Surface the API-enabled state on every refresh so a Settings
-        # toggle would show up next tick (currently off-by-restart, but
-        # cheap to wire here in case we later allow live toggling).
-        block_panel.api_enabled = self.use_api
-        block_panel.has_plan = self.has_oauth
-        block_panel.refresh()
-        self._check_block_thresholds(block_panel.info, block_panel.api_usage)
 
         # Refresh only the visible tab — keeps the UI responsive even at
         # hundreds of rows. The other tables are still in-sync from previous
