@@ -30,9 +30,6 @@ from .paths import PROJECTS_DIR
 log = get_logger(__name__)
 
 
-# Plan choices mirror PLAN_LIMITS from __main__ (kept in sync by hand —
-# small enough that DRY-ing across modules isn't worth a circular import).
-_PLAN_CHOICES = ["none", "pro", "max5", "max20", "auto"]
 _DEFAULT_TABS = ["sessions", "projects", "models"]
 
 
@@ -133,33 +130,6 @@ class SettingsScreen(Screen):
 
                 # ===== Behavior =====
                 yield Static("Behavior", classes="settings-heading")
-
-                yield Static("Plan", classes="settings-row")
-                # Default to 'auto' — Anthropic doesn't publish per-plan
-                # token limits, so static presets are off by orders of
-                # magnitude under modern cache-heavy workloads.
-                current_plan = self._cfg.get("plan", "auto")
-                with RadioSet(id="plan-radio"):
-                    for p in _PLAN_CHOICES:
-                        yield RadioButton(p, value=(p == current_plan))
-                yield Static(
-                    "Drives the local-mode 5h-block cost bar. Active "
-                    "only when Anthropic API integration falls back "
-                    "to local mode (auto-detected: no OAuth in "
-                    "keychain, or --no-api flag). With OAuth the "
-                    "Anthropic API gives authoritative data and Plan "
-                    "is ignored.\n\n"
-                    "[b]Anthropic doesn't publish per-plan token "
-                    "limits[/b] — static 'pro/max5/max20' presets "
-                    "(19k/88k/220k) are community estimates wildly "
-                    "off once cache_read kicks in. [b]'auto'[/b] "
-                    "(default) computes P90 from your last 8d so the "
-                    "limit adapts to your actual workflow. Cost "
-                    "limits ($18/$35/$140) are published, so the "
-                    "cost progress bar is trustworthy on every "
-                    "preset. Restart required.",
-                    classes="setting-note",
-                )
 
                 yield Static("Default tab on startup", classes="settings-row")
                 current_default_tab = self._cfg.get("default_tab", "sessions")
@@ -375,9 +345,6 @@ class SettingsScreen(Screen):
             self._set_theme(label)
         elif rs_id == "date-format-radio":
             self._set_date_format(label)
-        elif rs_id == "plan-radio":
-            self._cfg["plan"] = label
-            save_config(self._cfg)
         elif rs_id == "default-tab-radio":
             self._cfg["default_tab"] = label
             save_config(self._cfg)
