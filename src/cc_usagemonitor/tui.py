@@ -720,9 +720,9 @@ class UsageMonitorApp(App):
         Binding("l", "open_log", "Open log file"),
         Binding("comma", "open_settings", "Settings"),
         Binding("ctrl+h", "open_help", "Help"),
-        # Capital S — open the sort-by-column modal picker. Lowercase
-        # 's' stays bound to 'resume last session'.
-        Binding("S", "open_sort_picker", "Sort by column"),
+        # ctrl+s — open the sort-by-column modal picker. Bare 's' stays
+        # bound to 'resume last session', no conflict.
+        Binding("ctrl+s", "open_sort_picker", "Sort by column"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -1008,7 +1008,7 @@ class UsageMonitorApp(App):
         left.update(actions)
         right.update(
             "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-            "[b]S[/b] sort   [b]ctrl+h[/b] help   "
+            "[b]ctrl+s[/b] sort   [b]ctrl+h[/b] help   "
             "[b],[/b] settings   [b]l[/b] log   [b]q[/b] quit"
         )
 
@@ -1203,7 +1203,7 @@ class UsageMonitorApp(App):
             arrow = "↓" if reverse else "↑"
             base += (
                 f"  ·  [b]{label}[/b] {arrow}  "
-                f"[dim](S to change)[/dim]"
+                f"[dim](ctrl+s to change)[/dim]"
             )
         count_widget.update(base)
 
