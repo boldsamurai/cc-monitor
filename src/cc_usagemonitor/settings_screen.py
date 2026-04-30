@@ -19,6 +19,30 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, RadioButton, RadioSet, Static
 
+
+class CircleCheckbox(Checkbox):
+    """Checkbox rendered as a bullet — ● when checked, ○ when not.
+
+    Stock Textual Checkbox keeps BUTTON_INNER constant ('X') and only
+    flips its color between states, which clashes visually with the
+    RadioButton bullets used elsewhere in Settings. We override the
+    _button property so the actual glyph changes on toggle.
+    """
+
+    BUTTON_LEFT = ""
+    BUTTON_RIGHT = ""
+
+    @property
+    def _button(self):  # type: ignore[override]
+        # Local import — textual.content lives at the top level on
+        # newer Textual versions; the import path may shift between
+        # releases, so keep it scoped to the call.
+        from textual.content import Content
+
+        button_style = self.get_visual_style("toggle--button")
+        symbol = "●" if self.value else "○"
+        return Content.assemble((symbol, button_style))
+
 from . import __version__
 from .config import CONFIG_FILE, load_config, save_config
 from .formatting import DATE_FORMATS, apply_config, format_time
@@ -81,13 +105,16 @@ class SettingsScreen(Screen):
         background: $primary 15%;
     }
     /* Horizontal flavor for short option lists — Date format / Default
-       tab fit on one row, no need to stack them vertically. Explicit
-       height: 2 (one row of buttons + one row of bottom padding) so
-       the container doesn't reserve scroll-area space below. */
+       tab fit on one row. height: 1 + overflow: hidden + scrollbar
+       sizes zeroed kill the auto-reserved scrollbar gutter that was
+       puffing the row to 4-5 lines. */
     .radio-horizontal {
         layout: horizontal;
-        height: 2;
-        padding: 0 0 1 0;
+        height: 1;
+        padding: 0;
+        margin: 0 0 1 0;
+        overflow: hidden;
+        scrollbar-size: 0 0;
     }
     .radio-horizontal RadioButton {
         width: auto;
@@ -173,12 +200,12 @@ class SettingsScreen(Screen):
                     for t in _DEFAULT_TABS:
                         yield RadioButton(t, value=(t == current_default_tab))
 
-                yield Checkbox(
+                yield CircleCheckbox(
                     "Persist filters between sessions",
                     value=self._cfg.get("persist_filters", False),
                     id="persist-filters-check",
                 )
-                yield Checkbox(
+                yield CircleCheckbox(
                     "Hide missing projects/sessions by default",
                     value=self._cfg.get("hide_missing_by_default", False),
                     id="hide-missing-check",
