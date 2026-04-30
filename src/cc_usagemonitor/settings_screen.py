@@ -626,6 +626,11 @@ class SettingsScreen(Screen):
             return
         agg.reset_state()
         tailer.reset_tails()
+        # Drop the on-disk snapshot too — otherwise a crash before the
+        # next clean quit would resurrect the pre-rescan archive on
+        # the next launch.
+        from . import state as state_io
+        state_io.discard()
         try:
             text = self.query_one("#diagnostics-text", Static)
             text.update(self._build_diagnostics_text())

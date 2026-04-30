@@ -9,6 +9,7 @@ from .config import load_config
 from .install_hook import ensure_installed as ensure_hook_installed
 from .logger import setup_logging
 from .pricing import PricingTable
+from . import state as state_io
 from .tailer import Tailer
 from .tui import run_app
 
@@ -125,13 +126,18 @@ def main() -> None:
     # rolls forward in time.
     auto_limits = plan_name == "auto" and not use_api
 
-    # Replay every existing JSONL on startup. Tail-only mode (the old
-    # default) starts with empty tables and accumulates state only
-    # while the app is running, which is useless for almost everyone:
-    # closing the terminal wipes the in-memory archive, so the next
-    # launch sees nothing again. Replay is slightly slower at startup
-    # but presents the user's actual history immediately.
-    tailer = Tailer(queue, poll_interval=args.poll, from_start=True)
+    tailer = Tailer(queue, poll_interval=args.poll)
+
+    # Cross-run snapshot: if the previous quit pickled state, restore
+    # both the aggregator's in-memory archive and the tailer's per-file
+    # offsets. The next polling tick then only reads JSONL bytes that
+    # landed since the last save — turning multi-second cold starts
+    # into sub-second warm starts. A missing / corrupt / version-
+    # mismatched snapshot falls through to a full replay.
+    snap = state_io.load()
+    if snap is not None:
+        aggregator.restore(snap.aggregator)
+        tailer.restore(snap.tailer)
 
     run_app(
         aggregator, tailer, queue,

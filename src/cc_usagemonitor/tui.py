@@ -1945,6 +1945,13 @@ class UsageMonitorApp(App):
                 save_config(cfg)
         except Exception as e:
             log.warning("could not persist filters on quit: %s", e)
+        # Snapshot in-memory state so the next launch can warm-start.
+        # Best-effort — state.save catches and logs its own errors.
+        try:
+            from . import state as state_io
+            state_io.save(self.aggregator, self.tailer)
+        except Exception as e:
+            log.warning("snapshot save on quit failed: %s", e)
         self.exit()
 
     # ----- filter bar wiring -----

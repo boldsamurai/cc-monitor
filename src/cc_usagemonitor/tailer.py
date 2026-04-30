@@ -38,13 +38,11 @@ class Tailer:
         projects_dir: Path = PROJECTS_DIR,
         event_log: Path = EVENT_LOG,
         poll_interval: float = 0.5,
-        from_start: bool = True,
     ):
         self.queue = queue
         self.projects_dir = projects_dir
         self.event_log = event_log
         self.poll_interval = poll_interval
-        self.from_start = from_start
         self._session_tails: dict[Path, _FileTail] = {}
         self._event_tail: _FileTail | None = None
         # Flips True after the first poll iteration completes — the UI
@@ -55,6 +53,56 @@ class Tailer:
         # would just confuse).
         self.initial_scan_done: bool = False
 
+    def snapshot(self) -> dict:
+        """Per-file tail offsets for cross-run persistence. Stored as a
+        list of (str(path), pos, inode) tuples so the snapshot doesn't
+        carry Path objects (the dataclass works fine but the simpler
+        shape decouples from internal types).
+        """
+        return {
+            "session_tails": [
+                (str(t.path), t.pos, t.inode)
+                for t in self._session_tails.values()
+            ],
+            "event_tail": (
+                None if self._event_tail is None
+                else (
+                    str(self._event_tail.path),
+                    self._event_tail.pos,
+                    self._event_tail.inode,
+                )
+            ),
+        }
+
+    def restore(self, data: dict) -> None:
+        """Restore offsets saved by ``snapshot()``. Files whose inode
+        no longer matches (rotated / replaced) are silently re-tailed
+        from byte 0 by the regular polling code — we don't validate
+        here, the next ``_read_session_file`` call notices and resets.
+        Sets from_start=False so the next sweep tails forward instead
+        of replaying from offset 0."""
+        for path_str, pos, inode in data.get("session_tails", []):
+            p = Path(path_str)
+            self._session_tails[p] = _FileTail(
+                path=p, pos=pos, inode=inode,
+            )
+        ev = data.get("event_tail")
+        if ev is not None:
+            path_str, pos, inode = ev
+            self._event_tail = _FileTail(
+                path=Path(path_str), pos=pos, inode=inode,
+            )
+        # Treat the restored state as a 'completed initial sweep' so
+        # the LoadingScreen modal in the TUI can come down immediately
+        # (the heavy work was done on the previous run; the next poll
+        # tick is just a cheap incremental tail forward).
+        self.initial_scan_done = True
+        log.info(
+            "tailer restored: %d session offsets, event_tail=%s",
+            len(self._session_tails),
+            "yes" if self._event_tail is not None else "no",
+        )
+
     def reset_tails(self) -> None:
         """Forget all per-file tail positions and switch to from-start
         mode so the next polling tick re-reads every JSONL from byte 0.
@@ -64,14 +112,13 @@ class Tailer:
         """
         self._session_tails.clear()
         self._event_tail = None
-        self.from_start = True
         log.info("tailer reset: re-scanning from start")
 
     async def run(self) -> None:
         # Seed event log if it doesn't exist yet — tail still works once it appears.
         log.info(
-            "tailer starting: projects=%s event_log=%s from_start=%s",
-            self.projects_dir, self.event_log, self.from_start,
+            "tailer starting: projects=%s event_log=%s tracked_files=%d",
+            self.projects_dir, self.event_log, len(self._session_tails),
         )
         # Yield once so any pending UI work scheduled at on_mount time
         # (notably the LoadingScreen modal) gets render time before we
@@ -116,7 +163,11 @@ class Tailer:
 
         tail = self._session_tails.get(path)
         if tail is None or tail.inode != st.st_ino:
-            start = 0 if self.from_start else st.st_size
+            # Always read fresh (untracked or rotated) files from
+            # byte 0 — historical replay is the desired default and
+            # the snapshot mechanism handles 'don't re-read what you
+            # already saw' via persisted offsets.
+            start = 0
             tail = _FileTail(path=path, pos=start, inode=st.st_ino)
             self._session_tails[path] = tail
 
@@ -160,7 +211,11 @@ class Tailer:
             return
 
         if self._event_tail is None or self._event_tail.inode != st.st_ino:
-            start = 0 if self.from_start else st.st_size
+            # Always read fresh (untracked or rotated) files from
+            # byte 0 — historical replay is the desired default and
+            # the snapshot mechanism handles 'don't re-read what you
+            # already saw' via persisted offsets.
+            start = 0
             self._event_tail = _FileTail(path=self.event_log, pos=start, inode=st.st_ino)
 
         tail = self._event_tail
