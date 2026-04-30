@@ -69,14 +69,12 @@ class SettingsScreen(Screen):
     RadioSet:focus {
         border: none;
     }
-    /* Switch rows: label on the left, switch widget on the right. */
-    .switch-row {
-        height: auto;
-        padding: 0 0 0 0;
-    }
-    .switch-label { width: 1fr; padding: 1 0 0 0; }
-    .switch-row Switch {
+    /* Switches sit inline beneath their preceding Static label so the
+       layout matches the RadioSet groups (heading on top, control
+       below) rather than label-left/switch-right horizontal rows. */
+    Switch {
         background: $panel;
+        margin: 0 0 1 0;
     }
     #hook-status-text, #diagnostics-text {
         padding: 1 0;
@@ -137,25 +135,23 @@ class SettingsScreen(Screen):
                     for t in _DEFAULT_TABS:
                         yield RadioButton(t, value=(t == current_default_tab))
 
-                with Horizontal(classes="switch-row"):
-                    yield Static(
-                        "Persist filters between sessions",
-                        classes="switch-label",
-                    )
-                    yield Switch(
-                        value=self._cfg.get("persist_filters", False),
-                        id="persist-filters-switch",
-                    )
+                yield Static(
+                    "Persist filters between sessions",
+                    classes="settings-row",
+                )
+                yield Switch(
+                    value=self._cfg.get("persist_filters", False),
+                    id="persist-filters-switch",
+                )
 
-                with Horizontal(classes="switch-row"):
-                    yield Static(
-                        "Hide missing projects/sessions by default",
-                        classes="switch-label",
-                    )
-                    yield Switch(
-                        value=self._cfg.get("hide_missing_by_default", False),
-                        id="hide-missing-switch",
-                    )
+                yield Static(
+                    "Hide missing projects/sessions by default",
+                    classes="settings-row",
+                )
+                yield Switch(
+                    value=self._cfg.get("hide_missing_by_default", False),
+                    id="hide-missing-switch",
+                )
 
                 # ===== Diagnostics =====
                 yield Static("Diagnostics", classes="settings-heading")
