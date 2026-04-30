@@ -170,6 +170,44 @@ def _fmt_dollar_tick(v: float) -> str:
     return f"${v:.2f}"
 
 
+_SORT_NUMERIC_RX = __import__("re").compile(
+    r"([-+]?\d+(?:[.,]\d+)*)\s*([KMBT]?)"
+)
+_SORT_K_FACTOR = {"": 1.0, "K": 1e3, "M": 1e6, "B": 1e9, "T": 1e12}
+
+
+def _sort_key(value):
+    """Normalize a DataTable cell value (str / rich.Text / Text-like)
+    to something safely comparable across rows.
+
+    Strategy:
+      1. Convert to plain string.
+      2. If the string starts with an extractable number (with an
+         optional K/M/B/T suffix), return the numeric value so cost /
+         token / percentage columns sort by magnitude.
+      3. Otherwise return the lowercase string for stable
+         alphabetical ordering.
+    Returns a tuple ``(0, number)`` or ``(1, string)`` so numerics
+    cluster ahead of textual rows when a column mixes both.
+    """
+    if value is None:
+        return (1, "")
+    s = str(value).strip()
+    if not s or s == "-":
+        # Empty / placeholder cells come after real values, both for
+        # ascending and descending — pin to the high end.
+        return (2, "")
+    m = _SORT_NUMERIC_RX.match(s.lstrip("$"))
+    if m:
+        try:
+            base = float(m.group(1).replace(",", ""))
+            suffix = m.group(2).upper()
+            return (0, base * _SORT_K_FACTOR.get(suffix, 1.0))
+        except ValueError:
+            pass
+    return (1, s.lower())
+
+
 def _fmt_token_tick(v: float) -> str:
     """Format a y-axis token tick: 1.2M / 5K / 0. Mirrors _fmt_dollar_tick
     in shape (no currency prefix, K/M/B suffix instead)."""
@@ -1233,7 +1271,14 @@ class UsageMonitorApp(App):
         else:
             reverse = False
         try:
-            table.sort(event.column_key, reverse=reverse)
+            # key=_sort_key normalizes Text vs str cell values to a
+            # comparable form. Numeric prefix is extracted when present
+            # so '$0.5573' / '5.42M' / '$22,252.04' sort by their actual
+            # magnitude rather than alphabetically by the rendered
+            # string.
+            table.sort(
+                event.column_key, reverse=reverse, key=_sort_key,
+            )
         except Exception as e:
             log.warning("sort failed for %s/%s: %s", table_id, col_key_value, e)
             return
