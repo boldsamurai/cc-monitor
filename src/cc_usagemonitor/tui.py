@@ -766,6 +766,11 @@ class UsageMonitorApp(App):
         # re-applies this after every refresh so our default order
         # (e.g., sessions by last_seen desc) doesn't undo the click.
         self._user_sort: dict[str, tuple[str, bool]] = {}
+        # Plan threshold notification dedup. Keyed by a window ID that
+        # encodes the block reset time, so a fresh block (after rollover)
+        # gets a new key and re-arms the toasts. Value is the set of
+        # thresholds (80, 100) we've already fired for that window.
+        self._notified_thresholds: dict[str, set[int]] = {}
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -1135,6 +1140,7 @@ class UsageMonitorApp(App):
         block_panel.api_enabled = self.use_api
         block_panel.has_plan = self.has_oauth
         block_panel.refresh()
+        self._check_block_thresholds(block_panel.info, block_panel.api_usage)
 
         # Refresh only the visible tab — keeps the UI responsive even at
         # hundreds of rows. The other tables are still in-sync from previous
@@ -1155,6 +1161,79 @@ class UsageMonitorApp(App):
         if self.tailer.initial_scan_done:
             self._update_empty_states()
         self._update_filter_count()
+
+    def _check_block_thresholds(
+        self,
+        info: BlockInfo | None,
+        api: UsageData | None,
+    ) -> None:
+        """Fire toast notifications when a window crosses 80% / 100%.
+
+        Three independent windows are tracked:
+          - API 5h (utilization from /api/oauth/usage)
+          - API 7d (same source)
+          - Local 5h cost (used when API is disabled but the user has a
+            plan; 7d isn't tracked locally)
+
+        Dedup is keyed on the window's reset time, so once the block
+        rolls over the new key has an empty seen-set and the toasts
+        re-arm. After processing we drop any stale keys we no longer
+        observe so the dict can't grow without bound.
+        """
+        active_keys: set[str] = set()
+        if (
+            self.use_api
+            and api is not None
+            and not api.api_unavailable
+        ):
+            if api.five_hour is not None:
+                key = f"api_5h:{api.five_hour.resets_at.isoformat()}"
+                active_keys.add(key)
+                self._maybe_notify_threshold(
+                    key, api.five_hour.utilization, "5h block",
+                )
+            if api.seven_day is not None:
+                key = f"api_7d:{api.seven_day.resets_at.isoformat()}"
+                active_keys.add(key)
+                self._maybe_notify_threshold(
+                    key, api.seven_day.utilization, "7d window",
+                )
+        elif (
+            not self.use_api
+            and self.has_oauth
+            and info is not None
+            and info.pct_cost is not None
+        ):
+            # Local-only path. Only the cost bar is meaningful — token
+            # presets are unreliable in cache-heavy modern usage (see
+            # BlockPanel._render_local_only) so we deliberately skip
+            # pct_tokens here.
+            key = f"local_5h:{info.start.isoformat()}"
+            active_keys.add(key)
+            self._maybe_notify_threshold(key, info.pct_cost, "5h block")
+        # Drop entries for windows that have rolled over and are no
+        # longer in the current snapshot.
+        for stale in set(self._notified_thresholds) - active_keys:
+            del self._notified_thresholds[stale]
+
+    def _maybe_notify_threshold(
+        self, window_id: str, pct: float, label: str,
+    ) -> None:
+        seen = self._notified_thresholds.setdefault(window_id, set())
+        # Order matters: fire 80 before 100 so a single jump past both
+        # thresholds in one tick still produces both toasts.
+        for threshold, severity, headline in (
+            (80, "warning", "Approaching limit"),
+            (100, "error", "Limit reached"),
+        ):
+            if pct >= threshold and threshold not in seen:
+                seen.add(threshold)
+                self.notify(
+                    f"{label} at {pct:.0f}%.",
+                    title=f"{headline} — {label}",
+                    severity=severity,
+                    timeout=10,
+                )
 
     def _update_filter_count(self) -> None:
         """Render 'X / Y items · sorted by Col ↓' on the right of the
