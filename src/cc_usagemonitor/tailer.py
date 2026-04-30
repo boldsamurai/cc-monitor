@@ -38,7 +38,7 @@ class Tailer:
         projects_dir: Path = PROJECTS_DIR,
         event_log: Path = EVENT_LOG,
         poll_interval: float = 0.5,
-        from_start: bool = False,
+        from_start: bool = True,
     ):
         self.queue = queue
         self.projects_dir = projects_dir
