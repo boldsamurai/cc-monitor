@@ -1071,17 +1071,27 @@ class UsageMonitorApp(App):
 
     def _maybe_dismiss_loading_screen(self) -> None:
         """Pop the LoadingScreen modal once Tailer's first sweep
-        completes. Guarded by a flag so a second tick doesn't try to
-        pop again (LoadingScreen is no longer at the top of the stack
-        by then)."""
-        if not self._loading_dismissed and self.tailer.initial_scan_done:
-            self._loading_dismissed = True
-            try:
-                from .loading_screen import LoadingScreen
-                if isinstance(self.screen, LoadingScreen):
-                    self.pop_screen()
-            except Exception as e:
-                log.warning("could not dismiss LoadingScreen: %s", e)
+        completes.
+
+        Crucial subtlety: the dismissed flag flips to True ONLY after
+        we successfully pop. Earlier this method optimistically set the
+        flag before checking, which broke the snapshot warm-start path
+        — the default-tab activation in on_mount fires _refresh_view
+        before LoadingScreen is pushed (which happens at the very end
+        of on_mount), so the first call would set the flag but not
+        find the modal on the stack to pop. The next tick saw the flag
+        already True and skipped the dismiss, leaving the modal up
+        forever.
+        """
+        if self._loading_dismissed or not self.tailer.initial_scan_done:
+            return
+        try:
+            from .loading_screen import LoadingScreen
+            if isinstance(self.screen, LoadingScreen):
+                self.pop_screen()
+                self._loading_dismissed = True
+        except Exception as e:
+            log.warning("could not dismiss LoadingScreen: %s", e)
 
     def _refresh_block_panel(self) -> None:
         """Always-on, cheap. block_info() is O(records) but bounded by
