@@ -40,6 +40,7 @@ class ProjectDetailScreen(Screen):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
         Binding("q", "app.pop_screen", "Back"),
+        Binding("question_mark", "open_help", "Help"),
         Binding("1", "show_tab('tab-sessions')", "Sessions"),
         Binding("2", "show_tab('tab-usage')", "Usage"),
         Binding("3", "show_tab('tab-activity')", "Activity"),
@@ -609,6 +610,10 @@ class ProjectDetailScreen(Screen):
         except Exception:
             pass
 
+    def action_open_help(self) -> None:
+        from .help_screen import HelpScreen
+        self.app.push_screen(HelpScreen())
+
     def action_copy_path(self) -> None:
         path = self._project_path()
         if not path:
@@ -707,7 +712,8 @@ class ProjectDetailScreen(Screen):
             )
         left.update(actions)
         right.update(
-            "[b]Tab[/b] / [b]shift+Tab[/b] focus   [b]esc[/b] back"
+            "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
+            "[b]?[/b] help   [b]esc[/b] back"
         )
 
     def _last_session_id(self) -> str | None:
