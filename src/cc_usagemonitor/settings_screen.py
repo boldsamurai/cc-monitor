@@ -170,6 +170,21 @@ class SettingsScreen(Screen):
         padding: 0 1;
         text-align: right;
     }
+    /* Compact footer back button — see help_screen.py for the same
+       pattern. Distinct from the path-open buttons by name; styling
+       overrides their default Textual border / 3-row height. */
+    .back-btn {
+        width: auto;
+        min-width: 10;
+        height: 1;
+        padding: 0 1;
+        margin: 0 1 0 1;
+        border: none;
+        background: $boost;
+        color: $text;
+    }
+    .back-btn:hover { background: $primary 30%; }
+    .back-btn:focus { background: $primary 30%; }
     """
 
     def __init__(self) -> None:
@@ -322,6 +337,7 @@ class SettingsScreen(Screen):
                         )
 
             with Horizontal(id="settings-footer"):
+                yield Button("← Back", id="back-btn", classes="back-btn")
                 yield Static(
                     "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
                     "[b]esc[/b] back",
@@ -492,6 +508,9 @@ class SettingsScreen(Screen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn = event.button
+        if btn.id == "back-btn":
+            self.app.pop_screen()
+            return
         if btn.id == "hook-reinstall-btn":
             ensure_installed()
             self._refresh_hook_status()

@@ -12,7 +12,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import DataTable, Static, TabbedContent, TabPane
+from textual.widgets import Button, DataTable, Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
 
 from .aggregator import Aggregator, SessionState, TokenSums
@@ -211,6 +211,20 @@ class SessionDetailScreen(Screen):
         padding: 0 1;
         text-align: right;
     }
+    /* Compact footer back button — see help_screen.py for the same
+       pattern. Click pops the screen, mirroring the 'esc' binding. */
+    .back-btn {
+        width: auto;
+        min-width: 10;
+        height: 1;
+        padding: 0 1;
+        margin: 0 1 0 1;
+        border: none;
+        background: $boost;
+        color: $text;
+    }
+    .back-btn:hover { background: $primary 30%; }
+    .back-btn:focus { background: $primary 30%; }
     """
 
     def __init__(self, session_id: str, aggregator: Aggregator):
@@ -335,6 +349,7 @@ class SessionDetailScreen(Screen):
             # separate sections at the bottom.
 
         with Horizontal(id="detail-footer"):
+            yield Button("← Back", id="back-btn", classes="back-btn")
             yield Static(
                 "[b]o[/b] open dir   [b]s[/b] resume session   "
                 "[b]i[/b] copy session ID   [b]p[/b] copy project path",
@@ -538,6 +553,10 @@ class SessionDetailScreen(Screen):
     def action_open_help(self) -> None:
         from .help_screen import HelpScreen
         self.app.push_screen(HelpScreen())
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "back-btn":
+            self.app.pop_screen()
 
     def _project_path(self) -> str | None:
         sess = self.aggregator.sessions.get(self.session_id)
