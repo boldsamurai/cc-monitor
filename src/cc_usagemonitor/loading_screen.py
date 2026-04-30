@@ -30,7 +30,10 @@ class LoadingScreen(ModalScreen[None]):
     CSS = """
     LoadingScreen {
         align: center middle;
-        background: $background 60%;
+        /* Solid backdrop so the modal is visible on cold start before
+           any of the underlying screen has had a chance to render
+           (event loop is busy with the first JSONL replay sweep). */
+        background: $surface;
     }
     #loading-box {
         width: 60;
