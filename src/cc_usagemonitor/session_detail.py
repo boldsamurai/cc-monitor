@@ -196,6 +196,11 @@ class SessionDetailScreen(Screen):
     #section-skills, #section-agents {
         padding: 0 2;
     }
+    #screen-header {
+        height: 1;
+        dock: top;
+        background: $panel;
+    }
     #detail-footer {
         height: 1;
         dock: bottom;
@@ -252,6 +257,8 @@ class SessionDetailScreen(Screen):
         )
 
         with Vertical():
+            with Horizontal(id="screen-header"):
+                yield Button("← Back", id="back-btn", classes="back-btn")
             # Top row: Session info, Totals, By model — three columns
             # side by side so the screen feels like a dashboard rather
             # than a long scroll of stacked sections.
@@ -349,7 +356,6 @@ class SessionDetailScreen(Screen):
             # separate sections at the bottom.
 
         with Horizontal(id="detail-footer"):
-            yield Button("← Back", id="back-btn", classes="back-btn")
             yield Static(
                 "[b]o[/b] open dir   [b]s[/b] resume session   "
                 "[b]i[/b] copy session ID   [b]p[/b] copy project path",

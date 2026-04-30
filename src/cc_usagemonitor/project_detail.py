@@ -116,6 +116,11 @@ class ProjectDetailScreen(Screen):
         padding: 0 2;
         color: $text-muted;
     }
+    #screen-header {
+        height: 1;
+        dock: top;
+        background: $panel;
+    }
     #pd-footer {
         height: 1;
         dock: bottom;
@@ -160,6 +165,8 @@ class ProjectDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Vertical():
+            with Horizontal(id="screen-header"):
+                yield Button("← Back", id="back-btn", classes="back-btn")
             with Horizontal(id="pd-top"):
                 yield Static(self._build_info_block(), id="pd-info")
                 yield Static(self._build_totals_block(), id="pd-totals")
@@ -220,7 +227,6 @@ class ProjectDetailScreen(Screen):
                         yield self._make_plot("pd-chart-tokens")
 
         with Horizontal(id="pd-footer"):
-            yield Button("← Back", id="back-btn", classes="back-btn")
             yield Static("", id="pd-footer-left")
             # Footer text is rebuilt in _update_footer based on the
             # active tab (5 only meaningful on Sessions). Initial value
