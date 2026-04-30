@@ -33,7 +33,7 @@ _SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("s", "Resume last session (Projects) or selected session (Sessions)"),
         ("↵ (Enter)", "Drill into session/project detail"),
         ("Click header", "Sort by column (cycle asc / desc / reset)"),
-        ("S", "Open sort picker modal (column + direction)"),
+        ("ctrl+s", "Open sort picker modal (column + direction)"),
         ("l", "Tail the log file (less +F in a new terminal)"),
         (",", "Open Settings"),
         ("r", "Force-refresh visible tab"),
