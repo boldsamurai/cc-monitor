@@ -125,6 +125,13 @@ class SessionState:
     # Per-session breakdown for skill/agent calls correlated via hooks.
     skills: dict[str, TokenSums] = field(default_factory=dict)
     agents: dict[str, TokenSums] = field(default_factory=dict)
+    # Bumped by every ingest of this session. Aggregator's per-session
+    # cache keys derived helpers ('count_file_reads', etc.) on this so
+    # opening a detail screen twice in a row hits the cache instead of
+    # re-parsing the JSONL from disk. Lives on the session instead of
+    # globally so an ingest of session A doesn't invalidate session B's
+    # cached file-read stats.
+    revision: int = 0
     # Ground-truth project path captured from the JSONL ('cwd' field).
     # Kept here once seen — the slug → path decode is lossy (slug
     # encoder collapses '/', '_', '.' all to '-'), so the real cwd is
@@ -200,6 +207,15 @@ class Aggregator:
         # clicks feel laggy. Per-session counters live on SessionState
         # so detail-screen caches can scope-invalidate.
         self.revision: int = 0
+        # Cached results of expensive per-session helpers. Keyed by
+        # (session_id, method_name); value is (session_revision, result)
+        # so a stale entry (lower revision than the live SessionState)
+        # is silently recomputed. Most detail-screen helpers re-read
+        # the JSONL from disk and are the dominant cost of opening a
+        # session/project detail twice.
+        self._session_cache: dict[
+            tuple[str, str], tuple[int, object]
+        ] = {}
 
     def reset_state(self) -> None:
         """Drop all accumulated runtime state but keep configuration
@@ -215,6 +231,7 @@ class Aggregator:
         self.by_skill.clear()
         self.by_agent.clear()
         self._long_window.clear()
+        self._session_cache.clear()
         # Bump so _refresh_view paints empty tables instead of stale
         # rows on the very next tick.
         self.revision += 1
@@ -269,6 +286,8 @@ class Aggregator:
         else:
             sess.sums_main.add(rec, cost)
         sess.by_model[rec.model or "unknown"].add(rec, cost)
+        # Per-session cache invalidator — see SessionState.revision.
+        sess.revision += 1
 
         self._update_long_window(rec, cost)
         self._update_recent(rec, cost)
@@ -520,16 +539,36 @@ class Aggregator:
                 sums.add(rec, cost)
         return sums
 
+    def _cached_for_session(self, session_id: str, name: str, fn):
+        """Return fn() but cache the result keyed on the session's
+        revision. Stale entries (older revision) are silently replaced
+        on the next call. Sessions not in self.sessions short-circuit
+        to fn() with no caching — there's nothing to invalidate against.
+        """
+        sess = self.sessions.get(session_id)
+        if sess is None:
+            return fn()
+        key = (session_id, name)
+        cached = self._session_cache.get(key)
+        if cached is not None and cached[0] == sess.revision:
+            return cached[1]
+        value = fn()
+        self._session_cache[key] = (sess.revision, value)
+        return value
+
     def turns_for_session(
         self, session_id: str
     ) -> list[tuple[datetime, UsageRecord, float]]:
         """Return chronological per-turn records for a session, limited to
         what's still in the 8-day archive. Empty if the session is older."""
-        return [
-            (ts, rec, cost)
-            for ts, rec, cost in self._long_window
-            if rec.session_id == session_id
-        ]
+        return self._cached_for_session(
+            session_id, "turns_for_session",
+            lambda: [
+                (ts, rec, cost)
+                for ts, rec, cost in self._long_window
+                if rec.session_id == session_id
+            ],
+        )
 
     def count_file_reads_in_session(
         self, session_id: str
@@ -541,7 +580,14 @@ class Aggregator:
         and tokens_est is a rough chars/4 approximation. Useful for
         spotting files that are read repeatedly and bloat the context.
         """
-        from pathlib import Path
+        return self._cached_for_session(
+            session_id, "count_file_reads",
+            lambda: self._compute_file_reads(session_id),
+        )
+
+    def _compute_file_reads(
+        self, session_id: str
+    ) -> dict[str, dict[str, int]]:
         from .paths import PROJECTS_DIR
         import json
 
@@ -619,7 +665,14 @@ class Aggregator:
         the bytes actually written: Write.content, Edit.new_string,
         NotebookEdit.new_source. tokens_est is chars/4.
         """
-        from pathlib import Path
+        return self._cached_for_session(
+            session_id, "count_file_writes",
+            lambda: self._compute_file_writes(session_id),
+        )
+
+    def _compute_file_writes(
+        self, session_id: str
+    ) -> dict[str, dict[str, int]]:
         from .paths import PROJECTS_DIR
         import json
 
@@ -678,7 +731,12 @@ class Aggregator:
         that predate the hook setup. Returns name -> count, e.g.
         {'Bash': 287, 'Edit': 142, 'Read': 89}.
         """
-        from pathlib import Path
+        return self._cached_for_session(
+            session_id, "count_tools",
+            lambda: self._compute_tools(session_id),
+        )
+
+    def _compute_tools(self, session_id: str) -> dict[str, int]:
         from .paths import PROJECTS_DIR
         import json
 
@@ -717,7 +775,14 @@ class Aggregator:
         archive — useful for the detail screen of older sessions whose
         per-turn data has aged out.
         """
-        from pathlib import Path
+        return self._cached_for_session(
+            session_id, "load_full_session_turns",
+            lambda: self._compute_full_session_turns(session_id),
+        )
+
+    def _compute_full_session_turns(
+        self, session_id: str
+    ) -> list[tuple[datetime, UsageRecord, float]]:
         from .parser import parse_session_line
         from .paths import PROJECTS_DIR
 

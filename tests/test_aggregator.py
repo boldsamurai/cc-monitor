@@ -227,6 +227,59 @@ def test_block_info_returns_none_when_block_already_ended(agg):
     assert agg.block_info() is None
 
 
+# ----- per-session cache -----
+
+def test_session_cache_returns_same_object_until_revision_bump(agg):
+    # Build a session by ingesting once.
+    ts = datetime.now(tz=timezone.utc)
+    agg.ingest(_make_rec(ts))
+
+    calls = []
+    result_a = {"x": 1}
+    result_b = {"x": 2}
+
+    def fake_compute():
+        calls.append("c")
+        return result_b if calls else result_a
+
+    # First call computes and caches.
+    out1 = agg._cached_for_session("s-1", "k", lambda: result_a)
+    # Second call hits the cache — fn isn't even invoked.
+    out2 = agg._cached_for_session(
+        "s-1", "k", lambda: (_ for _ in ()).throw(AssertionError("recomputed")),
+    )
+    assert out1 is result_a and out2 is result_a
+
+    # Bump the session's revision via another ingest; the next call
+    # should recompute.
+    agg.ingest(_make_rec(ts + timedelta(seconds=1)))
+    out3 = agg._cached_for_session("s-1", "k", lambda: result_b)
+    assert out3 is result_b
+
+
+def test_session_cache_unknown_session_does_not_cache(agg):
+    # No SessionState for 'ghost' → fn runs every time, no caching.
+    counter = {"n": 0}
+
+    def fn():
+        counter["n"] += 1
+        return counter["n"]
+
+    agg._cached_for_session("ghost", "k", fn)
+    agg._cached_for_session("ghost", "k", fn)
+    assert counter["n"] == 2
+
+
+def test_reset_state_clears_session_cache(agg):
+    ts = datetime.now(tz=timezone.utc)
+    agg.ingest(_make_rec(ts))
+    sentinel = object()
+    agg._cached_for_session("s-1", "k", lambda: sentinel)
+    assert ("s-1", "k") in agg._session_cache
+    agg.reset_state()
+    assert agg._session_cache == {}
+
+
 def test_ingest_updates_first_and_last_seen(agg):
     # Aggregator assumes records arrive in chronological order (the
     # Tailer streams them that way). first_seen latches on the first
