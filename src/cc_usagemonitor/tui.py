@@ -353,21 +353,30 @@ class BlockPanel(Static):
         return Group(*lines)
 
     def _format_projection(self, info: BlockInfo) -> Text | None:
-        """Render the 'at this rate, ~$X by HH:MM' projection line.
+        """Render the end-of-block projection line.
 
-        Pure linear extrapolation from the current burn rate × the
-        block's remaining minutes. Returns None when there's no
-        meaningful projection (zero burn or zero remaining time).
+        Linear extrapolation: current cumulative + burn-rate ×
+        remaining-minutes. Both cost and tokens because users care
+        about both ('how much will I spend?' and 'how many cache
+        reads will I rack up?'). Returns None when there's no
+        meaningful projection (no burn at all or no time left).
         """
-        if info.burn_cost_per_min <= 0 or info.minutes_remaining <= 0:
+        if info.minutes_remaining <= 0:
             return None
-        projected_total = (
+        if info.burn_cost_per_min <= 0 and info.burn_tokens_per_min <= 0:
+            return None
+        projected_cost = (
             info.sums.cost_usd
             + info.burn_cost_per_min * info.minutes_remaining
         )
+        projected_tokens = int(
+            info.sums.total_tokens
+            + info.burn_tokens_per_min * info.minutes_remaining
+        )
         end_local = info.end.astimezone()
         return Text.from_markup(
-            f"[dim]Projection: ${projected_total:,.2f} by "
+            f"[dim]Projection: {_human(projected_tokens)} tokens / "
+            f"${projected_cost:,.2f} by "
             f"{end_local.strftime('%H:%M')} (at current burn rate)[/dim]"
         )
 
@@ -550,14 +559,15 @@ class UsageMonitorApp(App):
         padding: 0 2;
         background: $panel;
     }
-    /* Count summary on the far left of the filter bar — shows
+    /* Count summary on the far right of the filter bar — shows
        'visible / total' so the user can see at a glance how much
        the active filters are hiding. */
     .filter-count {
         width: auto;
         height: 1;
-        padding: 0 2 0 0;
+        padding: 0 0 0 2;
         color: $accent;
+        content-align: right middle;
     }
     #filter-search {
         width: 24;
@@ -693,7 +703,6 @@ class UsageMonitorApp(App):
             id="main-tabs",
         )
         with Horizontal(id="filter-bar"):
-            yield Static("", id="filter-count", classes="filter-count")
             yield FilterInput(
                 placeholder="search…  (/)",
                 id="filter-search",
@@ -705,6 +714,7 @@ class UsageMonitorApp(App):
                 "[b]m[/b] model: all",
                 id="filter-controls",
             )
+            yield Static("", id="filter-count", classes="filter-count")
         with ContentSwitcher(initial="sessions", id="main-content"):
             with Container(id="sessions"):
                 yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
@@ -1202,9 +1212,14 @@ class UsageMonitorApp(App):
         again to reverse the direction. Only applies to main-view
         tables (#t-sessions / #t-projects / #t-models)."""
         table = event.data_table
+        table_id_raw = table.id
+        log.info(
+            "header_selected: table=%s col=%s",
+            table_id_raw, event.column_key,
+        )
         # Some DataTables in the app are read-only inside detail
         # screens — don't track those, just let Textual sort once.
-        table_id = f"#{table.id}" if table.id else None
+        table_id = f"#{table_id_raw}" if table_id_raw else None
         if table_id not in ("#t-sessions", "#t-projects", "#t-models"):
             return
         col_key_value = (
@@ -1222,6 +1237,9 @@ class UsageMonitorApp(App):
         except Exception as e:
             log.warning("sort failed for %s/%s: %s", table_id, col_key_value, e)
             return
+        log.info(
+            "sorted %s by %s reverse=%s", table_id, col_key_value, reverse,
+        )
         self._user_sort[table_id] = (col_key_value, reverse)
 
     def _refresh_sessions_table(self) -> None:
