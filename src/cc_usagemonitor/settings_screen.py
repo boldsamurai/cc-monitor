@@ -160,6 +160,11 @@ class SettingsScreen(Screen):
     .path-label { width: 18; }
     .path-value { width: 1fr; color: $text-muted; }
     .path-open-btn { width: 10; min-width: 10; }
+    #screen-header {
+        height: 1;
+        dock: top;
+        background: $panel;
+    }
     #settings-footer {
         height: 1;
         dock: bottom;
@@ -195,6 +200,8 @@ class SettingsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Vertical():
+            with Horizontal(id="screen-header"):
+                yield Button("← Back", id="back-btn", classes="back-btn")
             with VerticalScroll(id="settings-scroll"):
                 # ===== Appearance =====
                 yield Static("Appearance", classes="settings-heading")
@@ -337,7 +344,6 @@ class SettingsScreen(Screen):
                         )
 
             with Horizontal(id="settings-footer"):
-                yield Button("← Back", id="back-btn", classes="back-btn")
                 yield Static(
                     "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
                     "[b]esc[/b] back",

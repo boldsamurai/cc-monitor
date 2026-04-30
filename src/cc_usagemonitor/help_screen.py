@@ -96,6 +96,11 @@ class HelpScreen(Screen):
     }
     .help-key { width: 24; color: $accent; text-style: bold; }
     .help-desc { width: 1fr; }
+    #screen-header {
+        height: 1;
+        dock: top;
+        background: $panel;
+    }
     #help-footer {
         height: 1;
         dock: bottom;
@@ -106,9 +111,9 @@ class HelpScreen(Screen):
         padding: 0 1;
         text-align: right;
     }
-    /* Compact footer back button. Mouse users get a clickable hit
-       target; keyboard users still see the same 'esc back' hint on
-       the right. Border off + height:1 keeps the footer one row. */
+    /* Compact top-left back button. Mouse users get a clickable hit
+       target in the conventional 'back' position; keyboard users
+       still see the same 'esc back' hint in the bottom footer. */
     .back-btn {
         width: auto;
         min-width: 10;
@@ -125,6 +130,8 @@ class HelpScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Vertical():
+            with Horizontal(id="screen-header"):
+                yield Button("← Back", id="back-btn", classes="back-btn")
             with VerticalScroll(id="help-scroll"):
                 yield Static("Keyboard shortcuts", classes="help-title")
                 for section_title, items in _SECTIONS:
@@ -136,7 +143,6 @@ class HelpScreen(Screen):
                             yield Static(keys, classes="help-key")
                             yield Static(desc, classes="help-desc")
             with Horizontal(id="help-footer"):
-                yield Button("← Back", id="back-btn", classes="back-btn")
                 yield Static(
                     "[b]esc[/b] / [b]ctrl+h[/b] back",
                     id="help-footer-right",
