@@ -2,11 +2,37 @@
 
 Real-time token usage and cost monitor for Claude Code sessions, in your terminal.
 
+[![PyPI version](https://img.shields.io/pypi/v/cc-usagemonitor.svg)](https://pypi.org/project/cc-usagemonitor/)
+[![Python](https://img.shields.io/pypi/pyversions/cc-usagemonitor.svg)](https://pypi.org/project/cc-usagemonitor/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Downloads](https://static.pepy.tech/badge/cc-usagemonitor)](https://pepy.tech/project/cc-usagemonitor)
+[![Built with Textual](https://img.shields.io/badge/built%20with-Textual-5a4fcf.svg)](https://textual.textualize.io/)
+
 A Textual TUI that tails Claude Code's session logs, correlates them with the
 hook event stream, and gives you a live view of every active project, every
 session, and every model — with live 5h-block tracking so you know how close
 you are to your plan limit before the bill (or the rate limit) catches you off
 guard.
+
+---
+
+## Table of contents
+
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Installation](#installation)
+  - [uv (recommended)](#uv-recommended)
+  - [pipx](#pipx)
+  - [pip](#pip)
+  - [From source](#from-source)
+- [Quick start](#quick-start)
+- [CLI flags](#cli-flags)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Acknowledgements](#acknowledgements)
+- [License](#license)
+
+---
 
 ## Features
 
@@ -29,6 +55,33 @@ guard.
   re-opens are instant
 - **Mouse and keyboard fully wired** — clickable filter chips, back button,
   sort headers, drill-in rows; or use `1`/`2`/`3`/`/`/`,`/`?` for everything
+
+## Screenshots
+
+> Screenshots are generated locally and committed to `docs/screenshots/`.
+> If you're cloning fresh and they're missing, see the
+> [generation note](#generating-screenshots) below.
+
+| Main view (Sessions tab) | Session detail |
+| :---: | :---: |
+| ![Sessions tab](docs/screenshots/main-sessions.png) | ![Session detail](docs/screenshots/session-detail.png) |
+
+| Project detail | Settings |
+| :---: | :---: |
+| ![Project detail](docs/screenshots/project-detail.png) | ![Settings](docs/screenshots/settings.png) |
+
+### Generating screenshots
+
+The Textual framework ships `App.save_screenshot()`. Run the app, navigate to
+the screen you want, then press `ctrl+p` / `s` (Textual's built-in screenshot
+shortcut) — you'll get an SVG file. Convert with any rasterizer:
+
+```bash
+# requires librsvg
+rsvg-convert -o main-sessions.png screenshot.svg
+```
+
+Drop the result in `docs/screenshots/` matching the filenames above.
 
 ## Installation
 
@@ -105,14 +158,12 @@ key from the main view.
 
 ## Configuration
 
-- Settings: `~/.config/cc-usagemonitor/config.json` (managed via the
-  Settings screen; manual edits also work).
-- State snapshot: `~/.cache/cc-usagemonitor/state.pickle` (written on
-  clean quit; missing / version-mismatched / corrupt → fall back to
-  full replay).
-- Logs: `~/.cache/cc-usagemonitor/usagemonitor.log`.
-- Exports: `~/.cache/cc-usagemonitor/exports/` (timestamped CSV / JSON
-  written by Settings → Export).
+| Path | Purpose |
+|---|---|
+| `~/.config/cc-usagemonitor/config.json` | Settings persisted from the in-app Settings screen. |
+| `~/.cache/cc-usagemonitor/state.pickle` | Cross-run state snapshot. Missing / corrupt / version-mismatched → fall back to full replay. |
+| `~/.cache/cc-usagemonitor/usagemonitor.log` | Rolling log file (10 MB cap). |
+| `~/.cache/cc-usagemonitor/exports/` | Timestamped CSV / JSON dumps from Settings → Export. |
 
 None of the above is committed to your repo.
 
@@ -125,6 +176,8 @@ uv sync                      # install runtime + dev deps
 uv run pytest                # 88 tests
 uv run cc-usagemonitor       # launch from source
 ```
+
+## Acknowledgements
 
 Built with [Textual](https://textual.textualize.io/) and
 [plotext](https://github.com/piccolomo/plotext) (via
