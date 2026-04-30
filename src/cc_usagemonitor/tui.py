@@ -705,7 +705,16 @@ class UsageMonitorApp(App):
         self._update_status_right()
         self.run_worker(self._consume_queue(), exclusive=False)
         self.run_worker(self._tailer_runner(), exclusive=False)
-        self.set_interval(0.5, self._refresh_view)
+        # UI refresh tick is configurable via Settings — heavier polling
+        # is fine on fast machines, but 1s+ is friendlier on a laptop
+        # battery or in low-load monitoring scenarios.
+        try:
+            ui_tick = float(cfg.get("refresh_interval", 0.5))
+        except (TypeError, ValueError):
+            ui_tick = 0.5
+        if ui_tick <= 0 or ui_tick > 60:
+            ui_tick = 0.5
+        self.set_interval(ui_tick, self._refresh_view)
         if self.auto_limits:
             # Recompute P90 limits every 30s — they shift as the rolling
             # 8-day window of historical blocks evolves.
@@ -1388,6 +1397,28 @@ class UsageMonitorApp(App):
         self._refresh_view()
 
     def action_quit(self) -> None:
+        # Confirm dialog is opt-out via Settings — defaults to ON so a
+        # stray 'q' keypress doesn't kill a long-running session. The
+        # actual exit logic (filter persistence + .exit()) is in
+        # _do_quit so both code paths reach it.
+        cfg = load_config()
+        if cfg.get("confirm_on_quit", True):
+            from .confirm_screen import ConfirmScreen
+            self.push_screen(
+                ConfirmScreen(
+                    "Czy chcesz wyjść z cc-usagemonitor?",
+                    yes_label="Quit", no_label="Stay",
+                ),
+                self._handle_quit_confirm,
+            )
+            return
+        self._do_quit()
+
+    def _handle_quit_confirm(self, confirmed: bool | None) -> None:
+        if confirmed:
+            self._do_quit()
+
+    def _do_quit(self) -> None:
         # Save current filter state if the user opted in via Settings.
         # Run BEFORE exit() so save_config gets a chance to flush.
         try:
