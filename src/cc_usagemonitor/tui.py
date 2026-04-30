@@ -199,40 +199,51 @@ def _parse_duration_seconds(s: str) -> int | None:
     return total
 
 
-def _sort_key(value):
-    """Normalize a DataTable cell value (str / rich.Text / Text-like)
-    to something safely comparable across rows.
+def _sort_key_factory(reverse: bool):
+    """Build a sort-key callable that pins empty/dash cells to the
+    bottom of the *visible* list regardless of direction.
 
-    Order of attempts:
-      1. Duration string ('2h 4m', '30s', …) → total seconds. Has to
-         go before the generic numeric branch because '5h' would
-         otherwise be parsed as plain '5'.
-      2. Numeric string ('$22,252.04', '5.42M', '12%', '45,123') →
-         the magnitude it represents. K/M/B/T suffixes scaled.
-      3. Anything else → lowercase string for stable alphabetic
-         ordering.
-    Returns ``(kind, value)`` tuples so numerics cluster ahead of
-    textual rows when a column mixes both.
+    Python's reverse=True flips the result of an ascending sort, so
+    a single key tuple can't put empties at the bottom in both
+    directions — we have to swap the empty-rank based on direction:
+    high in ascending (after non-empty), low in descending (before
+    non-empty, then reversed back to bottom).
+
+    Order of attempts for non-empty cells:
+      1. Duration string ('2h 4m', '30s', …) → total seconds.
+      2. Numeric string ('$22,252.04', '5.42M', '12%') → magnitude.
+      3. Anything else → lowercase string.
+    Numeric cells return (0, number); textual cells (1, string); the
+    type rank keeps mixed columns sane (numbers before text).
     """
-    if value is None:
-        return (1, "")
-    s = str(value).strip()
-    if not s or s == "-":
-        # Empty / placeholder cells come after real values, both for
-        # ascending and descending — pin to the high end.
-        return (2, "")
-    dur = _parse_duration_seconds(s)
-    if dur is not None:
-        return (0, dur)
-    m = _SORT_NUMERIC_RX.match(s.lstrip("$"))
-    if m:
-        try:
-            base = float(m.group(1).replace(",", ""))
-            suffix = m.group(2).upper()
-            return (0, base * _SORT_K_FACTOR.get(suffix, 1.0))
-        except ValueError:
-            pass
-    return (1, s.lower())
+    empty_rank = -1 if reverse else 2
+
+    def _key(value):
+        if value is None:
+            return (empty_rank, "")
+        s = str(value).strip()
+        if not s or s == "-":
+            return (empty_rank, "")
+        dur = _parse_duration_seconds(s)
+        if dur is not None:
+            return (0, dur)
+        m = _SORT_NUMERIC_RX.match(s.lstrip("$"))
+        if m:
+            try:
+                base = float(m.group(1).replace(",", ""))
+                suffix = m.group(2).upper()
+                return (0, base * _SORT_K_FACTOR.get(suffix, 1.0))
+            except ValueError:
+                pass
+        return (1, s.lower())
+
+    return _key
+
+
+# Backwards-compatible alias for the ascending case so any existing
+# table.sort(...) call without the factory keeps the legacy behavior
+# (empties at bottom in ascending only, which is fine for most uses).
+_sort_key = _sort_key_factory(False)
 
 
 def _fmt_token_tick(v: float) -> str:
@@ -1266,7 +1277,10 @@ class UsageMonitorApp(App):
         if sort_pref is not None:
             col_key, reverse = sort_pref
             try:
-                table.sort(col_key, reverse=reverse)
+                table.sort(
+                    col_key, reverse=reverse,
+                    key=_sort_key_factory(reverse),
+                )
             except Exception:
                 pass
 
@@ -1298,10 +1312,18 @@ class UsageMonitorApp(App):
         prev = self._user_sort.get(table_id)
         if prev is not None and prev[0] == col_key_value:
             if prev[1]:
-                # 3rd click on the same column: reset to default
-                # order. _refresh_view rebuilds via _apply_rows and
-                # the missing _user_sort entry skips re-application.
+                # 3rd click on the same column: reset to default order.
+                # Forcibly clear the table + row cache so _apply_rows on
+                # the next refresh tick MUST rebuild from scratch (a
+                # plain refresh would short-circuit on matching insertion
+                # order if Textual's internal rows dict didn't
+                # actually reorder during sort).
                 del self._user_sort[table_id]
+                try:
+                    table.clear()
+                    self._row_cache[table_id].clear()
+                except Exception as e:
+                    log.warning("sort reset clear failed: %s", e)
                 log.info("sort reset on %s", table_id)
                 self._refresh_view()
                 return
@@ -1311,11 +1333,12 @@ class UsageMonitorApp(App):
             # 1st click on this column: ascending.
             reverse = False
         try:
-            # key=_sort_key normalizes Text vs str cell values, parses
-            # K/M/B/T suffixes for magnitude sort, and converts duration
-            # strings ('2h 4m') to seconds.
+            # Direction-aware key so empty/dash cells stay at the
+            # bottom of the visible list regardless of asc vs desc.
             table.sort(
-                event.column_key, reverse=reverse, key=_sort_key,
+                event.column_key,
+                reverse=reverse,
+                key=_sort_key_factory(reverse),
             )
         except Exception as e:
             log.warning("sort failed for %s/%s: %s", table_id, col_key_value, e)
