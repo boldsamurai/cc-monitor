@@ -487,6 +487,8 @@ def _fmt_duration_minutes(m: float) -> str:
 
 
 class UsageMonitorApp(App):
+    TITLE = "cc-usagemonitor"
+
     CSS = """
     /* Whole main view painted with $panel — same approach as the detail
        screen, so summary, block panel, tabs, table content, and status
