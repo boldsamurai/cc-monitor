@@ -1406,7 +1406,7 @@ class UsageMonitorApp(App):
             from .confirm_screen import ConfirmScreen
             self.push_screen(
                 ConfirmScreen(
-                    "Czy chcesz wyjść z cc-usagemonitor?",
+                    "Quit cc-usagemonitor?",
                     yes_label="Quit", no_label="Stay",
                 ),
                 self._handle_quit_confirm,

@@ -478,8 +478,8 @@ class SettingsScreen(Screen):
                 from .confirm_screen import ConfirmScreen
                 self.app.push_screen(
                     ConfirmScreen(
-                        "Force re-scan? Wyczyści cały cache w pamięci "
-                        "i ponownie odczyta wszystkie JSONLe od początku.",
+                        "Force re-scan? This clears the in-memory "
+                        "cache and re-reads every JSONL from the start.",
                         yes_label="Re-scan", no_label="Cancel",
                     ),
                     self._handle_rescan_confirm,
