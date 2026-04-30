@@ -384,9 +384,24 @@ class BlockPanel(Static):
                 ),
             )
         sums = info.sums
+        # Block boundaries are inferred locally — show them inline so
+        # users understand 'this is the current Anthropic-style 5h
+        # block (since first record after the last >=5h idle gap),
+        # NOT a literal rolling-last-5h window'. cache_read tokens
+        # pile up fast and a long block can show millions of tokens
+        # even when the user barely used Claude Code recently.
+        start_local = info.start.astimezone()
+        end_local = info.end.astimezone()
+        elapsed_str = _fmt_minutes(info.minutes_elapsed)
+        remaining_str = _fmt_minutes(info.minutes_remaining)
         lines: list[Text] = [Text.from_markup(
             "[b]⏱  Local 5h block[/b]  "
             "[dim](API integration disabled — Plan-driven limits)[/dim]"
+        ), Text.from_markup(
+            f"[dim]Started {start_local.strftime('%H:%M')} "
+            f"(elapsed {elapsed_str}) · "
+            f"resets {end_local.strftime('%H:%M')} "
+            f"(in {remaining_str})[/dim]"
         )]
         # Plan-driven progress bars only when limits are configured.
         # Without a plan ('none'), pct_tokens / pct_cost stay None.
