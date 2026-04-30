@@ -542,6 +542,14 @@ class UsageMonitorApp(App):
         color: $text;
         text-align: center;
     }
+    /* Empty-state placeholders — hidden by default, swapped in for the
+       DataTable when a tab has no rows after the initial replay. */
+    .empty-state {
+        display: none;
+        height: 1fr;
+        padding: 4 4;
+        content-align: center middle;
+    }
     #t-models { height: 1fr; }
     /* Two plotext stacked-bars side by side — tokens and cost over the
        same 7-day window, splitting horizontal space 50/50. A single
@@ -665,10 +673,29 @@ class UsageMonitorApp(App):
         with ContentSwitcher(initial="sessions", id="main-content"):
             with Container(id="sessions"):
                 yield DataTable(id="t-sessions", cursor_type="row", zebra_stripes=True)
+                yield Static(
+                    "[dim]No Claude Code sessions tracked yet.\n"
+                    "Start a Claude Code session in any project — "
+                    "it'll show up here automatically.[/dim]",
+                    id="empty-sessions",
+                    classes="empty-state",
+                )
             with Container(id="projects"):
                 yield DataTable(id="t-projects", cursor_type="row", zebra_stripes=True)
+                yield Static(
+                    "[dim]No projects detected yet.\n"
+                    "Open Claude Code in any directory to track usage.[/dim]",
+                    id="empty-projects",
+                    classes="empty-state",
+                )
             with Container(id="models"):
                 yield DataTable(id="t-models", cursor_type="row", zebra_stripes=True)
+                yield Static(
+                    "[dim]No model usage recorded yet.\n"
+                    "Run any Claude Code turn to populate this view.[/dim]",
+                    id="empty-models",
+                    classes="empty-state",
+                )
                 with Horizontal(id="models-charts"):
                     tokens_plot = PlotextPlot(id="chart-tokens-time")
                     tokens_plot.theme = _PLOTEXT_THEME_NAME
@@ -972,6 +999,30 @@ class UsageMonitorApp(App):
             self._refresh_models_table()
         elif active == "projects":
             self._refresh_projects_table()
+        # Empty-state placeholders only kick in after the initial
+        # replay finishes — during loading the DataTable is genuinely
+        # empty but 'No sessions yet' would be misleading.
+        if self.tailer.initial_scan_done:
+            self._update_empty_states()
+
+    def _update_empty_states(self) -> None:
+        """Swap DataTable for empty-state Static when a tab has 0 rows.
+        Each tab has both widgets in the same Container; we just toggle
+        their display flag based on row count."""
+        pairs = (
+            ("#t-sessions", "#empty-sessions"),
+            ("#t-projects", "#empty-projects"),
+            ("#t-models", "#empty-models"),
+        )
+        for table_id, empty_id in pairs:
+            try:
+                table = self.query_one(table_id, DataTable)
+                empty = self.query_one(empty_id, Static)
+            except Exception:
+                continue
+            is_empty = table.row_count == 0
+            table.display = not is_empty
+            empty.display = is_empty
 
     def _apply_rows(
         self,
