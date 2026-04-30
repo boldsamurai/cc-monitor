@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from pathlib import Path
 
 from .aggregator import Aggregator
 from .anthropic_usage import read_credentials
@@ -73,17 +72,6 @@ def main() -> None:
             "of Settings → Force re-scan."
         ),
     )
-    parser.add_argument(
-        "--projects-dir",
-        type=Path,
-        default=None,
-        help=(
-            "Override the directory the tailer reads JSONL session "
-            "logs from. Default: ~/.claude/projects. Useful for "
-            "running against a synthetic dataset (debugging, demos, "
-            "screenshots) without touching real session data."
-        ),
-    )
     args = parser.parse_args()
 
     log = setup_logging(debug=args.debug)
@@ -134,10 +122,7 @@ def main() -> None:
     # 8-day archive evolves.
     auto_limits = not use_api and args.max_5h_cost is None
 
-    tailer_kwargs = {"poll_interval": args.poll}
-    if args.projects_dir is not None:
-        tailer_kwargs["projects_dir"] = args.projects_dir
-    tailer = Tailer(queue, **tailer_kwargs)
+    tailer = Tailer(queue, poll_interval=args.poll)
 
     # Cross-run snapshot: if the previous quit pickled state, restore
     # both the aggregator's in-memory archive and the tailer's per-file
