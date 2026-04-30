@@ -73,6 +73,10 @@ class Tailer:
             "tailer starting: projects=%s event_log=%s from_start=%s",
             self.projects_dir, self.event_log, self.from_start,
         )
+        # Yield once so any pending UI work scheduled at on_mount time
+        # (notably the LoadingScreen modal) gets render time before we
+        # start blocking the event loop with the first replay sweep.
+        await asyncio.sleep(0)
         while True:
             await self._scan_sessions()
             await self._scan_event_log()
@@ -87,9 +91,14 @@ class Tailer:
     async def _scan_sessions(self) -> None:
         if not self.projects_dir.exists():
             return
-        # Top-level session JSONLs.
+        # Top-level session JSONLs. _read_session_file does synchronous
+        # file I/O wrapped in async — we explicitly yield to the event
+        # loop after each file so the LoadingScreen modal (and any
+        # other concurrent UI work) gets render time during the
+        # initial replay sweep across many JSONLs.
         for jsonl in self.projects_dir.glob("*/*.jsonl"):
             await self._read_session_file(jsonl)
+            await asyncio.sleep(0)
         # Subagent JSONLs live at projects/<slug>/<session_id>/subagents/
         # — Claude Code spawns each subagent in its own file with
         # isSidechain=True and the parent session_id. Reading these is
@@ -97,6 +106,7 @@ class Tailer:
         # JSONL only shows the tool_use stub and the resulting tool_result.
         for jsonl in self.projects_dir.glob("*/*/subagents/*.jsonl"):
             await self._read_session_file(jsonl)
+            await asyncio.sleep(0)
 
     async def _read_session_file(self, path: Path) -> None:
         try:
