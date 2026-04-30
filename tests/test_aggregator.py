@@ -11,7 +11,12 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from cc_usagemonitor.aggregator import Aggregator, _percentile
+from cc_usagemonitor.aggregator import (
+    Aggregator,
+    _iter_blocks,
+    _percentile,
+    _top_of_hour,
+)
 from cc_usagemonitor.parser import UsageRecord
 from cc_usagemonitor.pricing import PricingTable
 
@@ -133,6 +138,93 @@ def test_ingest_assigns_session_and_sums(agg):
     # by_model entry created with the normalized model id.
     assert "claude-opus-4-7" in sess.by_model
     assert sess.by_model["claude-opus-4-7"].turns == 1
+
+
+# ----- block boundary detection -----
+
+def test_top_of_hour_truncates_minutes_seconds_micros():
+    ts = datetime(2026, 4, 30, 14, 35, 42, 123456, tzinfo=timezone.utc)
+    assert _top_of_hour(ts) == datetime(
+        2026, 4, 30, 14, 0, 0, tzinfo=timezone.utc,
+    )
+
+
+def test_iter_blocks_anchors_start_to_top_of_hour():
+    # First message at 14:35 → block 14:00–19:00 (Maciek-roboblog rule).
+    base = datetime(2026, 4, 30, 14, 35, tzinfo=timezone.utc)
+    records = [
+        (base, _make_rec(base), 0.1),
+        (base + timedelta(minutes=10), _make_rec(base), 0.1),
+    ]
+    blocks = list(_iter_blocks(records))
+    assert len(blocks) == 1
+    start, end, indices = blocks[0]
+    assert start == datetime(2026, 4, 30, 14, 0, tzinfo=timezone.utc)
+    assert end == datetime(2026, 4, 30, 19, 0, tzinfo=timezone.utc)
+    assert indices == [0, 1]
+
+
+def test_iter_blocks_splits_when_message_lands_after_end():
+    # 14:00 block ends at 19:00. Message at 19:30 starts a new block.
+    # Crucially, our old gap-based detection would miss this because
+    # the gap between 18:30 and 19:30 is only 1h.
+    msgs = [
+        datetime(2026, 4, 30, 14, 0, tzinfo=timezone.utc),
+        datetime(2026, 4, 30, 18, 30, tzinfo=timezone.utc),
+        datetime(2026, 4, 30, 19, 30, tzinfo=timezone.utc),
+    ]
+    records = [(ts, _make_rec(ts), 0.1) for ts in msgs]
+    blocks = list(_iter_blocks(records))
+    assert len(blocks) == 2
+    # First block: 14:00–19:00 with the 14:00 and 18:30 messages.
+    assert blocks[0][0] == datetime(2026, 4, 30, 14, 0, tzinfo=timezone.utc)
+    assert blocks[0][1] == datetime(2026, 4, 30, 19, 0, tzinfo=timezone.utc)
+    assert blocks[0][2] == [0, 1]
+    # Second block: 19:00–24:00 with the 19:30 message.
+    assert blocks[1][0] == datetime(2026, 4, 30, 19, 0, tzinfo=timezone.utc)
+    assert blocks[1][1] == datetime(2026, 5, 1, 0, 0, tzinfo=timezone.utc)
+    assert blocks[1][2] == [2]
+
+
+def test_iter_blocks_huge_gap_still_anchors_correctly():
+    # 6h+ gap → unambiguously a new block. Top-of-hour anchoring
+    # still applies on both ends.
+    msgs = [
+        datetime(2026, 4, 30, 14, 35, tzinfo=timezone.utc),
+        datetime(2026, 4, 30, 22, 12, tzinfo=timezone.utc),  # +7h 37m
+    ]
+    records = [(ts, _make_rec(ts), 0.1) for ts in msgs]
+    blocks = list(_iter_blocks(records))
+    assert len(blocks) == 2
+    assert blocks[0][0].minute == 0 and blocks[1][0].minute == 0
+
+
+def test_iter_blocks_empty():
+    assert list(_iter_blocks([])) == []
+
+
+def test_block_info_uses_top_of_hour_end(agg):
+    # Single message 4 hours ago, anchored to its top-of-hour. The
+    # block_end exposed via BlockInfo must match top-of-hour + 5h —
+    # that's what aligns the projection 'by HH:MM' line with the
+    # API's '5h resets HH:MM' line.
+    now = datetime.now(tz=timezone.utc)
+    msg_ts = now - timedelta(hours=4)
+    agg._long_window.append((msg_ts, _make_rec(msg_ts), 0.5))
+    info = agg.block_info()
+    assert info is not None
+    expected_start = _top_of_hour(msg_ts)
+    assert info.start == expected_start
+    assert info.end == expected_start + timedelta(hours=5)
+
+
+def test_block_info_returns_none_when_block_already_ended(agg):
+    # Single message 6 hours ago — its block ended an hour ago, no
+    # current block until the next message arrives.
+    now = datetime.now(tz=timezone.utc)
+    msg_ts = now - timedelta(hours=6)
+    agg._long_window.append((msg_ts, _make_rec(msg_ts), 0.5))
+    assert agg.block_info() is None
 
 
 def test_ingest_updates_first_and_last_seen(agg):
