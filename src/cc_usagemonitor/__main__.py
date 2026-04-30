@@ -4,6 +4,7 @@ import argparse
 import asyncio
 
 from .aggregator import Aggregator
+from .anthropic_usage import read_credentials
 from .config import load_config
 from .install_hook import ensure_installed as ensure_hook_installed
 from .logger import setup_logging
@@ -110,9 +111,18 @@ def main() -> None:
     aggregator.token_limit = args.max_5h_tokens or plan["tokens"]
     aggregator.cost_limit = args.max_5h_cost or plan["cost"]
 
-    # CLI --no-api always disables; otherwise honor the persisted
-    # Settings toggle (defaults to enabled).
-    use_api = False if args.no_api else cfg.get("use_api", True)
+    # Auto-detect OAuth credentials. Three resulting modes:
+    #   has_oauth + use_api   → poll /api/oauth/usage, authoritative view
+    #   has_oauth + --no-api  → local view ('user explicitly opted out')
+    #   no oauth              → pay-as-you-go view (API-key user; the
+    #                            usage endpoint rejects API-key tokens)
+    has_oauth = read_credentials() is not None
+    if args.no_api:
+        use_api = False
+    else:
+        # Auto-detect: poll only when we actually have credentials that
+        # the endpoint accepts. API-key users would just get 401 spam.
+        use_api = has_oauth
 
     # 'auto' needs the 8-day archive populated to compute P90, so
     # silently turn on --from-start and recompute periodically. BUT
@@ -129,6 +139,7 @@ def main() -> None:
         aggregator, tailer, queue,
         auto_limits=auto_limits,
         use_api=use_api,
+        has_oauth=has_oauth,
     )
 
 

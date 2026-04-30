@@ -260,6 +260,10 @@ class BlockPanel(Static):
     # via --no-api. Without this, render() would forever show 'Waiting
     # for first API response…' because api_usage stays None.
     api_enabled: reactive[bool] = reactive(True, layout=True)
+    # True when OAuth credentials are present (Pro/Max user). False for
+    # API-key users — they don't have plan-based 5h blocks at all, so
+    # the local view collapses to a 'pay-as-you-go' header instead.
+    has_plan: reactive[bool] = reactive(True, layout=True)
 
     BAR_W = 30
 
@@ -371,38 +375,67 @@ class BlockPanel(Static):
         return line
 
     def _render_local_only(self, info: BlockInfo | None) -> RenderableType:
-        """Local-only block view used when Anthropic API integration is
-        disabled. Shows whatever local 5h-block data we have plus
-        plan-driven progress bars when limits are configured.
+        """Local-only block view (no /api/oauth/usage data). Two
+        flavors decided by has_plan:
+          - has_plan=True: OAuth user explicitly opted out (--no-api).
+            Renders the inferred 5h block with start/end times and a
+            cost-only progress bar.
+          - has_plan=False: API-key user. Pay-as-you-go billing has no
+            5h block concept at all, so we collapse to just the raw
+            stats line under a 'Pay-as-you-go' header.
         """
         if info is None:
+            header = ("⏱  Local 5h block" if self.has_plan
+                      else "💳  Pay-as-you-go")
             return Group(
-                Text("⏱  Local 5h block", style="bold"),
+                Text(header, style="bold"),
                 Text(
                     "Waiting for first JSONL ingest…",
                     style="dim italic",
                 ),
             )
         sums = info.sums
-        # Block boundaries are inferred locally — show them inline so
-        # users understand 'this is the current Anthropic-style 5h
-        # block (since first record after the last >=5h idle gap),
-        # NOT a literal rolling-last-5h window'. cache_read tokens
-        # pile up fast and a long block can show millions of tokens
-        # even when the user barely used Claude Code recently.
+        raw_stats = Text.from_markup(
+            f"[b]Local[/b]   tokens={_human(sums.total_tokens)}  ·  "
+            f"cost=${sums.cost_usd:,.2f}  ·  "
+            f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
+            f"${info.burn_cost_per_min:,.2f}/min"
+        )
+
+        if not self.has_plan:
+            # API-key (pay-as-you-go) — no plan limits, no 5h block in
+            # any meaningful sense. Just the raw burn-rate line.
+            return Group(
+                Text.from_markup(
+                    "[b]💳  Pay-as-you-go[/b]  "
+                    "[dim](API key — no plan limits)[/dim]"
+                ),
+                raw_stats,
+            )
+
+        # OAuth user with --no-api. Block boundaries are inferred
+        # locally — show them inline so users understand 'this is the
+        # current Anthropic-style 5h block (since first record after
+        # the last >=5h idle gap), NOT a literal rolling-last-5h
+        # window'. cache_read tokens pile up fast and a long block
+        # can show millions of tokens even when the user barely used
+        # Claude Code recently.
         start_local = info.start.astimezone()
         end_local = info.end.astimezone()
         elapsed_str = _fmt_minutes(info.minutes_elapsed)
         remaining_str = _fmt_minutes(info.minutes_remaining)
-        lines: list[Text] = [Text.from_markup(
-            "[b]⏱  Local 5h block[/b]  "
-            "[dim](API integration disabled — Plan-driven limits)[/dim]"
-        ), Text.from_markup(
-            f"[dim]Started {start_local.strftime('%H:%M')} "
-            f"(elapsed {elapsed_str}) · "
-            f"resets {end_local.strftime('%H:%M')} "
-            f"(in {remaining_str})[/dim]"
-        )]
+        lines: list[Text] = [
+            Text.from_markup(
+                "[b]⏱  Local 5h block[/b]  "
+                "[dim](API integration disabled — Plan-driven limits)[/dim]"
+            ),
+            Text.from_markup(
+                f"[dim]Started {start_local.strftime('%H:%M')} "
+                f"(elapsed {elapsed_str}) · "
+                f"resets {end_local.strftime('%H:%M')} "
+                f"(in {remaining_str})[/dim]"
+            ),
+        ]
         # Plan-driven progress bar — cost only. We deliberately don't
         # show a token-percentage bar here: Anthropic's preset 'token'
         # limits (pro=19k, max5=88k, max20=220k) are community guesses
@@ -416,14 +449,7 @@ class BlockPanel(Static):
                 "5h $   ", info.pct_cost,
                 f"${sums.cost_usd:,.2f} / ${info.cost_limit or 0:,.0f}",
             ))
-        # Always include the raw stats line — the user might be on
-        # 'none' plan and just want to see the burn rate.
-        lines.append(Text.from_markup(
-            f"[b]Local[/b]   tokens={_human(sums.total_tokens)}  ·  "
-            f"cost=${sums.cost_usd:,.2f}  ·  "
-            f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
-            f"${info.burn_cost_per_min:,.2f}/min"
-        ))
+        lines.append(raw_stats)
         return Group(*lines)
 
     @staticmethod
@@ -576,6 +602,7 @@ class UsageMonitorApp(App):
         queue: asyncio.Queue,
         auto_limits: bool = False,
         use_api: bool = True,
+        has_oauth: bool = True,
     ):
         super().__init__()
         self.aggregator = aggregator
@@ -583,6 +610,10 @@ class UsageMonitorApp(App):
         self.queue = queue
         self.auto_limits = auto_limits
         self.use_api = use_api
+        # Distinguishes 'OAuth user with --no-api' from 'API-key user'
+        # in the BlockPanel local-mode header. Same use_api=False but
+        # very different semantics for what to show.
+        self.has_oauth = has_oauth
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -886,6 +917,7 @@ class UsageMonitorApp(App):
         # toggle would show up next tick (currently off-by-restart, but
         # cheap to wire here in case we later allow live toggling).
         block_panel.api_enabled = self.use_api
+        block_panel.has_plan = self.has_oauth
         block_panel.refresh()
 
         # Refresh only the visible tab — keeps the UI responsive even at
@@ -1699,9 +1731,11 @@ def run_app(
     queue: asyncio.Queue,
     auto_limits: bool = False,
     use_api: bool = True,
+    has_oauth: bool = True,
 ) -> None:
     UsageMonitorApp(
         aggregator, tailer, queue,
         auto_limits=auto_limits,
         use_api=use_api,
+        has_oauth=has_oauth,
     ).run()
