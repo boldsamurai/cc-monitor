@@ -533,16 +533,6 @@ class UsageMonitorApp(App):
         color: $text;
     }
     DataTable { height: 1fr; background: $panel; }
-    /* Loading banner shown until Tailer.initial_scan_done — collapses
-       to height: 0 when display: none toggled in _refresh_view, so it
-       doesn't reserve a row of empty space after replay completes. */
-    #loading-banner {
-        height: 1;
-        padding: 0 2;
-        background: $primary 25%;
-        color: $text;
-        text-align: center;
-    }
     /* Empty-state placeholders — hidden by default, swapped in for the
        DataTable when a tab has no rows after the initial replay. */
     .empty-state {
@@ -636,20 +626,16 @@ class UsageMonitorApp(App):
         # in the BlockPanel local-mode header. Same use_api=False but
         # very different semantics for what to show.
         self.has_oauth = has_oauth
+        # Tracks whether the LoadingScreen modal is still up — set to
+        # True the moment we dismiss it so subsequent refresh ticks
+        # don't try to pop a screen that's no longer at the top of
+        # the stack.
+        self._loading_dismissed = False
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         yield SummaryPanel(id="summary")
         yield BlockPanel(id="block")
-        # Loading banner — shown until the Tailer's first replay sweep
-        # finishes. With --from-start as the only mode, every launch
-        # does a full archive replay; for users with many JSONLs this
-        # can take a few seconds and a frozen-looking UI is alarming.
-        yield Static(
-            "[b]⏳ Replaying historical JSONLs…[/b]  "
-            "[dim]initial archive load[/dim]",
-            id="loading-banner",
-        )
         # Tabs strip first, then filter bar in its own row, then content
         # switcher with the actual tables. Decoupling Tabs from the
         # bundled TabbedContent lets us slip the filter bar between them
@@ -777,6 +763,14 @@ class UsageMonitorApp(App):
             # account-level rate limit.
             self.set_interval(120.0, self._poll_api_usage)
             self.run_worker(self._poll_api_usage_async, exclusive=False)
+
+        # Modal blocking the UI until Tailer's first replay sweep
+        # finishes. Pushed last so it sits on top of everything else
+        # and only reveals the rendered (but not yet populated) UI
+        # behind it. Pop happens in _refresh_view via the
+        # _loading_dismissed flag.
+        from .loading_screen import LoadingScreen
+        self.push_screen(LoadingScreen())
 
     async def _poll_api_usage_async(self) -> None:
         """Initial fetch in a worker — keeps startup non-blocking."""
@@ -960,15 +954,18 @@ class UsageMonitorApp(App):
 
     def _refresh_view(self) -> None:
         agg = self.aggregator
-        # Hide loading banner once Tailer's first sweep completes. Cheap
-        # to check on every tick — sets display once and stays hidden.
-        if self.tailer.initial_scan_done:
+        # Pop the LoadingScreen modal once Tailer's first sweep
+        # completes. Guarded by a flag so a second tick doesn't try
+        # to pop again (LoadingScreen is no longer at the top of the
+        # stack by then).
+        if not self._loading_dismissed and self.tailer.initial_scan_done:
+            self._loading_dismissed = True
             try:
-                banner = self.query_one("#loading-banner", Static)
-                if banner.display:
-                    banner.display = False
-            except Exception:
-                pass
+                from .loading_screen import LoadingScreen
+                if isinstance(self.screen, LoadingScreen):
+                    self.pop_screen()
+            except Exception as e:
+                log.warning("could not dismiss LoadingScreen: %s", e)
         summary = self.query_one("#summary", SummaryPanel)
         summary.sums = agg.total_sums()
         summary.sums_7d = agg.sums_in_window(timedelta(days=7))
