@@ -14,16 +14,19 @@ from .tailer import Tailer
 from .tui import run_app
 
 
-# Approximate per-block (5h Anthropic session) limits per Claude plan.
-# Match the values from Maciek-roboblog/Claude-Code-Usage-Monitor; Anthropic
-# changes plan terms periodically, so users can override via flags below.
+# Per-block (5h Anthropic session) cost ceilings by plan. Anthropic
+# publishes these as USD limits; the older token-based variants of
+# the same presets were unreliable in cache-heavy modern usage and
+# have been removed (cache_read tokens dominate every prompt now, so
+# a 19k-token preset reads as 13K%+ within minutes — actively
+# misleading). 'auto' = P90 over the user's last 8 days of blocks.
 PLAN_LIMITS = {
-    "pro": {"tokens": 19_000, "cost": 18.0},
-    "max5": {"tokens": 88_000, "cost": 35.0},
-    "max20": {"tokens": 220_000, "cost": 140.0},
-    "auto": {"tokens": None, "cost": None},  # filled in dynamically via P90
-    "custom": {"tokens": None, "cost": None},
-    "none": {"tokens": None, "cost": None},
+    "pro": {"cost": 18.0},
+    "max5": {"cost": 35.0},
+    "max20": {"cost": 140.0},
+    "auto": {"cost": None},  # filled in dynamically via P90
+    "custom": {"cost": None},
+    "none": {"cost": None},
 }
 
 
@@ -40,25 +43,19 @@ def main() -> None:
         choices=list(PLAN_LIMITS.keys()),
         default=None,
         help=(
-            "Anthropic plan for 5h block limits (default: read from "
-            "config.json, falling back to 'none' which shows raw "
-            "numbers without progress bars). Plan limits match "
-            "Maciek-roboblog/Claude-Code-Usage-Monitor: pro=19k/$18, "
-            "max5=88k/$35, max20=220k/$140 per 5h session. Heavy users will "
-            "blow past these — use --max-5h-tokens / --max-5h-cost overrides."
+            "Anthropic plan for the 5h-block cost ceiling shown on the "
+            "BlockPanel progress bar (default: read from config.json, "
+            "falling back to 'auto' which derives a P90 ceiling from "
+            "your own 8-day archive). Preset cost values: pro=$18, "
+            "max5=$35, max20=$140 per 5h block. Use --max-5h-cost to "
+            "override with a custom number."
         ),
-    )
-    parser.add_argument(
-        "--max-5h-tokens",
-        type=int,
-        default=None,
-        help="Override 5h-block token limit.",
     )
     parser.add_argument(
         "--max-5h-cost",
         type=float,
         default=None,
-        help="Override 5h-block USD cost limit.",
+        help="Override 5h-block USD cost limit (wins over --plan).",
     )
     parser.add_argument(
         "--no-api",
@@ -104,7 +101,6 @@ def main() -> None:
     # last 8d is the only offline metric that adapts to actual usage.
     plan_name = args.plan or cfg.get("plan", "auto")
     plan = PLAN_LIMITS.get(plan_name, PLAN_LIMITS["none"])
-    aggregator.token_limit = args.max_5h_tokens or plan["tokens"]
     aggregator.cost_limit = args.max_5h_cost or plan["cost"]
 
     # Auto-detect OAuth credentials. Three resulting modes:

@@ -163,11 +163,8 @@ class BlockInfo:
     minutes_remaining: float
     burn_tokens_per_min: float
     burn_cost_per_min: float
-    eta_to_token_limit_min: float | None = None
     eta_to_cost_limit_min: float | None = None
-    token_limit: int | None = None
     cost_limit: float | None = None
-    pct_tokens: float | None = None
     pct_cost: float | None = None
 
 
@@ -192,8 +189,10 @@ class Aggregator:
         # Long-window record archive (7 days) for rolling sums and 5h-block
         # detection. Each entry is (rec_ts, rec, cost). Kept sorted by rec_ts.
         self._long_window: deque[tuple[datetime, UsageRecord, float]] = deque()
-        # Optional plan limits for the active 5h block.
-        self.token_limit: int | None = None
+        # Optional plan cost ceiling for the active 5h block. The token
+        # half of the old plan presets was misleading in cache-heavy
+        # usage and got dropped; only cost is published authoritatively
+        # by Anthropic so it's the only one we model.
         self.cost_limit: float | None = None
         # Authoritative usage data from Anthropic /api/oauth/usage. When
         # populated, the TUI prefers it over local-only token/cost limits.
@@ -232,7 +231,6 @@ class Aggregator:
         "by_skill",
         "by_agent",
         "_long_window",
-        "token_limit",
         "cost_limit",
         "revision",
     )
@@ -812,42 +810,25 @@ class Aggregator:
         turns.sort(key=lambda x: x[0])
         return turns
 
-    def auto_detect_limits_p90(self) -> tuple[int, float] | None:
-        """Analyze the 8-day window and return (P90 token limit, P90 cost
-        limit) computed across historical 5h blocks. Used by --plan auto.
-
-        Returns None if there are fewer than 3 historical blocks (P90 of
-        a 1-2 element list is meaningless).
+    def auto_detect_limits_p90(self) -> float | None:
+        """Return P90 cost across historical 5h blocks in the 8-day
+        archive. Used by --plan auto. Returns None if there are fewer
+        than 3 historical blocks (P90 of a 1-2 element list is
+        meaningless).
         """
         if not self._long_window:
             return None
         records = list(self._long_window)
-        block_token_totals: list[int] = []
-        block_cost_totals: list[float] = []
+        block_costs: list[float] = []
         for _start, _end, indices in _iter_blocks(records):
-            tokens = 0
             cost = 0.0
             for i in indices:
-                _ts, rec, c = records[i]
-                tokens += (
-                    rec.input_tokens
-                    + rec.output_tokens
-                    + rec.cache_read_tokens
-                    + rec.cache_write_5m_tokens
-                    + rec.cache_write_1h_tokens
-                )
+                _ts, _rec, c = records[i]
                 cost += c
-            block_token_totals.append(tokens)
-            block_cost_totals.append(cost)
-
-        if len(block_token_totals) < 3:
+            block_costs.append(cost)
+        if len(block_costs) < 3:
             return None
-
-        token_p90 = _percentile(block_token_totals, 90)
-        cost_p90 = _percentile(block_cost_totals, 90)
-        # Round token limit up to a clean number for nicer display.
-        token_p90 = int(round(token_p90))
-        return (token_p90, cost_p90)
+        return _percentile(block_costs, 90)
 
     def block_info(self) -> BlockInfo | None:
         """Compute the current 5-hour block from the long-window archive.
@@ -892,16 +873,9 @@ class Aggregator:
             minutes_remaining=remaining_min,
             burn_tokens_per_min=burn_tokens,
             burn_cost_per_min=burn_cost,
-            token_limit=self.token_limit,
             cost_limit=self.cost_limit,
         )
 
-        if self.token_limit:
-            info.pct_tokens = sums.total_tokens / self.token_limit * 100
-            remaining_tokens = max(0, self.token_limit - sums.total_tokens)
-            info.eta_to_token_limit_min = (
-                remaining_tokens / burn_tokens if burn_tokens > 0 else None
-            )
         if self.cost_limit:
             info.pct_cost = sums.cost_usd / self.cost_limit * 100
             remaining_cost = max(0.0, self.cost_limit - sums.cost_usd)
