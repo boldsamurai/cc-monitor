@@ -107,7 +107,7 @@ def main() -> None:
 
     pricing = PricingTable()
     queue: asyncio.Queue = asyncio.Queue()
-    aggregator = Aggregator(pricing, projects_dir=args.projects_dir)
+    aggregator = Aggregator(pricing)
 
     # Cost ceiling: explicit --max-5h-cost wins; otherwise we let the
     # auto-P90 worker fill it in once the archive is populated (only

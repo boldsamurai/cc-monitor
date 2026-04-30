@@ -244,11 +244,16 @@ def _write_session_jsonl(tmp_path, project_slug: str, session_id: str, lines: li
 
 
 def test_session_jsonl_stats_extracts_reads_writes_and_tools(
-    agg, tmp_path,
+    agg, tmp_path, monkeypatch,
 ):
-    # Aggregator now reads JSONL via self.projects_dir, so point it at
-    # the fixture dir instead of the real ~/.claude/projects.
-    agg.projects_dir = tmp_path
+    # Redirect PROJECTS_DIR so _compute_session_jsonl_stats reads our
+    # fixture file instead of the user's ~/.claude/projects.
+    from cc_usagemonitor import paths as paths_module
+    monkeypatch.setattr(paths_module, "PROJECTS_DIR", tmp_path)
+    # aggregator caches a reference at import time inside its helper,
+    # so monkeypatch the module-level too if it's already bound.
+    import cc_usagemonitor.aggregator as agg_mod
+    monkeypatch.setattr(agg_mod, "PROJECTS_DIR", tmp_path, raising=False)
 
     project_slug = "-fake-proj"
     session_id = "sess-abc"
@@ -316,7 +321,8 @@ def test_session_jsonl_stats_uses_single_pass_cache(
 ):
     # The three count_*_in_session methods now share a cache key, so
     # calling all three after one ingest should compute exactly once.
-    agg.projects_dir = tmp_path
+    import cc_usagemonitor.aggregator as agg_mod
+    monkeypatch.setattr(agg_mod, "PROJECTS_DIR", tmp_path, raising=False)
 
     project_slug = "-fake-proj"
     session_id = "sess-xyz"

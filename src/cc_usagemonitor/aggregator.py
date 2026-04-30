@@ -3,12 +3,10 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 
 from .anthropic_usage import UsageData
 from .logger import get_logger
 from .parser import HookEvent, UsageRecord
-from .paths import PROJECTS_DIR
 from .pricing import PricingTable
 
 log = get_logger(__name__)
@@ -173,18 +171,8 @@ class BlockInfo:
 class Aggregator:
     """In-memory state. Single-threaded — only mutated from the asyncio loop."""
 
-    def __init__(
-        self,
-        pricing: PricingTable,
-        recent_window_seconds: int = 60,
-        projects_dir: Path | None = None,
-    ):
+    def __init__(self, pricing: PricingTable, recent_window_seconds: int = 60):
         self.pricing = pricing
-        # Detail-screen helpers re-read JSONL from disk (load_full_
-        # session_turns, count_file_reads, etc.). Make the lookup root
-        # configurable so --projects-dir on the CLI keeps both the
-        # Tailer and the aggregator pointing at the same tree.
-        self.projects_dir = projects_dir if projects_dir is not None else PROJECTS_DIR
         self.sessions: dict[str, SessionState] = {}
         self.spans_by_id: dict[str, ToolSpan] = {}
         self.spans_by_session: dict[str, list[ToolSpan]] = defaultdict(list)
@@ -672,13 +660,14 @@ class Aggregator:
         )
 
     def _compute_session_jsonl_stats(self, session_id: str) -> dict:
+        from .paths import PROJECTS_DIR
         import json
 
         empty = {"reads": {}, "writes": {}, "tools": {}}
         sess = self.sessions.get(session_id)
         if sess is None:
             return empty
-        path = self.projects_dir / sess.project_slug / f"{session_id}.jsonl"
+        path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
         if not path.is_file():
             return empty
         try:
@@ -781,11 +770,12 @@ class Aggregator:
         self, session_id: str
     ) -> list[tuple[datetime, UsageRecord, float]]:
         from .parser import parse_session_line
+        from .paths import PROJECTS_DIR
 
         sess = self.sessions.get(session_id)
         if sess is None:
             return []
-        path = self.projects_dir / sess.project_slug / f"{session_id}.jsonl"
+        path = PROJECTS_DIR / sess.project_slug / f"{session_id}.jsonl"
         if not path.is_file():
             return []
 
@@ -794,7 +784,7 @@ class Aggregator:
         # isSidechain=True). Without these the chart undercounts cost
         # for sessions that delegate heavy work to agents.
         subagent_dir = (
-            self.projects_dir / sess.project_slug / session_id / "subagents"
+            PROJECTS_DIR / sess.project_slug / session_id / "subagents"
         )
         files_to_read = [path]
         if subagent_dir.is_dir():
