@@ -19,7 +19,7 @@ _SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
         ("Tab / shift+Tab", "Move focus between widgets"),
         ("esc", "Close current screen / cancel modal"),
         ("q", "Quit cc-usagemonitor (with confirm)"),
-        ("?", "This help"),
+        ("ctrl+h", "This help"),
     ]),
     ("Main view", [
         ("1, 2, 3", "Switch to Sessions / Projects / Models"),
@@ -69,8 +69,8 @@ class HelpScreen(Screen):
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
         Binding("q", "app.pop_screen", "Back"),
-        # Press ? again to close — toggle-style discoverability.
-        Binding("question_mark", "app.pop_screen", "Back", show=False),
+        # Press ctrl+h again to close — toggle-style discoverability.
+        Binding("ctrl+h", "app.pop_screen", "Back", show=False),
     ]
 
     CSS = """
@@ -120,5 +120,6 @@ class HelpScreen(Screen):
                             yield Static(desc, classes="help-desc")
             with Horizontal(id="help-footer"):
                 yield Static(
-                    "[b]esc[/b] / [b]?[/b] back", id="help-footer-right"
+                    "[b]esc[/b] / [b]ctrl+h[/b] back",
+                    id="help-footer-right",
                 )

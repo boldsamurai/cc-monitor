@@ -592,7 +592,7 @@ class UsageMonitorApp(App):
         Binding("f3", "open_claude_resume_last", "Resume last (project)", show=False),
         Binding("l", "open_log", "Open log file"),
         Binding("comma", "open_settings", "Settings"),
-        Binding("question_mark", "open_help", "Help"),
+        Binding("ctrl+h", "open_help", "Help"),
     ]
 
     # Filter state — watched so any change forces a table refresh.
@@ -871,7 +871,7 @@ class UsageMonitorApp(App):
         left.update(actions)
         right.update(
             "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-            "[b]?[/b] help   [b],[/b] settings   "
+            "[b]ctrl+h[/b] help   [b],[/b] settings   "
             "[b]l[/b] log   [b]q[/b] quit"
         )
 
