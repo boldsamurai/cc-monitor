@@ -649,6 +649,10 @@ class SettingsScreen(Screen):
         tailer = getattr(self.app, "tailer", None)
         if agg is None or tailer is None:
             log.warning("force re-scan: app is missing aggregator/tailer")
+            self.app.notify(
+                "Force re-scan failed: app state unavailable",
+                severity="error",
+            )
             return
         agg.reset_state()
         tailer.reset_tails()
@@ -662,5 +666,11 @@ class SettingsScreen(Screen):
             text.update(self._build_diagnostics_text())
         except Exception:
             pass
-        self.app.bell()
         log.info("force re-scan triggered from Settings")
+        self.app.notify(
+            "Re-scan started — every JSONL will be replayed from the "
+            "beginning. Sessions, projects, and models tabs will refill "
+            "as the tailer catches up (usually a few seconds).",
+            title="Force re-scan",
+            timeout=8,
+        )
