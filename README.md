@@ -68,9 +68,11 @@ guard.
 
 ## Installation
 
-> **Supported platforms:** Linux and macOS. Windows is not officially supported
-> in v0.1.0 — the code has best-effort cross-platform branches but is untested.
-> Please open an issue if you'd like Windows support tracked.
+> **Supported platforms:** Linux, macOS, and Windows. Windows works in
+> archive-viewer mode without Claude Code installed (just point cc-monitor
+> at copied `~/.claude/projects/` data); native Claude Code on Windows is
+> supported the same way as POSIX. Please open an issue if you hit
+> platform-specific bugs.
 
 ### uv (recommended)
 

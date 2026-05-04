@@ -1,0 +1,77 @@
+# Auto-publish to PyPI and create a GitHub Release on every `v*` tag.
+#
+# Trigger: push a tag matching v* (e.g. `git tag v0.1.11 && git push --tags`).
+# The version in pyproject.toml MUST match the tag (minus the leading `v`)
+# — the workflow has a guard that fails fast on a mismatch so you can't
+# accidentally publish a stale build.
+#
+# Required repo configuration:
+#   1. Add a `PYPI_TOKEN` secret at Settings → Secrets and variables →
+#      Actions. Generate the token at https://pypi.org/manage/account/token/
+#      and SCOPE IT TO THE `cc-monitor` PROJECT (not "Entire account").
+#      Project-scoped tokens limit blast radius if the secret leaks.
+#
+# Manual fallback: this workflow doesn't replace `uv publish` — you can
+# still publish from your laptop if CI is unavailable. Just delete the
+# tag locally and on origin, fix the issue, retag, push.
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create the GitHub Release
+
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v4
+        with:
+          # Need full history so `gh release create --generate-notes`
+          # can describe what changed since the previous tag.
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      # Tag-vs-pyproject sanity check. Catches the "tagged v0.1.11 but
+      # forgot to bump pyproject" footgun before we publish a misnamed
+      # wheel that sits on PyPI forever (you can't reuse a version
+      # number even after deletion).
+      - name: Verify tag matches pyproject version
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PROJECT_VERSION=$(uv run python -c \
+            "import tomllib; print(tomllib.loads(open('pyproject.toml','rb').read().decode())['project']['version'])")
+          if [ "$TAG_VERSION" != "$PROJECT_VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME → version $TAG_VERSION, but pyproject.toml says $PROJECT_VERSION"
+            exit 1
+          fi
+          echo "Tag and pyproject agree on version $PROJECT_VERSION"
+
+      - name: Build wheel + sdist
+        run: uv build
+
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: uv publish
+
+      # GitHub Release follows PyPI publish — that order means a failed
+      # publish doesn't leave a "Release" page pointing at a nonexistent
+      # PyPI version. --generate-notes pulls commit messages since the
+      # previous tag, so changelog discipline at commit-message time
+      # pays off here.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*
