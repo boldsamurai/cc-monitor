@@ -116,3 +116,36 @@ def test_detect_installer_falls_back_to_pip(monkeypatch):
     name, cmd = result
     assert name == "pip"
     assert cmd == ["pip", "install", "--upgrade", "cc-monitor"]
+
+
+def test_cache_obsolete_when_running_newer_than_cached(monkeypatch):
+    # User on 0.1.13, cache says latest=0.1.11 from a previous session.
+    # Cache is stale even if it's only 30 minutes old.
+    monkeypatch.setattr(vc, "__version__", "0.1.13")
+    assert vc._cache_is_obsolete("0.1.11") is True
+
+
+def test_cache_obsolete_when_running_equals_cached(monkeypatch):
+    # User on 0.1.13, cache says latest=0.1.13. Cache is "obsolete"
+    # in the sense that we already know we're not newer than ourselves
+    # — we should refetch to find anything beyond. But _is_newer will
+    # then return False if PyPI agrees, so no false-positive modal.
+    monkeypatch.setattr(vc, "__version__", "0.1.13")
+    assert vc._cache_is_obsolete("0.1.13") is True
+
+
+def test_cache_fresh_when_running_older_than_cached(monkeypatch):
+    # User on 0.1.10, cache says latest=0.1.13. Cache is correct, no
+    # need to refetch — _is_newer will pick up the update.
+    monkeypatch.setattr(vc, "__version__", "0.1.10")
+    assert vc._cache_is_obsolete("0.1.13") is False
+
+
+def test_cache_obsolete_safe_with_unparseable_version(monkeypatch):
+    # Garbage in either side → don't claim obsolete. Caller falls
+    # through to the cached value, which is the safest behavior
+    # (worst case: one extra cycle of "no update").
+    monkeypatch.setattr(vc, "__version__", "0.1.13")
+    assert vc._cache_is_obsolete("garbage") is False
+    monkeypatch.setattr(vc, "__version__", "garbage")
+    assert vc._cache_is_obsolete("0.1.13") is False

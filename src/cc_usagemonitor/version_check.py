@@ -35,7 +35,13 @@ from .logger import get_logger
 log = get_logger(__name__)
 
 PYPI_URL = "https://pypi.org/pypi/cc-monitor/json"
-CACHE_TTL_SECONDS = 24 * 60 * 60  # 1 day
+# 1 hour is a reasonable balance: aggressive enough that users notice
+# new releases within their working session, gentle enough that we
+# don't hammer PyPI on a workflow where the user launches cc-monitor
+# every few minutes. 24h was tested and turned out too long for an
+# actively-developed package — users who upgraded saw stale "no
+# update available" answers from cache predating the new release.
+CACHE_TTL_SECONDS = 60 * 60
 
 # Installer probe order — uv first because that's what we recommend in
 # the README and it's the most common path forward; pipx second for
@@ -136,6 +142,20 @@ def _fetch_pypi_latest() -> str | None:
     return None
 
 
+def _cache_is_obsolete(cached_latest: str) -> bool:
+    """True when our cached "latest version" is no newer than the
+    version we're running — which means the user upgraded past the
+    cached value and the cache is definitionally stale, regardless of
+    its age. Without this guard a user who upgrades from X to X+1
+    keeps seeing "no update available" until TTL expires, even when
+    PyPI has X+2."""
+    cached = _parse_version(cached_latest)
+    running = _parse_version(__version__)
+    if cached is None or running is None:
+        return False
+    return running >= cached
+
+
 async def check_for_update() -> str | None:
     """Returns the version string of a newer release on PyPI, or None
     if no update is available (or the check failed). Never raises."""
@@ -144,12 +164,23 @@ async def check_for_update() -> str | None:
     cached = _load_cache()
     if cached is not None:
         latest, _ = cached
-        log.debug("version-check using cached value: %s", latest)
-    else:
+        if _cache_is_obsolete(latest):
+            # Cached "latest" is no longer newer than us — refetch.
+            log.debug(
+                "version-check cache obsolete (cached=%s running=%s); refetching",
+                latest, __version__,
+            )
+            cached = None
+        else:
+            log.debug("version-check using cached value: %s", latest)
+
+    if cached is None:
         latest = await asyncio.to_thread(_fetch_pypi_latest)
         if latest is None:
             return None
         _save_cache(latest)
+    else:
+        latest, _ = cached
 
     if _is_newer(latest, __version__):
         log.info(
