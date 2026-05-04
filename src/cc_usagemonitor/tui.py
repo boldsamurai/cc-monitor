@@ -957,6 +957,17 @@ class UsageMonitorApp(App):
             # If they quit, we exit cleanly; if they continue, both
             # modals dismiss and normal data loading resumes.
             self._show_claude_missing_modal(status)
+        elif (
+            status.binary_in_path
+            and not status.has_project_data
+            and not cfg.get("onboarding_dismissed", False)
+        ):
+            # First-run case: Claude Code is installed but the user
+            # hasn't run a session yet, so every tab will be empty
+            # until they do. Walk them through it once. The "Don't
+            # show again" branch persists to config.json so we don't
+            # nag on every fresh launch.
+            self._show_first_run_onboarding()
 
     def _show_claude_missing_modal(self, status) -> None:
         """Push a Continue/Quit modal explaining what we couldn't find.
@@ -1004,6 +1015,42 @@ class UsageMonitorApp(App):
         if not continue_anyway:
             log.info("Claude Code missing; user chose Quit")
             self.exit()
+
+    def _show_first_run_onboarding(self) -> None:
+        """Welcome modal for users who installed cc-monitor before
+        running their first Claude Code session. Without this they'd
+        land on three empty tabs and probably wonder if the install
+        is broken."""
+        body = (
+            "Welcome to cc-monitor!\n\n"
+            "Claude Code is installed but you haven't run any sessions "
+            "yet, so every tab is empty for now.\n\n"
+            "What to do next:\n"
+            "  1. Open a Claude Code session in any project\n"
+            "     (`claude` from your project directory)\n"
+            "  2. Ask it something — anything that uses tokens\n"
+            "  3. Come back here. Sessions, Projects, and Models will "
+            "fill in within a few seconds.\n\n"
+            "The Claude Code hook is already wired up in "
+            "~/.claude/settings.json, so per-tool attribution starts "
+            "tracking from your very first turn."
+        )
+        from .confirm_screen import ConfirmScreen
+        self.push_screen(
+            ConfirmScreen(body, yes_label="Got it", no_label="Don't show again"),
+            self._handle_onboarding_choice,
+        )
+
+    def _handle_onboarding_choice(self, dismissed_for_now: bool | None) -> None:
+        """`Got it` (Yes) closes the modal but the welcome will appear
+        again on the next launch if data is still missing — useful if
+        the user gets distracted before running a session. `Don't show
+        again` (No) persists the dismissal to config.json."""
+        if dismissed_for_now is False:
+            cfg = load_config()
+            cfg["onboarding_dismissed"] = True
+            save_config(cfg)
+            log.info("first-run onboarding dismissed permanently")
 
     async def _update_check_async(self) -> None:
         """One-shot PyPI check; modal on hit, silent on miss/failure."""

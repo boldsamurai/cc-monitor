@@ -55,6 +55,12 @@ guard.
   re-opens are instant
 - **Mouse and keyboard fully wired** — clickable filter chips, back button,
   sort headers, drill-in rows; or use `1`/`2`/`3`/`/`/`,`/`?` for everything
+- **In-app update notifications** — an unobtrusive PyPI check on launch
+  surfaces a one-click "Update?" modal (uv / pipx / pip aware) when a
+  newer release is available, so you never miss a fix
+- **Archive-viewer mode** — point cc-monitor at copied `~/.claude/projects/`
+  data on a machine without Claude Code installed and it'll still render
+  costs, tokens, and per-session breakdowns over the historical data
 
 ## Screenshots
 
@@ -128,7 +134,8 @@ On first launch it will:
    ceiling.
 4. Drop you into the Sessions tab.
 
-Press `?` (or `ctrl+h`) at any time for the keyboard cheatsheet.
+Press `?` at any time for the keyboard cheatsheet (`ctrl+h` and `F1`
+also work).
 
 ## CLI flags
 
@@ -140,7 +147,7 @@ Press `?` (or `ctrl+h`) at any time for the keyboard cheatsheet.
 | `--debug` | off | DEBUG-level logging to `~/.cache/cc-monitor/usagemonitor.log` (rotates at 10 MB). |
 | `--reinstall-hook` | — | Re-run the hook installer and exit without launching the TUI. Idempotent — safe in provisioning scripts. |
 | `--rescan` | — | Discard the cached state snapshot before launch so the next run replays every JSONL from scratch. CLI equivalent of Settings → Force re-scan. |
-| `--no-update-check` | — | Skip the once-per-24h check against PyPI for a newer cc-monitor release. The check normally runs in the background, never blocks startup, and only shows a toast on launch when an update is available. |
+| `--no-update-check` | — | Skip the once-per-hour check against PyPI for a newer cc-monitor release. The check runs in the background, never blocks startup, and shows a one-click Update? modal when a new version is available. |
 | `--skip-claude-check` | — | Skip the startup probe that warns when Claude Code is missing. The probe checks for the `claude` binary on PATH and a non-empty `~/.claude/projects/`, and blocks the main view behind a Continue/Quit modal when both signals are absent. Useful for CI / scripted runs. |
 
 Everything else (theme, date format, default tab, refresh interval, filter
@@ -155,6 +162,8 @@ key from the main view.
 | `~/.cache/cc-monitor/state.pickle` | Cross-run state snapshot. Missing / corrupt / version-mismatched → fall back to full replay. |
 | `~/.cache/cc-monitor/usagemonitor.log` | Rolling log file (10 MB cap). |
 | `~/.cache/cc-monitor/exports/` | Timestamped CSV / JSON dumps from Settings → Export. |
+| `~/.cache/cc-monitor/version-check.json` | Cached PyPI version probe (TTL 1h). Auto-invalidates when you upgrade past the cached value. |
+| `~/.cache/cc-monitor/upgrade.log` | Output of the spawned `uv tool upgrade` from the in-app Update modal (POSIX only — Windows opens a visible cmd window instead). |
 
 None of the above is committed to your repo.
 
@@ -164,8 +173,8 @@ None of the above is committed to your repo.
 git clone https://github.com/boldsamurai/cc-monitor.git
 cd cc-monitor
 uv sync                      # install runtime + dev deps
-uv run pytest                # 88 tests
-uv run cc-monitor       # launch from source
+uv run pytest                # 115 tests
+uv run cc-monitor            # launch from source
 ```
 
 ## Acknowledgements
