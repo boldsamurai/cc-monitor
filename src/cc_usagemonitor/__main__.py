@@ -15,7 +15,7 @@ from .tui import run_app
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="cc-usagemonitor")
+    parser = argparse.ArgumentParser(prog="cc-monitor")
     parser.add_argument(
         "--poll",
         type=float,
@@ -50,7 +50,7 @@ def main() -> None:
         action="store_true",
         help=(
             "Enable DEBUG-level logging to "
-            "~/.cache/cc-usagemonitor/usagemonitor.log. Useful when "
+            "~/.cache/cc-monitor/usagemonitor.log. Useful when "
             "tracking down ingest/parser issues; the log rotates at 10MB."
         ),
     )
@@ -75,7 +75,7 @@ def main() -> None:
     args = parser.parse_args()
 
     log = setup_logging(debug=args.debug)
-    log.info("cc-usagemonitor starting (debug=%s)", args.debug)
+    log.info("cc-monitor starting (debug=%s)", args.debug)
 
     # One-shot maintenance commands run before any TUI setup. Each
     # short-circuits with sys.exit so we don't pay startup cost when
@@ -90,7 +90,7 @@ def main() -> None:
 
     # Make sure Claude Code is wired to feed us tool_start / tool_end
     # events for Skill and Agent. Idempotent — skips silently when an
-    # existing cc-usagemonitor entry is already in settings.json.
+    # existing cc-monitor entry is already in settings.json.
     ensure_hook_installed()
 
     pricing = PricingTable()

@@ -374,7 +374,7 @@ def _plan_name_from_subscription(subscription: str | None) -> str | None:
 
 def _cache_path() -> Path:
     base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / "cc-usagemonitor" / "usage-cache.json"
+    return base / "cc-monitor" / "usage-cache.json"
 
 
 def _read_cache() -> UsageData | None:

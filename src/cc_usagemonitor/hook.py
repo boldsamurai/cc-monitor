@@ -1,8 +1,8 @@
-"""cc-usagemonitor Claude Code hook (in-package).
+"""cc-monitor Claude Code hook (in-package).
 
 Reads a hook payload from stdin and appends one event line to
 ~/.claude/usagemonitor-events.jsonl. Mirrors scripts/hook.py — the
-package version is wired to a console entry point (cc-usagemonitor-hook)
+package version is wired to a console entry point (cc-monitor-hook)
 so the auto-installer can drop a stable absolute path into
 ~/.claude/settings.json regardless of where the package lives.
 """

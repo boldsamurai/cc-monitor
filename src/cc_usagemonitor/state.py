@@ -1,7 +1,7 @@
 """Persistent snapshot of aggregator + tailer state across runs.
 
 On clean shutdown the app pickles its in-memory archive plus per-file
-tail offsets to ~/.cache/cc-usagemonitor/state.pickle. On startup the
+tail offsets to ~/.cache/cc-monitor/state.pickle. On startup the
 snapshot is loaded and the tailer resumes from the saved offsets, so a
 second launch only parses lines that landed since the last quit. For a
 user with hundreds of sessions this turns multi-second startup into
@@ -35,7 +35,7 @@ SCHEMA_VERSION = 1
 
 def _state_path() -> Path:
     base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / "cc-usagemonitor" / "state.pickle"
+    return base / "cc-monitor" / "state.pickle"
 
 
 @dataclass

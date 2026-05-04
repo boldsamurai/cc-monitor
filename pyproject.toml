@@ -1,5 +1,5 @@
 [project]
-name = "cc-usagemonitor"
+name = "cc-monitor"
 version = "0.1.0"
 description = "Real-time token usage and cost monitor for Claude Code sessions, in your terminal."
 readme = "README.md"
@@ -48,8 +48,8 @@ Repository = "https://github.com/boldsamurai/cc-monitor"
 Issues = "https://github.com/boldsamurai/cc-monitor/issues"
 
 [project.scripts]
-cc-usagemonitor = "cc_usagemonitor.__main__:main"
-cc-usagemonitor-hook = "cc_usagemonitor.hook:main"
+cc-monitor = "cc_usagemonitor.__main__:main"
+cc-monitor-hook = "cc_usagemonitor.hook:main"
 
 [build-system]
 requires = ["hatchling"]

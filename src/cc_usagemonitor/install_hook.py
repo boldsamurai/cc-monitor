@@ -1,11 +1,12 @@
 """Idempotent installer for the Claude Code hook entries.
 
-Called from `cc-usagemonitor` startup. Inspects ~/.claude/settings.json
+Called from `cc-monitor` startup. Inspects ~/.claude/settings.json
 and ensures PreToolUse / PostToolUse / Stop hooks pointing at our
-`cc-usagemonitor-hook` console entry exist. Does nothing (and prints a
-quiet skip line) if anything referencing 'cc-usagemonitor' already
-appears in those hook arrays — we never overwrite a user's existing
-config, even if it points at the legacy scripts/hook.py.
+`cc-monitor-hook` console entry exist. Does nothing (and prints a
+quiet skip line) if anything referencing 'cc-monitor' (or the legacy
+'cc-usagemonitor' name) already appears in those hook arrays — we
+never overwrite a user's existing config, even if it points at the
+legacy scripts/hook.py.
 """
 from __future__ import annotations
 
@@ -19,17 +20,21 @@ from .logger import get_logger
 log = get_logger(__name__)
 
 SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
-HOOK_MARKER = "cc-usagemonitor"  # any command containing this is "ours"
+# Match either the new package name or the pre-rename one so an upgrade
+# from a development install doesn't add duplicate hook entries.
+HOOK_MARKERS = ("cc-monitor", "cc-usagemonitor")
 
 
 def _hook_command_path() -> str | None:
-    """Locate the cc-usagemonitor-hook binary. Falls back to invoking the
-    module via the current interpreter when the entry-point isn't on
-    PATH (developer installs without a console_scripts entry, etc.)."""
-    found = shutil.which("cc-usagemonitor-hook")
-    if found:
-        return found
-    # Fallback: same Python that's running cc-usagemonitor.
+    """Locate the cc-monitor-hook binary. Falls back to the legacy
+    cc-usagemonitor-hook name (in case the user is mid-upgrade), then to
+    invoking the module via the current interpreter when no entry-point
+    is on PATH (developer installs without a console_scripts entry)."""
+    for name in ("cc-monitor-hook", "cc-usagemonitor-hook"):
+        found = shutil.which(name)
+        if found:
+            return found
+    # Fallback: same Python that's running cc-monitor.
     return f"{sys.executable} -m cc_usagemonitor.hook"
 
 
@@ -46,7 +51,7 @@ def _has_marker(hooks_array) -> bool:
             if not isinstance(h, dict):
                 continue
             cmd = h.get("command") or ""
-            if HOOK_MARKER in cmd:
+            if any(marker in cmd for marker in HOOK_MARKERS):
                 return True
     return False
 
@@ -71,10 +76,10 @@ def _make_entries(hook_cmd: str) -> dict:
 
 
 def ensure_installed() -> None:
-    """Add cc-usagemonitor hook entries to ~/.claude/settings.json if
-    none exist. Never modifies an existing entry — the user owns that
-    config. Prints a single status line to stderr so users who run
-    cc-usagemonitor from a terminal know what (if anything) changed."""
+    """Add cc-monitor hook entries to ~/.claude/settings.json if none
+    exist. Never modifies an existing entry — the user owns that config.
+    Prints a single status line to stderr so users who run cc-monitor
+    from a terminal know what (if anything) changed."""
     hook_cmd = _hook_command_path()
     if hook_cmd is None:
         return  # nothing we can install
@@ -87,7 +92,7 @@ def ensure_installed() -> None:
             settings = {}
     except (OSError, json.JSONDecodeError) as e:
         print(
-            f"cc-usagemonitor: skipping hook auto-install — couldn't read "
+            f"cc-monitor: skipping hook auto-install — couldn't read "
             f"{SETTINGS_PATH}: {e}",
             file=sys.stderr,
         )
@@ -118,7 +123,7 @@ def ensure_installed() -> None:
         )
     except OSError as e:
         print(
-            f"cc-usagemonitor: couldn't write {SETTINGS_PATH}: {e}",
+            f"cc-monitor: couldn't write {SETTINGS_PATH}: {e}",
             file=sys.stderr,
         )
         return
@@ -127,7 +132,7 @@ def ensure_installed() -> None:
         "hook auto-install: added entries %s in %s", added, SETTINGS_PATH,
     )
     print(
-        f"cc-usagemonitor: installed Claude Code hook for {', '.join(added)} "
+        f"cc-monitor: installed Claude Code hook for {', '.join(added)} "
         f"in {SETTINGS_PATH}. Restart your Claude Code sessions to pick it up.",
         file=sys.stderr,
     )

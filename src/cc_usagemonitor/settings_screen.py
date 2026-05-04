@@ -311,7 +311,7 @@ class SettingsScreen(Screen):
                 # ===== Export =====
                 yield Static("Export", classes="settings-heading")
                 yield Static(
-                    "Dump the in-memory archive to ~/.cache/cc-usagemonitor/"
+                    "Dump the in-memory archive to ~/.cache/cc-monitor/"
                     "exports/. CSV writes three files (sessions, projects, "
                     "models); JSON writes one combined file. Numbers are "
                     "raw — no $-signs or K/M shortening — so pandas / "
@@ -377,7 +377,7 @@ class SettingsScreen(Screen):
         if installed:
             return (
                 f"[green]✓ Installed[/green] in {where}\n"
-                "Pre/Post/Stop hooks pointing at our cc-usagemonitor-hook "
+                "Pre/Post/Stop hooks pointing at our cc-monitor-hook "
                 "command — fires on every Skill/Agent invocation."
             )
         return (
@@ -585,7 +585,7 @@ class SettingsScreen(Screen):
         label.update(self._build_hook_status_text())
 
     def _open_export_folder(self) -> None:
-        """Open ~/.cache/cc-usagemonitor/exports/ in the file manager.
+        """Open ~/.cache/cc-monitor/exports/ in the file manager.
 
         Mkdir first — the dir doesn't exist before the first export, and
         most file managers refuse to open a missing path.

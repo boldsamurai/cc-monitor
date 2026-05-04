@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-CONFIG_DIR = Path.home() / ".config" / "cc-usagemonitor"
+CONFIG_DIR = Path.home() / ".config" / "cc-monitor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 

@@ -564,7 +564,7 @@ def _fmt_duration_minutes(m: float) -> str:
 
 
 class UsageMonitorApp(App):
-    TITLE = "cc-usagemonitor"
+    TITLE = "cc-monitor"
 
     CSS = """
     /* Whole main view painted with $panel — same approach as the detail
@@ -1950,7 +1950,7 @@ class UsageMonitorApp(App):
             from .confirm_screen import ConfirmScreen
             self.push_screen(
                 ConfirmScreen(
-                    "Quit cc-usagemonitor?",
+                    "Quit cc-monitor?",
                     yes_label="Quit", no_label="Stay",
                 ),
                 self._handle_quit_confirm,

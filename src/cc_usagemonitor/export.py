@@ -5,7 +5,7 @@ no K/M shortening) so pandas / Excel can sort and sum the columns
 directly. Three logical tables — sessions, projects, models — get one
 file each in CSV mode, or one combined object in JSON mode.
 
-Files land in ~/.cache/cc-usagemonitor/exports/ (XDG_CACHE_HOME aware).
+Files land in ~/.cache/cc-monitor/exports/ (XDG_CACHE_HOME aware).
 File names embed an ISO timestamp so successive exports don't overwrite
 each other.
 """
@@ -92,7 +92,7 @@ class ExportResult:
 
 def export_dir() -> Path:
     base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return base / "cc-usagemonitor" / "exports"
+    return base / "cc-monitor" / "exports"
 
 
 def _iso(ts: datetime | None) -> str | None:

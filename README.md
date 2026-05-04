@@ -1,11 +1,11 @@
-# cc-usagemonitor
+# cc-monitor
 
 Real-time token usage and cost monitor for Claude Code sessions, in your terminal.
 
-[![PyPI version](https://img.shields.io/pypi/v/cc-usagemonitor.svg)](https://pypi.org/project/cc-usagemonitor/)
-[![Python](https://img.shields.io/pypi/pyversions/cc-usagemonitor.svg)](https://pypi.org/project/cc-usagemonitor/)
+[![PyPI version](https://img.shields.io/pypi/v/cc-monitor.svg)](https://pypi.org/project/cc-monitor/)
+[![Python](https://img.shields.io/pypi/pyversions/cc-monitor.svg)](https://pypi.org/project/cc-monitor/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Downloads](https://static.pepy.tech/badge/cc-usagemonitor)](https://pepy.tech/project/cc-usagemonitor)
+[![Downloads](https://static.pepy.tech/badge/cc-monitor)](https://pepy.tech/project/cc-monitor)
 [![Built with Textual](https://img.shields.io/badge/built%20with-Textual-5a4fcf.svg)](https://textual.textualize.io/)
 
 A Textual TUI that tails Claude Code's session logs, correlates them with the
@@ -75,7 +75,7 @@ guard.
 ### uv (recommended)
 
 ```bash
-uv tool install cc-usagemonitor
+uv tool install cc-monitor
 ```
 
 `uv tool` creates an isolated environment automatically, sidesteps PEP 668
@@ -85,13 +85,13 @@ entry-point shim to `~/.local/bin` without touching system Python.
 ### pipx
 
 ```bash
-pipx install cc-usagemonitor
+pipx install cc-monitor
 ```
 
 ### pip
 
 ```bash
-pip install --user cc-usagemonitor
+pip install --user cc-monitor
 ```
 
 On Debian/Ubuntu/Fedora-based systems with system Python you'll need
@@ -105,7 +105,7 @@ cd cc-monitor
 uv tool install .
 ```
 
-If `cc-usagemonitor` isn't on PATH after install, add `~/.local/bin` to
+If `cc-monitor` isn't on PATH after install, add `~/.local/bin` to
 your shell's PATH.
 
 ## Quick start
@@ -113,7 +113,7 @@ your shell's PATH.
 Just run:
 
 ```bash
-cc-usagemonitor
+cc-monitor
 ```
 
 On first launch it will:
@@ -135,7 +135,7 @@ Press `?` (or `ctrl+h`) at any time for the keyboard cheatsheet.
 | `--poll N` | `0.5` | Polling interval (seconds) for the JSONL tailer. |
 | `--max-5h-cost X` | — | Pin a custom USD ceiling for the 5h-block progress bar. Without it, `--no-api` mode auto-derives a P90 ceiling from your last 8 days. |
 | `--no-api` | off | Disable Anthropic `/api/oauth/usage` polling. Stay fully offline; falls back to the local P90 ceiling. |
-| `--debug` | off | DEBUG-level logging to `~/.cache/cc-usagemonitor/usagemonitor.log` (rotates at 10 MB). |
+| `--debug` | off | DEBUG-level logging to `~/.cache/cc-monitor/usagemonitor.log` (rotates at 10 MB). |
 | `--reinstall-hook` | — | Re-run the hook installer and exit without launching the TUI. Idempotent — safe in provisioning scripts. |
 | `--rescan` | — | Discard the cached state snapshot before launch so the next run replays every JSONL from scratch. CLI equivalent of Settings → Force re-scan. |
 
@@ -147,10 +147,10 @@ key from the main view.
 
 | Path | Purpose |
 |---|---|
-| `~/.config/cc-usagemonitor/config.json` | Settings persisted from the in-app Settings screen. |
-| `~/.cache/cc-usagemonitor/state.pickle` | Cross-run state snapshot. Missing / corrupt / version-mismatched → fall back to full replay. |
-| `~/.cache/cc-usagemonitor/usagemonitor.log` | Rolling log file (10 MB cap). |
-| `~/.cache/cc-usagemonitor/exports/` | Timestamped CSV / JSON dumps from Settings → Export. |
+| `~/.config/cc-monitor/config.json` | Settings persisted from the in-app Settings screen. |
+| `~/.cache/cc-monitor/state.pickle` | Cross-run state snapshot. Missing / corrupt / version-mismatched → fall back to full replay. |
+| `~/.cache/cc-monitor/usagemonitor.log` | Rolling log file (10 MB cap). |
+| `~/.cache/cc-monitor/exports/` | Timestamped CSV / JSON dumps from Settings → Export. |
 
 None of the above is committed to your repo.
 
@@ -161,7 +161,7 @@ git clone https://github.com/boldsamurai/cc-monitor.git
 cd cc-monitor
 uv sync                      # install runtime + dev deps
 uv run pytest                # 88 tests
-uv run cc-usagemonitor       # launch from source
+uv run cc-monitor       # launch from source
 ```
 
 ## Acknowledgements
