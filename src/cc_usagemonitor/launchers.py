@@ -49,6 +49,17 @@ def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
       konsole / xterm / x-terminal-emulator in that order
     """
     log.info("open_terminal_with cwd=%s cmd=%s", cwd, command)
+
+    # Pre-flight: refuse to spawn a shell into a directory that doesn't
+    # exist. Without this, Windows cmd tries to `cd /d "<missing>"` and
+    # surfaces a confusing "syntax of the command is incorrect" error,
+    # while POSIX terminals open empty in $HOME with no warning. Caller
+    # gets a clean (False, message) instead so it can show a toast.
+    if not Path(cwd).is_dir():
+        msg = f"Path missing on disk: {cwd}"
+        log.warning(msg)
+        return False, msg
+
     detach = _detached_popen_kwargs()
 
     if sys.platform == "darwin":
