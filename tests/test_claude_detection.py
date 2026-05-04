@@ -9,17 +9,21 @@ import pytest
 from cc_usagemonitor import claude_detection as cd
 
 
-def test_status_is_installed_when_either_signal_true():
+def test_status_is_installed_only_when_binary_in_path():
+    # Strict: data alone doesn't mean Claude Code is usable here.
     assert cd.ClaudeStatus(True, True).is_installed is True
     assert cd.ClaudeStatus(True, False).is_installed is True
-    assert cd.ClaudeStatus(False, True).is_installed is True
+    assert cd.ClaudeStatus(False, True).is_installed is False
     assert cd.ClaudeStatus(False, False).is_installed is False
 
 
-def test_status_is_missing_only_when_both_false():
+def test_status_is_missing_when_no_binary():
+    # Modal triggers whenever the binary's absent — having data just
+    # changes the wording, not the gate.
     assert cd.ClaudeStatus(False, False).is_missing is True
+    assert cd.ClaudeStatus(False, True).is_missing is True
     assert cd.ClaudeStatus(True, False).is_missing is False
-    assert cd.ClaudeStatus(False, True).is_missing is False
+    assert cd.ClaudeStatus(True, True).is_missing is False
 
 
 def test_has_project_data_returns_false_for_missing_dir(tmp_path, monkeypatch):
@@ -73,7 +77,9 @@ def test_detect_with_binary_only(tmp_path, monkeypatch):
     assert status.is_missing is False
 
 
-def test_detect_with_data_only(tmp_path, monkeypatch):
+def test_detect_with_data_only_still_treated_as_missing(tmp_path, monkeypatch):
+    # Archive-viewer scenario: user copied JSONLs from another host
+    # but Claude Code isn't actually installed. Modal should show.
     proj = tmp_path / "-x"
     proj.mkdir()
     (proj / "a.jsonl").write_text("{}\n")
@@ -82,4 +88,5 @@ def test_detect_with_data_only(tmp_path, monkeypatch):
     status = cd.detect_claude_install()
     assert status.binary_in_path is False
     assert status.has_project_data is True
-    assert status.is_installed is True
+    assert status.is_installed is False
+    assert status.is_missing is True

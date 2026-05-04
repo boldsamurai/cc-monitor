@@ -34,14 +34,17 @@ class ClaudeStatus:
 
     @property
     def is_installed(self) -> bool:
-        """Either signal counts. Liberal definition: if we have data
-        the user can do something useful with cc-monitor even without
-        the live binary."""
-        return self.binary_in_path or self.has_project_data
+        """`claude` binary on PATH is the only signal we treat as
+        proof of install. Data alone (copied from another host, restored
+        from backup) doesn't mean Claude Code is usable on THIS machine
+        — it just means there's something to look at."""
+        return self.binary_in_path
 
     @property
     def is_missing(self) -> bool:
-        """Used to gate the startup warning."""
+        """Used to gate the startup warning. The modal still shows when
+        data exists without the binary; the wording adapts to explain
+        the archive-viewer use case."""
         return not self.is_installed
 
 
