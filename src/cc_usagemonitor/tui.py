@@ -1380,6 +1380,14 @@ class UsageMonitorApp(App):
                 table.move_cursor(row=new_idx, column=saved_col)
             except Exception:
                 pass
+        elif rows:
+            # No prior cursor (first render or filtered-out row): land on
+            # the top row instead of whatever DataTable's last cached
+            # coordinate happened to be.
+            try:
+                table.move_cursor(row=0, column=0)
+            except Exception:
+                pass
 
         # Re-apply user's column-header sort if any. Without this, our
         # default sort (by last_seen desc, etc.) would clobber the

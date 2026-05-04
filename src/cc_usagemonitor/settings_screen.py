@@ -46,7 +46,7 @@ class CircleCheckbox(Checkbox):
 from . import __version__
 from .config import CONFIG_FILE, load_config, save_config
 from .formatting import DATE_FORMATS, apply_config, format_time
-from .install_hook import HOOK_MARKER, SETTINGS_PATH, ensure_installed
+from .install_hook import HOOK_MARKERS, SETTINGS_PATH, ensure_installed
 from .launchers import open_file, open_in_file_manager
 from .logger import LOG_FILE, get_logger
 from .paths import PROJECTS_DIR
@@ -401,7 +401,8 @@ class SettingsScreen(Screen):
                 if not isinstance(entry, dict):
                     continue
                 for h in entry.get("hooks") or []:
-                    if HOOK_MARKER in (h.get("command") or ""):
+                    cmd = h.get("command") or ""
+                    if any(marker in cmd for marker in HOOK_MARKERS):
                         return True, SETTINGS_PATH
         return False, SETTINGS_PATH
 
