@@ -1425,8 +1425,18 @@ class UsageMonitorApp(App):
 
         if saved_key is not None and saved_key in desired_cells:
             try:
-                new_idx = desired_order.index(saved_key)
-                table.move_cursor(row=new_idx, column=saved_col)
+                # When the user was sitting at row 0 ("top of list") and
+                # a brand new session takes over the top — e.g. during
+                # a fresh-rescan ingest where rows trickle in — pin the
+                # cursor to the new top instead of letting the old key
+                # drag it down. Without this, opening cc-monitor on a
+                # cold cache makes the cursor end up on a random row
+                # somewhere in the middle.
+                if cur_row == 0 and desired_order and desired_order[0] != saved_key:
+                    table.move_cursor(row=0, column=saved_col)
+                else:
+                    new_idx = desired_order.index(saved_key)
+                    table.move_cursor(row=new_idx, column=saved_col)
             except Exception:
                 pass
         elif rows:
@@ -2143,20 +2153,26 @@ class UsageMonitorApp(App):
         """Spawn a new terminal tailing the log in real time.
 
         On POSIX `less +F` behaves like `tail -f` (auto-scrolls, Ctrl-C
-        flips to scrollback). Windows has no `less` by default, so we
-        skip the live-tail attempt and open the log with the default
-        text editor — the user can refresh manually."""
+        flips to scrollback). Windows has no `less` by default and `.log`
+        often has no default-app association, so we explicitly launch
+        Notepad — at least guaranteed to display the file."""
         import sys
-        if sys.platform != "win32":
-            ok, msg = open_terminal_with(
-                str(LOG_DIR), ["less", "+F", str(LOG_FILE)]
-            )
-            if ok:
-                self.notify(f"Tailing log in {msg.split()[-1]}", timeout=2)
-                return
-        # Windows or no terminal emulator — open the file in the default
-        # editor. Loses live tailing, but the user can re-open after a
-        # refresh tick.
+        if sys.platform == "win32":
+            import subprocess
+            try:
+                subprocess.Popen(["notepad.exe", str(LOG_FILE)])
+                self.notify(f"Opened {LOG_FILE} in Notepad", timeout=2)
+            except Exception as e:
+                self.notify(f"Open failed: {e}", severity="warning")
+            return
+
+        ok, msg = open_terminal_with(
+            str(LOG_DIR), ["less", "+F", str(LOG_FILE)]
+        )
+        if ok:
+            self.notify(f"Tailing log in {msg.split()[-1]}", timeout=2)
+            return
+        # No terminal emulator on POSIX either — fall back to default app.
         ok, fallback_msg = open_file(LOG_FILE)
         self.notify(
             fallback_msg, severity="information" if ok else "warning"
