@@ -112,13 +112,80 @@ def _load_cache() -> tuple[str, float] | None:
 
 
 def _save_cache(version: str) -> None:
+    """Update the cached PyPI 'latest' value while preserving any
+    pending_modal field that may have been set across the same write
+    window — they're independent pieces of state and shouldn't clobber
+    each other."""
     path = _cache_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        existing = _load_raw(path)
         payload = {"latest": version, "fetched_at": time.time()}
+        if "pending_modal" in existing:
+            payload["pending_modal"] = existing["pending_modal"]
         path.write_text(json.dumps(payload), encoding="utf-8")
     except OSError as e:
         log.debug("version-check cache save failed: %s", e)
+
+
+def _load_raw(path: Path) -> dict:
+    """Best-effort read of the whole cache JSON; returns {} on miss
+    or corrupt file. Used by helpers that need to update one field
+    without losing the others."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def set_pending_modal(version: str) -> None:
+    """Persist 'this user has an unread Update? notification for
+    version X' to disk. Makes the modal robust against the user
+    quitting cc-monitor in the ~2-second window between async fetch
+    completing and the modal actually rendering."""
+    path = _cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = _load_raw(path)
+        data["pending_modal"] = version
+        path.write_text(json.dumps(data), encoding="utf-8")
+    except OSError as e:
+        log.debug("set_pending_modal failed: %s", e)
+
+
+def clear_pending_modal() -> None:
+    """User dismissed the modal — drop the flag so we don't re-pop
+    on the next launch. Idempotent: no-op when there's nothing to
+    clear (missing file, missing field)."""
+    path = _cache_path()
+    data = _load_raw(path)
+    if "pending_modal" not in data:
+        return
+    data.pop("pending_modal", None)
+    try:
+        path.write_text(json.dumps(data), encoding="utf-8")
+    except OSError as e:
+        log.debug("clear_pending_modal failed: %s", e)
+
+
+def get_pending_modal() -> str | None:
+    """Returns the version string of an unread Update? modal from a
+    previous launch, or None if there isn't one. Filters out cases
+    where the running version has caught up to (or surpassed) the
+    pending one — e.g. the user upgraded via some other route — so
+    we don't pop a stale modal."""
+    path = _cache_path()
+    data = _load_raw(path)
+    pending = data.get("pending_modal")
+    if not isinstance(pending, str):
+        return None
+    if not _is_newer(pending, __version__):
+        # User's running version already meets or exceeds the pending
+        # one; clean up the stale flag so it doesn't accumulate.
+        clear_pending_modal()
+        return None
+    return pending
 
 
 def _fetch_pypi_latest() -> str | None:

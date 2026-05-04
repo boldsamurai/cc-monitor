@@ -936,6 +936,19 @@ class UsageMonitorApp(App):
         # network failures, shows a one-shot toast if a newer release
         # is available.
         if self._check_for_update and bool(cfg.get("check_for_updates", True)):
+            # Race-condition guard: if the previous launch detected an
+            # update but the user quit before the modal rendered (the
+            # async fetch takes ~1-2s during which a fast user can
+            # easily exit), pop it synchronously now. This is a pure
+            # disk read, no HTTP, and runs in <1ms.
+            from .version_check import get_pending_modal
+            pending = get_pending_modal()
+            if pending:
+                log.info(
+                    "showing pending update modal from previous launch: %s",
+                    pending,
+                )
+                self.call_later(self._show_update_modal, pending)
             self.run_worker(self._update_check_async, exclusive=False)
 
         # Modal blocking the UI until Tailer's first replay sweep
@@ -1078,8 +1091,9 @@ class UsageMonitorApp(App):
     def _show_update_modal(self, latest: str) -> None:
         """Push the Update? modal. If no installer is on PATH, fall
         back to the original passive toast (we'd have nothing to spawn
-        on Yes anyway)."""
-        from .version_check import detect_installer
+        on Yes anyway). Persists a 'pending_modal' flag so the user
+        can't miss the modal even if they quit before it renders."""
+        from .version_check import detect_installer, set_pending_modal
         from . import __version__
         installer = detect_installer()
         if installer is None:
@@ -1090,6 +1104,10 @@ class UsageMonitorApp(App):
                 timeout=10,
             )
             return
+        # Mark the modal as pending BEFORE pushing; if the user quits
+        # in the millisecond between push_screen and actual render,
+        # we still recover on next launch.
+        set_pending_modal(latest)
         name, cmd = installer
         body = (
             f"cc-monitor {latest} is available "
@@ -1117,7 +1135,13 @@ class UsageMonitorApp(App):
           - Windows: spawning before exit would briefly hold the .exe
             lock that uv needs to overwrite; running after Python
             exits sidesteps that entirely.
+
+        Either choice clears the pending_modal flag — the user is
+        clearly aware of the available upgrade now, no need to nag
+        them on the next launch.
         """
+        from .version_check import clear_pending_modal
+        clear_pending_modal()
         if not confirmed:
             return
         log.info("user accepted auto-upgrade; deferring to post-exit: %s",
