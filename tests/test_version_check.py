@@ -149,3 +149,69 @@ def test_cache_obsolete_safe_with_unparseable_version(monkeypatch):
     assert vc._cache_is_obsolete("garbage") is False
     monkeypatch.setattr(vc, "__version__", "garbage")
     assert vc._cache_is_obsolete("0.1.13") is False
+
+
+# ----- pending_modal helpers -----
+
+
+def test_pending_modal_round_trip(tmp_path, monkeypatch):
+    monkeypatch.setattr(vc, "_cache_path", lambda: tmp_path / "cache.json")
+    monkeypatch.setattr(vc, "__version__", "0.1.13")
+    assert vc.get_pending_modal() is None  # nothing to read
+    vc.set_pending_modal("0.1.20")
+    assert vc.get_pending_modal() == "0.1.20"
+
+
+def test_pending_modal_clear(tmp_path, monkeypatch):
+    monkeypatch.setattr(vc, "_cache_path", lambda: tmp_path / "cache.json")
+    monkeypatch.setattr(vc, "__version__", "0.1.13")
+    vc.set_pending_modal("0.1.20")
+    vc.clear_pending_modal()
+    assert vc.get_pending_modal() is None
+
+
+def test_pending_modal_cleared_when_user_caught_up(tmp_path, monkeypatch):
+    # User had pending modal for 0.1.18 but somehow upgraded to 0.1.20
+    # via another route. get_pending_modal must NOT pop a stale modal
+    # for a version we're already past.
+    monkeypatch.setattr(vc, "_cache_path", lambda: tmp_path / "cache.json")
+    monkeypatch.setattr(vc, "__version__", "0.1.13")
+    vc.set_pending_modal("0.1.18")
+    monkeypatch.setattr(vc, "__version__", "0.1.20")
+    assert vc.get_pending_modal() is None
+    # Should also have proactively cleaned the stale flag.
+    monkeypatch.setattr(vc, "__version__", "0.1.13")  # back-step
+    assert vc.get_pending_modal() is None  # confirmed gone
+
+
+def test_pending_modal_preserves_latest_field(tmp_path, monkeypatch):
+    # set_pending_modal must not stomp on the latest/fetched_at
+    # half of the cache file — these are independent pieces of state.
+    monkeypatch.setattr(vc, "_cache_path", lambda: tmp_path / "cache.json")
+    monkeypatch.setattr(vc, "__version__", "0.1.13")
+    vc._save_cache("0.1.20")
+    vc.set_pending_modal("0.1.20")
+    cached = vc._load_cache()
+    assert cached is not None
+    version, _ = cached
+    assert version == "0.1.20"
+    assert vc.get_pending_modal() == "0.1.20"
+
+
+def test_save_cache_preserves_pending_modal(tmp_path, monkeypatch):
+    # The reverse: a fresh _save_cache (e.g. after PyPI refetch) must
+    # not wipe a pending_modal that another code path just set.
+    monkeypatch.setattr(vc, "_cache_path", lambda: tmp_path / "cache.json")
+    monkeypatch.setattr(vc, "__version__", "0.1.13")
+    vc.set_pending_modal("0.1.20")
+    vc._save_cache("0.1.20")
+    assert vc.get_pending_modal() == "0.1.20"
+
+
+def test_clear_pending_modal_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setattr(vc, "_cache_path", lambda: tmp_path / "cache.json")
+    # No file → no-op.
+    vc.clear_pending_modal()
+    # Empty file → no-op.
+    (tmp_path / "cache.json").write_text("{}", encoding="utf-8")
+    vc.clear_pending_modal()
