@@ -82,6 +82,17 @@ def main() -> None:
             "on launch when an update is available."
         ),
     )
+    parser.add_argument(
+        "--skip-claude-check",
+        action="store_true",
+        help=(
+            "Skip the startup probe that warns when Claude Code is "
+            "missing. The probe checks for the `claude` binary on "
+            "PATH and a non-empty ~/.claude/projects/ directory, and "
+            "blocks the main view behind a Continue/Quit modal when "
+            "both signals are absent. Useful for CI / scripted runs."
+        ),
+    )
     args = parser.parse_args()
 
     log = setup_logging(debug=args.debug)
@@ -151,6 +162,7 @@ def main() -> None:
         use_api=use_api,
         has_oauth=has_oauth,
         check_for_update=not args.no_update_check,
+        skip_claude_check=args.skip_claude_check,
     )
 
 
