@@ -21,6 +21,7 @@ guard.
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Installation](#installation)
+  - [Prerequisites](#prerequisites)
   - [uv (recommended)](#uv-recommended)
   - [pipx](#pipx)
   - [pip](#pip)
@@ -80,17 +81,44 @@ guard.
 > supported the same way as POSIX. Please open an issue if you hit
 > platform-specific bugs.
 
+### Prerequisites
+
+You need **Python 3.11 or newer**. Check with `python3 --version`
+(POSIX) or `python --version` (Windows). If you don't have it:
+
+- **Linux**: `apt install python3` / `dnf install python3` / your distro's package manager
+- **macOS**: `brew install python` or grab the installer from [python.org](https://www.python.org/downloads/)
+- **Windows**: `winget install Python.Python.3.12` or download from [python.org](https://www.python.org/downloads/)
+
 ### uv (recommended)
+
+`uv` is the fastest option — installs cc-monitor into an isolated
+virtualenv, sidesteps PEP 668 ("externally-managed-environment") on
+modern Linux, works identically on macOS and Windows.
+
+**Install uv** (one-time):
+
+- **Linux / macOS**:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+- **Windows (PowerShell)**:
+  ```powershell
+  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  ```
+- See [docs.astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/) for other options (Homebrew, MacPorts, etc.).
+
+**Install cc-monitor**:
 
 ```bash
 uv tool install cc-monitor
 ```
 
-`uv tool` creates an isolated environment automatically, sidesteps PEP 668
-("externally-managed-environment") errors on modern Linux, and adds the
-entry-point shim to `~/.local/bin` without touching system Python.
-
 ### pipx
+
+`pipx` is a good alternative if you already use it for other CLI tools.
+
+**Install pipx** (one-time): see [pipx.pypa.io](https://pipx.pypa.io/stable/installation/).
 
 ```bash
 pipx install cc-monitor
@@ -98,12 +126,17 @@ pipx install cc-monitor
 
 ### pip
 
+Last-resort path; prefer `uv` or `pipx` because they isolate the
+install. Plain `pip` may fail on Debian/Ubuntu/Fedora and recent macOS
+homebrew Python (PEP 668 marks the system Python as
+"externally-managed").
+
 ```bash
 pip install --user cc-monitor
 ```
 
-On Debian/Ubuntu/Fedora-based systems with system Python you'll need
-`--user` to bypass PEP 668. Prefer `uv` or `pipx` instead.
+If you hit `error: externally-managed-environment`, switch to `uv` or
+`pipx` above.
 
 ### From source
 
@@ -113,8 +146,12 @@ cd cc-monitor
 uv tool install .
 ```
 
-If `cc-monitor` isn't on PATH after install, add `~/.local/bin` to
-your shell's PATH.
+If `cc-monitor` isn't on PATH after install, run `uv tool dir` to see
+where uv put the shim and add that directory to your shell's PATH.
+Typical locations:
+
+- **Linux / macOS**: `~/.local/bin` (already on PATH for most shells)
+- **Windows**: `%USERPROFILE%\AppData\Roaming\uv\tools\cc-monitor\Scripts`
 
 ## Quick start
 
@@ -123,6 +160,12 @@ Just run:
 ```bash
 cc-monitor
 ```
+
+> **Windows users**: launch from **Windows Terminal** (preinstalled on
+> Windows 11, free in the Microsoft Store on Windows 10), not the
+> classic `cmd.exe`. Textual TUIs need ANSI/VT support that classic
+> cmd doesn't reliably provide — you'd see escape-code garbage
+> instead of the rendered interface.
 
 On first launch it will:
 
@@ -164,6 +207,14 @@ key from the main view.
 | `~/.cache/cc-monitor/exports/` | Timestamped CSV / JSON dumps from Settings → Export. |
 | `~/.cache/cc-monitor/version-check.json` | Cached PyPI version probe (TTL 1h). Auto-invalidates when you upgrade past the cached value. |
 | `~/.cache/cc-monitor/upgrade.log` | Output of the spawned `uv tool upgrade` from the in-app Update modal (POSIX only — Windows opens a visible cmd window instead). |
+
+> **Cross-platform paths**: `~` is your home directory.
+> - **Linux**: `/home/<user>/`
+> - **macOS**: `/Users/<user>/`
+> - **Windows**: `C:\Users\<user>\` (Python's `Path.home()` resolves
+>   `~` to `%USERPROFILE%`, then we use literal `.config\cc-monitor\`
+>   and `.cache\cc-monitor\` subdirectories — non-standard for Windows
+>   but consistent across platforms).
 
 None of the above is committed to your repo.
 
