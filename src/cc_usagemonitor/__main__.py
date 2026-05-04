@@ -72,6 +72,16 @@ def main() -> None:
             "of Settings → Force re-scan."
         ),
     )
+    parser.add_argument(
+        "--no-update-check",
+        action="store_true",
+        help=(
+            "Skip the once-per-24h check against PyPI for a newer "
+            "cc-monitor release. The check normally runs in the "
+            "background, never blocks startup, and just shows a toast "
+            "on launch when an update is available."
+        ),
+    )
     args = parser.parse_args()
 
     log = setup_logging(debug=args.debug)
@@ -140,6 +150,7 @@ def main() -> None:
         auto_limits=auto_limits,
         use_api=use_api,
         has_oauth=has_oauth,
+        check_for_update=not args.no_update_check,
     )
 
 

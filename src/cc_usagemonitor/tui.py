@@ -678,12 +678,12 @@ class UsageMonitorApp(App):
         Binding("f3", "open_claude_resume_last", "Resume last (project)", show=False),
         Binding("l", "open_log", "Open log file"),
         Binding("comma", "open_settings", "Settings"),
-        Binding("ctrl+h", "open_help", "Help"),
-        # Alternative help bindings — `ctrl+h` is intercepted as
-        # backspace by some terminals (notably Windows Terminal), so
-        # `?` and `f1` give portable fallbacks. Hidden from the footer
-        # to keep its width manageable; visible in the help screen.
-        Binding("question_mark", "open_help", "Help", show=False),
+        # `?` is the visible help binding because it works everywhere.
+        # `ctrl+h` is the original muscle memory but gets intercepted
+        # as backspace by some terminals (Windows Terminal in
+        # particular). `f1` rounds it out for keyboards without `?`.
+        Binding("question_mark", "open_help", "Help"),
+        Binding("ctrl+h", "open_help", "Help", show=False),
         Binding("f1", "open_help", "Help", show=False),
         # ctrl+s — open the sort-by-column modal picker. Bare 's' stays
         # bound to 'resume last session', no conflict.
@@ -710,6 +710,7 @@ class UsageMonitorApp(App):
         auto_limits: bool = False,
         use_api: bool = True,
         has_oauth: bool = True,
+        check_for_update: bool = True,
     ):
         super().__init__()
         self.aggregator = aggregator
@@ -721,6 +722,9 @@ class UsageMonitorApp(App):
         # in the BlockPanel local-mode header. Same use_api=False but
         # very different semantics for what to show.
         self.has_oauth = has_oauth
+        # Background PyPI update check. Skipped entirely when False;
+        # otherwise an asyncio task runs once on mount.
+        self._check_for_update = check_for_update
         # Tracks whether the LoadingScreen modal is still up — set to
         # True the moment we dismiss it so subsequent refresh ticks
         # don't try to pop a screen that's no longer at the top of
@@ -879,6 +883,12 @@ class UsageMonitorApp(App):
             self.set_interval(120.0, self._poll_api_usage)
             self.run_worker(self._poll_api_usage_async, exclusive=False)
 
+        # PyPI version check — fires once on launch, swallows all
+        # network failures, shows a one-shot toast if a newer release
+        # is available.
+        if self._check_for_update and bool(cfg.get("check_for_updates", True)):
+            self.run_worker(self._update_check_async, exclusive=False)
+
         # Modal blocking the UI until Tailer's first replay sweep
         # finishes. Pushed last so it sits on top of everything else
         # and only reveals the rendered (but not yet populated) UI
@@ -886,6 +896,22 @@ class UsageMonitorApp(App):
         # _loading_dismissed flag.
         from .loading_screen import LoadingScreen
         self.push_screen(LoadingScreen())
+
+    async def _update_check_async(self) -> None:
+        """One-shot PyPI check; toast on hit, silent on miss/failure."""
+        try:
+            from .version_check import check_for_update
+            latest = await check_for_update()
+        except Exception as e:
+            log.debug("update check task failed: %s", e)
+            return
+        if latest:
+            self.notify(
+                f"cc-monitor {latest} is available. "
+                f"Run `uv tool upgrade cc-monitor` to update.",
+                title="Update available",
+                timeout=10,
+            )
 
     async def _poll_api_usage_async(self) -> None:
         """Initial fetch in a worker — keeps startup non-blocking."""
@@ -985,7 +1011,7 @@ class UsageMonitorApp(App):
         left.update(actions)
         right.update(
             "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-            "[b]ctrl+s[/b] sort   [b]ctrl+h[/b] help   "
+            "[b]ctrl+s[/b] sort   [b]?[/b] help   "
             "[b],[/b] settings   [b]l[/b] log   [b]q[/b] quit"
         )
 
@@ -1380,6 +1406,23 @@ class UsageMonitorApp(App):
             table.add_row(*cells, key=key)
             cache[key] = cells
 
+        # Re-apply user's column-header sort if any. Without this, our
+        # default sort (by last_seen desc, etc.) would clobber the
+        # user's click on the next refresh tick. Sort runs BEFORE the
+        # cursor restore because DataTable.sort resets cursor to (0,0)
+        # internally — fighting it after the fact would just bounce the
+        # cursor on every refresh.
+        sort_pref = self._user_sort.get(table_id)
+        if sort_pref is not None:
+            col_key, reverse = sort_pref
+            try:
+                table.sort(
+                    col_key, reverse=reverse,
+                    key=_sort_key_factory(reverse),
+                )
+            except Exception:
+                pass
+
         if saved_key is not None and saved_key in desired_cells:
             try:
                 new_idx = desired_order.index(saved_key)
@@ -1392,20 +1435,6 @@ class UsageMonitorApp(App):
             # coordinate happened to be.
             try:
                 table.move_cursor(row=0, column=0)
-            except Exception:
-                pass
-
-        # Re-apply user's column-header sort if any. Without this, our
-        # default sort (by last_seen desc, etc.) would clobber the
-        # user's click on the next refresh tick.
-        sort_pref = self._user_sort.get(table_id)
-        if sort_pref is not None:
-            col_key, reverse = sort_pref
-            try:
-                table.sort(
-                    col_key, reverse=reverse,
-                    key=_sort_key_factory(reverse),
-                )
             except Exception:
                 pass
 
@@ -2344,10 +2373,12 @@ def run_app(
     auto_limits: bool = False,
     use_api: bool = True,
     has_oauth: bool = True,
+    check_for_update: bool = True,
 ) -> None:
     UsageMonitorApp(
         aggregator, tailer, queue,
         auto_limits=auto_limits,
         use_api=use_api,
         has_oauth=has_oauth,
+        check_for_update=check_for_update,
     ).run()
