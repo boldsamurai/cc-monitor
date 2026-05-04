@@ -139,6 +139,7 @@ Press `?` (or `ctrl+h`) at any time for the keyboard cheatsheet.
 | `--reinstall-hook` | — | Re-run the hook installer and exit without launching the TUI. Idempotent — safe in provisioning scripts. |
 | `--rescan` | — | Discard the cached state snapshot before launch so the next run replays every JSONL from scratch. CLI equivalent of Settings → Force re-scan. |
 | `--no-update-check` | — | Skip the once-per-24h check against PyPI for a newer cc-monitor release. The check normally runs in the background, never blocks startup, and only shows a toast on launch when an update is available. |
+| `--skip-claude-check` | — | Skip the startup probe that warns when Claude Code is missing. The probe checks for the `claude` binary on PATH and a non-empty `~/.claude/projects/`, and blocks the main view behind a Continue/Quit modal when both signals are absent. Useful for CI / scripted runs. |
 
 Everything else (theme, date format, default tab, refresh interval, filter
 persistence, confirms) is editable from the in-app Settings screen — `,`

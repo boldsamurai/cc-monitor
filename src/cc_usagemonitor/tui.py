@@ -711,6 +711,7 @@ class UsageMonitorApp(App):
         use_api: bool = True,
         has_oauth: bool = True,
         check_for_update: bool = True,
+        skip_claude_check: bool = False,
     ):
         super().__init__()
         self.aggregator = aggregator
@@ -725,6 +726,10 @@ class UsageMonitorApp(App):
         # Background PyPI update check. Skipped entirely when False;
         # otherwise an asyncio task runs once on mount.
         self._check_for_update = check_for_update
+        # Whether to suppress the "Claude Code not detected" startup
+        # warning. CLI flag bypass mainly for CI / scripts where the
+        # modal would block forever.
+        self._skip_claude_check = skip_claude_check
         # Tracks whether the LoadingScreen modal is still up — set to
         # True the moment we dismiss it so subsequent refresh ticks
         # don't try to pop a screen that's no longer at the top of
@@ -896,6 +901,50 @@ class UsageMonitorApp(App):
         # _loading_dismissed flag.
         from .loading_screen import LoadingScreen
         self.push_screen(LoadingScreen())
+
+        # Soft warning when Claude Code isn't installed: stack the modal
+        # ON TOP of LoadingScreen so the user sees it first. If they
+        # quit, we exit cleanly; if they continue, both modals dismiss
+        # and the normal data-loading flow resumes underneath.
+        if not self._skip_claude_check:
+            from .claude_detection import detect_claude_install
+            status = detect_claude_install()
+            if status.is_missing:
+                self._show_claude_missing_modal(status)
+
+    def _show_claude_missing_modal(self, status) -> None:
+        """Push a Continue/Quit modal explaining what we couldn't find.
+
+        Body adapts to whether the user has data (likely an archive
+        scenario — viewing copied JSONLs) or nothing at all (likely a
+        pre-install state). Keeping the wording specific helps the user
+        decide whether Continue makes sense for them."""
+        bullets = []
+        if not status.binary_in_path:
+            bullets.append("• `claude` binary is not in PATH")
+        if not status.has_project_data:
+            bullets.append("• ~/.claude/projects/ is missing or empty")
+        body = (
+            "cc-monitor couldn't detect a Claude Code install:\n\n"
+            + "\n".join(bullets)
+            + "\n\nInstall it from "
+            "https://docs.claude.com/claude-code\n\n"
+            "Continue anyway (e.g. you copied data from another "
+            "machine for analysis)?"
+        )
+        from .confirm_screen import ConfirmScreen
+        self.push_screen(
+            ConfirmScreen(body, yes_label="Continue", no_label="Quit"),
+            self._handle_claude_missing_choice,
+        )
+
+    def _handle_claude_missing_choice(self, continue_anyway: bool | None) -> None:
+        """Callback for the Claude-missing modal. None happens if the
+        screen gets dismissed without a button press (esc maps to
+        dismiss_no in ConfirmScreen → False, so this is mostly defensive)."""
+        if not continue_anyway:
+            log.info("Claude Code missing; user chose Quit")
+            self.exit()
 
     async def _update_check_async(self) -> None:
         """One-shot PyPI check; toast on hit, silent on miss/failure."""
@@ -2407,6 +2456,7 @@ def run_app(
     use_api: bool = True,
     has_oauth: bool = True,
     check_for_update: bool = True,
+    skip_claude_check: bool = False,
 ) -> None:
     UsageMonitorApp(
         aggregator, tailer, queue,
@@ -2414,4 +2464,5 @@ def run_app(
         use_api=use_api,
         has_oauth=has_oauth,
         check_for_update=check_for_update,
+        skip_claude_check=skip_claude_check,
     ).run()
