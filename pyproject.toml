@@ -1,6 +1,6 @@
 [project]
 name = "cc-monitor"
-version = "0.1.10"
+version = "0.1.11"
 description = "Real-time token usage and cost monitor for Claude Code sessions, in your terminal."
 readme = "README.md"
 license = "MIT"
@@ -26,6 +26,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
