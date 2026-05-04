@@ -1,6 +1,6 @@
-"""Centralised file logging for cc-usagemonitor.
+"""Centralised file logging for cc-monitor.
 
-Logs land in ~/.cache/cc-usagemonitor/usagemonitor.log with a 10MB
+Logs land in ~/.cache/cc-monitor/usagemonitor.log with a 10MB
 rotating cap (one .1 backup, so disk usage tops out at ~20MB total).
 Modules grab named child loggers via `get_logger(__name__)` and the
 configuration in setup_logging() applies to all descendants.
@@ -11,7 +11,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-LOG_DIR = Path.home() / ".cache" / "cc-usagemonitor"
+LOG_DIR = Path.home() / ".cache" / "cc-monitor"
 LOG_FILE = LOG_DIR / "usagemonitor.log"
 ROOT_LOGGER_NAME = "cc_usagemonitor"
 

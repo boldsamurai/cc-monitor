@@ -18,7 +18,7 @@ _SECTIONS: list[tuple[str, list[tuple[str, str]]]] = [
     ("Navigation", [
         ("Tab / shift+Tab", "Move focus between widgets"),
         ("esc", "Close current screen / cancel modal"),
-        ("q", "Quit cc-usagemonitor (with confirm)"),
+        ("q", "Quit cc-monitor (with confirm)"),
         ("ctrl+h", "This help"),
     ]),
     ("Main view", [
