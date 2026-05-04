@@ -123,7 +123,7 @@ def _parse_credentials_blob(blob: str) -> Credentials | None:
 def _read_from_file() -> Credentials | None:
     path = _credentials_file()
     try:
-        return _parse_credentials_blob(path.read_text())
+        return _parse_credentials_blob(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 
@@ -380,7 +380,7 @@ def _cache_path() -> Path:
 def _read_cache() -> UsageData | None:
     path = _cache_path()
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 
@@ -451,7 +451,7 @@ def _write_cache(data: UsageData) -> None:
                 "utilization": data.seven_day.utilization,
                 "resets_at": data.seven_day.resets_at.isoformat(),
             }
-        path.write_text(json.dumps(payload))
+        path.write_text(json.dumps(payload), encoding="utf-8")
     except OSError:
         pass
 
@@ -483,7 +483,7 @@ def get_usage(force_refresh: bool = False) -> UsageData | None:
     # it has 'expired' (TTL-wise) just to learn the streak length.
     prev_failures = 0
     try:
-        raw = json.loads(_cache_path().read_text())
+        raw = json.loads(_cache_path().read_text(encoding="utf-8"))
         prev_failures = int(raw.get("failure_count", 0))
     except (OSError, ValueError):
         pass

@@ -671,8 +671,8 @@ class Aggregator:
         if not path.is_file():
             return empty
         try:
-            text = path.read_text()
-        except OSError:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
             return empty
 
         # All three derived dicts come from one walk over the JSONL.
@@ -793,8 +793,8 @@ class Aggregator:
         turns: list[tuple[datetime, UsageRecord, float]] = []
         for f in files_to_read:
             try:
-                text = f.read_text()
-            except OSError:
+                text = f.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
                 continue
             for line in text.splitlines():
                 rec = parse_session_line(line, sess.project_slug)

@@ -65,7 +65,7 @@ def main() -> int:
 
     try:
         EVENT_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with EVENT_LOG.open("a") as f:
+        with EVENT_LOG.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")
     except OSError:
         pass
