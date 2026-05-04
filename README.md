@@ -75,11 +75,11 @@ guard.
 
 ## Installation
 
-> **Supported platforms:** Linux, macOS, and Windows. Windows works in
-> archive-viewer mode without Claude Code installed (just point cc-monitor
-> at copied `~/.claude/projects/` data); native Claude Code on Windows is
-> supported the same way as POSIX. Please open an issue if you hit
-> platform-specific bugs.
+> **Supported platforms:** Linux, macOS, and Windows. cc-monitor
+> works the same way on all three — including
+> [archive-viewer mode](#features) on machines without Claude Code
+> installed (just point it at copied `~/.claude/projects/` data).
+> Please open an issue if you hit platform-specific bugs.
 
 ### Prerequisites
 
