@@ -960,7 +960,7 @@ class UsageMonitorApp(App):
             self.exit()
 
     async def _update_check_async(self) -> None:
-        """One-shot PyPI check; toast on hit, silent on miss/failure."""
+        """One-shot PyPI check; modal on hit, silent on miss/failure."""
         try:
             from .version_check import check_for_update
             latest = await check_for_update()
@@ -968,12 +968,115 @@ class UsageMonitorApp(App):
             log.debug("update check task failed: %s", e)
             return
         if latest:
+            # Stage the modal via call_later so the (potentially
+            # expensive) HTTP fetch doesn't block the screen-push call
+            # path on the worker thread. By the time call_later fires
+            # we're back on the Textual event loop.
+            self.call_later(self._show_update_modal, latest)
+
+    def _show_update_modal(self, latest: str) -> None:
+        """Push the Update? modal. If no installer is on PATH, fall
+        back to the original passive toast (we'd have nothing to spawn
+        on Yes anyway)."""
+        from .version_check import detect_installer
+        from . import __version__
+        installer = detect_installer()
+        if installer is None:
             self.notify(
                 f"cc-monitor {latest} is available. "
-                f"Run `uv tool upgrade cc-monitor` to update.",
+                f"Reinstall via your package manager to update.",
                 title="Update available",
                 timeout=10,
             )
+            return
+        name, cmd = installer
+        body = (
+            f"cc-monitor {latest} is available "
+            f"(you're on {__version__}).\n\n"
+            f"Update now? cc-monitor will close and run:\n"
+            f"  {' '.join(cmd)}\n\n"
+            f"in a new window/process. Re-launch cc-monitor manually "
+            f"once the upgrade finishes."
+        )
+        from .confirm_screen import ConfirmScreen
+        self.push_screen(
+            ConfirmScreen(body, yes_label="Update", no_label="Not now"),
+            lambda confirmed: self._handle_update_choice(confirmed, cmd),
+        )
+
+    def _handle_update_choice(
+        self, confirmed: bool | None, cmd: list[str],
+    ) -> None:
+        """Modal callback: if user picked Update, spawn the detached
+        upgrade and exit cleanly; the message is shown after Textual
+        tears down so the user reads it on the bare shell."""
+        if not confirmed:
+            return
+        msg = self._spawn_upgrade(cmd)
+        log.info("user accepted auto-upgrade; spawned: %s", " ".join(cmd))
+        self.exit(message=msg)
+
+    def _spawn_upgrade(self, cmd: list[str]) -> str:
+        """Detach the upgrade command from this process so it survives
+        cc-monitor's exit. Returns a status message for the user.
+
+        The command is wrapped in a small delay so Windows has time to
+        release the .exe lock before uv tool tries to overwrite it
+        (~3s is plenty in practice). On POSIX we don't need the delay
+        for correctness but we keep it for parity — it also gives the
+        user time to see the 'Upgrade running' message before output
+        appears."""
+        import sys
+        import shlex
+        import subprocess
+
+        if sys.platform == "win32":
+            # New visible cmd window: timeout pauses for parent exit,
+            # then runs upgrade, then pauses so the window stays open
+            # for the user to read the result before pressing a key
+            # to dismiss it.
+            cmd_str = subprocess.list2cmdline(cmd)
+            full = (
+                f'start "cc-monitor upgrade" cmd /k '
+                f'"timeout /t 3 /nobreak > nul && {cmd_str} && pause"'
+            )
+            try:
+                subprocess.Popen(full, shell=True)
+                return (
+                    "Upgrade started in a new window. "
+                    "Re-launch cc-monitor once it completes."
+                )
+            except Exception as e:
+                log.warning("upgrade spawn failed (windows): %s", e)
+                return f"Upgrade failed to start: {e}"
+
+        # POSIX: detach via setsid; output goes to a log file the user
+        # can tail. We can't reliably pop a new terminal in headless
+        # contexts (SSH, tmux without DISPLAY), so the log file is the
+        # most universal way to surface output.
+        from pathlib import Path
+        log_path = Path.home() / ".cache" / "cc-monitor" / "upgrade.log"
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            cmd_str = " ".join(shlex.quote(c) for c in cmd)
+            shell_cmd = f"sleep 2 && {cmd_str}"
+            fh = open(log_path, "w")  # closed by child after exec
+            subprocess.Popen(
+                ["sh", "-c", shell_cmd],
+                stdout=fh,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            fh.close()
+            return (
+                f"Upgrade running in background. Tail progress with:\n"
+                f"  tail -f {log_path}\n"
+                f"Re-launch cc-monitor once it completes."
+            )
+        except Exception as e:
+            log.warning("upgrade spawn failed (posix): %s", e)
+            return f"Upgrade failed to start: {e}"
 
     async def _poll_api_usage_async(self) -> None:
         """Initial fetch in a worker — keeps startup non-blocking."""

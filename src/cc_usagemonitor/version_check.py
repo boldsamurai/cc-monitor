@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 import urllib.request
 from pathlib import Path
@@ -35,6 +36,33 @@ log = get_logger(__name__)
 
 PYPI_URL = "https://pypi.org/pypi/cc-monitor/json"
 CACHE_TTL_SECONDS = 24 * 60 * 60  # 1 day
+
+# Installer probe order — uv first because that's what we recommend in
+# the README and it's the most common path forward; pipx second for
+# users who prefer it; pip last as a "we tried" fallback (often gets
+# blocked by PEP 668 on managed Python distributions, but worth
+# offering as a hint rather than refusing the upgrade entirely).
+_INSTALLER_CANDIDATES: tuple[tuple[str, list[str]], ...] = (
+    ("uv", ["uv", "tool", "upgrade", "cc-monitor"]),
+    ("pipx", ["pipx", "upgrade", "cc-monitor"]),
+    ("pip", ["pip", "install", "--upgrade", "cc-monitor"]),
+)
+
+
+def detect_installer() -> tuple[str, list[str]] | None:
+    """Pick the first installer that's actually on PATH and return its
+    upgrade command. Returns None when no candidate is available — the
+    caller falls back to passively telling the user to reinstall.
+
+    Detection is heuristic, not source-of-truth: a user with both `uv`
+    and `pipx` on PATH might have installed via pipx but get an `uv tool
+    upgrade` suggestion. Best-effort wins here — running `uv tool
+    upgrade <pkg>` when the package wasn't installed via uv just errors
+    out, which is fine and visible to the user."""
+    for name, cmd in _INSTALLER_CANDIDATES:
+        if shutil.which(name):
+            return (name, cmd)
+    return None
 
 
 def _cache_path() -> Path:

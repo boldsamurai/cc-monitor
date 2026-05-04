@@ -75,3 +75,44 @@ def test_load_cache_fresh_round_trip(tmp_path, monkeypatch):
     version, fetched = cached
     assert version == "0.2.0"
     assert time.time() - fetched < 5  # written just now
+
+
+def test_detect_installer_returns_none_when_nothing_on_path(monkeypatch):
+    monkeypatch.setattr(vc.shutil, "which", lambda name: None)
+    assert vc.detect_installer() is None
+
+
+def test_detect_installer_prefers_uv(monkeypatch):
+    monkeypatch.setattr(
+        vc.shutil, "which",
+        lambda name: f"/usr/bin/{name}" if name in ("uv", "pipx", "pip") else None,
+    )
+    result = vc.detect_installer()
+    assert result is not None
+    name, cmd = result
+    assert name == "uv"
+    assert cmd == ["uv", "tool", "upgrade", "cc-monitor"]
+
+
+def test_detect_installer_falls_back_to_pipx(monkeypatch):
+    monkeypatch.setattr(
+        vc.shutil, "which",
+        lambda name: f"/usr/bin/{name}" if name in ("pipx", "pip") else None,
+    )
+    result = vc.detect_installer()
+    assert result is not None
+    name, cmd = result
+    assert name == "pipx"
+    assert cmd == ["pipx", "upgrade", "cc-monitor"]
+
+
+def test_detect_installer_falls_back_to_pip(monkeypatch):
+    monkeypatch.setattr(
+        vc.shutil, "which",
+        lambda name: "/usr/bin/pip" if name == "pip" else None,
+    )
+    result = vc.detect_installer()
+    assert result is not None
+    name, cmd = result
+    assert name == "pip"
+    assert cmd == ["pip", "install", "--upgrade", "cc-monitor"]
