@@ -138,6 +138,7 @@ Press `?` (or `ctrl+h`) at any time for the keyboard cheatsheet.
 | `--debug` | off | DEBUG-level logging to `~/.cache/cc-monitor/usagemonitor.log` (rotates at 10 MB). |
 | `--reinstall-hook` | — | Re-run the hook installer and exit without launching the TUI. Idempotent — safe in provisioning scripts. |
 | `--rescan` | — | Discard the cached state snapshot before launch so the next run replays every JSONL from scratch. CLI equivalent of Settings → Force re-scan. |
+| `--no-update-check` | — | Skip the once-per-24h check against PyPI for a newer cc-monitor release. The check normally runs in the background, never blocks startup, and only shows a toast on launch when an update is available. |
 
 Everything else (theme, date format, default tab, refresh interval, filter
 persistence, confirms) is editable from the in-app Settings screen — `,`
