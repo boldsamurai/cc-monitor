@@ -300,6 +300,11 @@ class BlockPanel(Static):
     # API-key users — they don't have plan-based 5h blocks at all, so
     # the local view collapses to a 'pay-as-you-go' header instead.
     has_plan: reactive[bool] = reactive(True, layout=True)
+    # True when Claude Code is NOT installed on this machine (no claude
+    # binary on PATH) — i.e. cc-monitor is running as an archive viewer
+    # over copied JSONLs. Implies has_plan=False but the converse isn't
+    # true (an API-key user with claude installed isn't archive_mode).
+    archive_mode: reactive[bool] = reactive(False, layout=True)
 
     BAR_W = 30
 
@@ -442,18 +447,26 @@ class BlockPanel(Static):
         return line
 
     def _render_local_only(self, info: BlockInfo | None) -> RenderableType:
-        """Local-only block view (no /api/oauth/usage data). Two
-        flavors decided by has_plan:
+        """Local-only block view (no /api/oauth/usage data). Three
+        flavors:
           - has_plan=True: OAuth user explicitly opted out (--no-api).
             Renders the inferred 5h block with start/end times and a
             cost-only progress bar.
-          - has_plan=False: API-key user. Pay-as-you-go billing has no
-            5h block concept at all, so we collapse to just the raw
-            stats line under a 'Pay-as-you-go' header.
+          - has_plan=False, archive_mode=True: Claude Code isn't
+            installed at all — we're displaying copied JSONLs. Burn
+            rate / projection are meaningless (implies live activity)
+            so we collapse to a totals-only header.
+          - has_plan=False, archive_mode=False: API-key user with
+            Claude Code installed. Pay-as-you-go billing has no 5h
+            block concept; show raw stats + projection.
         """
         if info is None:
-            header = ("⏱  Local 5h block" if self.has_plan
-                      else "💳  Pay-as-you-go")
+            if self.archive_mode:
+                header = "📂  Archive viewer"
+            elif self.has_plan:
+                header = "⏱  Local 5h block"
+            else:
+                header = "💳  Pay-as-you-go"
             return Group(
                 Text(header, style="bold"),
                 Text(
@@ -468,6 +481,24 @@ class BlockPanel(Static):
             f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
             f"${info.burn_cost_per_min:,.2f}/min"
         )
+
+        if self.archive_mode:
+            # Archive viewer — copied JSONLs, no live Claude Code. Burn
+            # rate and projection imply ongoing activity, which is
+            # misleading when the data might be days old. Show only
+            # the totals from the most recent inferred 5h block.
+            archive_stats = Text.from_markup(
+                f"[b]Local[/b]   tokens={_human(sums.total_tokens)}  ·  "
+                f"cost=${sums.cost_usd:,.2f}"
+            )
+            return Group(
+                Text.from_markup(
+                    "[b]📂  Archive viewer[/b]  "
+                    "[dim](Claude Code not installed — "
+                    "showing data from JSONLs)[/dim]"
+                ),
+                archive_stats,
+            )
 
         if not self.has_plan:
             # API-key (pay-as-you-go) — no plan limits, no 5h block in
@@ -730,6 +761,11 @@ class UsageMonitorApp(App):
         # warning. CLI flag bypass mainly for CI / scripts where the
         # modal would block forever.
         self._skip_claude_check = skip_claude_check
+        # Set in on_mount after running the detection probe. Drives the
+        # BlockPanel's "Archive viewer" header — when claude isn't
+        # installed, "Pay-as-you-go" is misleading because the user
+        # has no API relationship at all, just copied data.
+        self._archive_mode = False
         # Tracks whether the LoadingScreen modal is still up — set to
         # True the moment we dismiss it so subsequent refresh ticks
         # don't try to pop a screen that's no longer at the top of
@@ -902,15 +938,25 @@ class UsageMonitorApp(App):
         from .loading_screen import LoadingScreen
         self.push_screen(LoadingScreen())
 
-        # Soft warning when Claude Code isn't installed: stack the modal
-        # ON TOP of LoadingScreen so the user sees it first. If they
-        # quit, we exit cleanly; if they continue, both modals dismiss
-        # and the normal data-loading flow resumes underneath.
-        if not self._skip_claude_check:
-            from .claude_detection import detect_claude_install
-            status = detect_claude_install()
-            if status.is_missing:
-                self._show_claude_missing_modal(status)
+        # Run the Claude Code presence probe regardless of whether the
+        # warning modal is enabled — we still need archive_mode set
+        # correctly for the BlockPanel's header. --skip-claude-check
+        # only suppresses the modal, not the detection itself.
+        from .claude_detection import detect_claude_install
+        status = detect_claude_install()
+        # archive_mode = "no claude binary AND not authenticated".
+        # has_oauth implies a working install (credentials come from
+        # Claude Code), so we don't need to flip into archive mode in
+        # that case even if the binary check were to misfire.
+        self._archive_mode = (
+            not status.binary_in_path and not self.has_oauth
+        )
+        if not self._skip_claude_check and status.is_missing:
+            # Soft warning when Claude Code isn't installed: stack the
+            # modal ON TOP of LoadingScreen so the user sees it first.
+            # If they quit, we exit cleanly; if they continue, both
+            # modals dismiss and normal data loading resumes.
+            self._show_claude_missing_modal(status)
 
     def _show_claude_missing_modal(self, status) -> None:
         """Push a Continue/Quit modal explaining what we couldn't find.
@@ -1326,6 +1372,7 @@ class UsageMonitorApp(App):
         # cheap to wire here in case we later allow live toggling).
         block_panel.api_enabled = self.use_api
         block_panel.has_plan = self.has_oauth
+        block_panel.archive_mode = self._archive_mode
         block_panel.refresh()
         self._check_block_thresholds(block_panel.info, block_panel.api_usage)
 
