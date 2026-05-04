@@ -206,7 +206,7 @@ key from the main view.
 | `~/.cache/cc-monitor/usagemonitor.log` | Rolling log file (10 MB cap). |
 | `~/.cache/cc-monitor/exports/` | Timestamped CSV / JSON dumps from Settings → Export. |
 | `~/.cache/cc-monitor/version-check.json` | Cached PyPI version probe (TTL 1h). Auto-invalidates when you upgrade past the cached value. |
-| `~/.cache/cc-monitor/upgrade.log` | Output of the spawned `uv tool upgrade` from the in-app Update modal (POSIX only — Windows opens a visible cmd window instead). |
+| `~/.cache/cc-monitor/upgrade.log` | Reserved for legacy upgrade output. As of 0.1.18 the in-app Update modal runs `uv tool upgrade` blockingly in your terminal on POSIX and in a separate cmd window on Windows; nothing is written here unless an older version generated it. |
 
 > **Cross-platform paths**: `~` is your home directory.
 > - **Linux**: `/home/<user>/`

@@ -766,6 +766,14 @@ class UsageMonitorApp(App):
         # installed, "Pay-as-you-go" is misleading because the user
         # has no API relationship at all, just copied data.
         self._archive_mode = False
+        # Set by the Update? modal when the user accepts. run_app reads
+        # it after app.run() returns and dispatches the actual upgrade
+        # AFTER Textual has fully torn down — that way the user sees
+        # uv's live output in their bare shell instead of having it
+        # fight Textual for the terminal, and the .exe lock that
+        # Windows would otherwise impose is gone before uv tries to
+        # overwrite the binary.
+        self._pending_upgrade_cmd: list[str] | None = None
         # Tracks whether the LoadingScreen modal is still up — set to
         # True the moment we dismiss it so subsequent refresh ticks
         # don't try to pop a screen that's no longer at the top of
@@ -1100,76 +1108,22 @@ class UsageMonitorApp(App):
     def _handle_update_choice(
         self, confirmed: bool | None, cmd: list[str],
     ) -> None:
-        """Modal callback: if user picked Update, spawn the detached
-        upgrade and exit cleanly; the message is shown after Textual
-        tears down so the user reads it on the bare shell."""
+        """Modal callback: if user picked Update, stash the upgrade
+        command for run_app to execute AFTER Textual tears down. We
+        deliberately don't spawn here because:
+          - POSIX: blocking subprocess in run_app gives the user uv's
+            live output in their bare shell, with prompt return as
+            the natural "upgrade done" signal.
+          - Windows: spawning before exit would briefly hold the .exe
+            lock that uv needs to overwrite; running after Python
+            exits sidesteps that entirely.
+        """
         if not confirmed:
             return
-        msg = self._spawn_upgrade(cmd)
-        log.info("user accepted auto-upgrade; spawned: %s", " ".join(cmd))
-        self.exit(message=msg)
-
-    def _spawn_upgrade(self, cmd: list[str]) -> str:
-        """Detach the upgrade command from this process so it survives
-        cc-monitor's exit. Returns a status message for the user.
-
-        The command is wrapped in a small delay so Windows has time to
-        release the .exe lock before uv tool tries to overwrite it
-        (~3s is plenty in practice). On POSIX we don't need the delay
-        for correctness but we keep it for parity — it also gives the
-        user time to see the 'Upgrade running' message before output
-        appears."""
-        import sys
-        import shlex
-        import subprocess
-
-        if sys.platform == "win32":
-            # New visible cmd window: timeout pauses for parent exit,
-            # then runs upgrade, then pauses so the window stays open
-            # for the user to read the result before pressing a key
-            # to dismiss it.
-            cmd_str = subprocess.list2cmdline(cmd)
-            full = (
-                f'start "cc-monitor upgrade" cmd /k '
-                f'"timeout /t 3 /nobreak > nul && {cmd_str} && pause"'
-            )
-            try:
-                subprocess.Popen(full, shell=True)
-                return (
-                    "Upgrade started in a new window. "
-                    "Re-launch cc-monitor once it completes."
-                )
-            except Exception as e:
-                log.warning("upgrade spawn failed (windows): %s", e)
-                return f"Upgrade failed to start: {e}"
-
-        # POSIX: detach via setsid; output goes to a log file the user
-        # can tail. We can't reliably pop a new terminal in headless
-        # contexts (SSH, tmux without DISPLAY), so the log file is the
-        # most universal way to surface output.
-        from pathlib import Path
-        log_path = Path.home() / ".cache" / "cc-monitor" / "upgrade.log"
-        try:
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            cmd_str = " ".join(shlex.quote(c) for c in cmd)
-            shell_cmd = f"sleep 2 && {cmd_str}"
-            fh = open(log_path, "w")  # closed by child after exec
-            subprocess.Popen(
-                ["sh", "-c", shell_cmd],
-                stdout=fh,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-            fh.close()
-            return (
-                f"Upgrade running in background. Tail progress with:\n"
-                f"  tail -f {log_path}\n"
-                f"Re-launch cc-monitor once it completes."
-            )
-        except Exception as e:
-            log.warning("upgrade spawn failed (posix): %s", e)
-            return f"Upgrade failed to start: {e}"
+        log.info("user accepted auto-upgrade; deferring to post-exit: %s",
+                 " ".join(cmd))
+        self._pending_upgrade_cmd = cmd
+        self.exit()
 
     async def _poll_api_usage_async(self) -> None:
         """Initial fetch in a worker — keeps startup non-blocking."""
@@ -2668,11 +2622,84 @@ def run_app(
     check_for_update: bool = True,
     skip_claude_check: bool = False,
 ) -> None:
-    UsageMonitorApp(
+    app = UsageMonitorApp(
         aggregator, tailer, queue,
         auto_limits=auto_limits,
         use_api=use_api,
         has_oauth=has_oauth,
         check_for_update=check_for_update,
         skip_claude_check=skip_claude_check,
-    ).run()
+    )
+    app.run()
+    # Post-teardown: if the user accepted the in-app Update? modal,
+    # cc-monitor stashed the upgrade command on the app instance.
+    # Now that Textual is gone we can dispatch it on the bare shell.
+    if app._pending_upgrade_cmd is not None:
+        _run_pending_upgrade(app._pending_upgrade_cmd)
+
+
+def _run_pending_upgrade(cmd: list[str]) -> None:
+    """Execute the upgrade command after Textual has torn down.
+
+    POSIX: run blocking in the same terminal so the user sees uv's
+    progress output live and the prompt only returns when the upgrade
+    actually completes — no guessing whether it's still running. Linux
+    permits overwriting a running binary so there's no need to delay
+    or spawn a new shell.
+
+    Windows: detach into a new visible cmd window. Windows holds an
+    exclusive lock on a running .exe, so we still need to delay (3s
+    via `timeout /t`) to give the parent process room to fully die
+    before uv tries to overwrite the binaries. The new window stays
+    open after the upgrade finishes (`pause`) so the user can read
+    the result.
+    """
+    import sys
+    import subprocess
+
+    if sys.platform == "win32":
+        cmd_str = subprocess.list2cmdline(cmd)
+        full = (
+            f'start "cc-monitor upgrade" cmd /k '
+            f'"timeout /t 3 /nobreak > nul && {cmd_str} && pause"'
+        )
+        try:
+            subprocess.Popen(full, shell=True)
+            print(
+                "\nUpgrade started in a new window. "
+                "Re-launch cc-monitor once it completes."
+            )
+        except Exception as e:
+            log.warning("upgrade spawn failed (windows): %s", e)
+            print(f"\nUpgrade failed to start: {e}", file=sys.stderr)
+        return
+
+    # POSIX path: block until uv tool upgrade returns.
+    print(f"\n→ Running: {' '.join(cmd)}\n")
+    try:
+        result = subprocess.run(cmd, check=False)
+    except FileNotFoundError:
+        # The installer probe found uv/pipx/pip on PATH at modal-time;
+        # disappearing between then and now is implausible but possible
+        # (e.g. user's shell PATH is dynamic). Surface a clear error
+        # rather than a Python traceback.
+        print(
+            f"\n✗ {cmd[0]!r} not found on PATH. Run the upgrade manually:\n"
+            f"  {' '.join(cmd)}",
+            file=sys.stderr,
+        )
+        return
+    except KeyboardInterrupt:
+        print("\nUpgrade aborted.", file=sys.stderr)
+        return
+
+    if result.returncode == 0:
+        print(
+            "\n✓ Upgrade complete. Run `cc-monitor` to launch the new version."
+        )
+    else:
+        print(
+            f"\n✗ Upgrade failed with exit code {result.returncode}. "
+            f"Run `{' '.join(cmd)}` manually to see what went wrong.",
+            file=sys.stderr,
+        )
