@@ -679,6 +679,12 @@ class UsageMonitorApp(App):
         Binding("l", "open_log", "Open log file"),
         Binding("comma", "open_settings", "Settings"),
         Binding("ctrl+h", "open_help", "Help"),
+        # Alternative help bindings — `ctrl+h` is intercepted as
+        # backspace by some terminals (notably Windows Terminal), so
+        # `?` and `f1` give portable fallbacks. Hidden from the footer
+        # to keep its width manageable; visible in the help screen.
+        Binding("question_mark", "open_help", "Help", show=False),
+        Binding("f1", "open_help", "Help", show=False),
         # ctrl+s — open the sort-by-column modal picker. Bare 's' stays
         # bound to 'resume last session', no conflict.
         Binding("ctrl+s", "open_sort_picker", "Sort by column"),
@@ -2107,17 +2113,21 @@ class UsageMonitorApp(App):
     def action_open_log(self) -> None:
         """Spawn a new terminal tailing the log in real time.
 
-        'less +F' behaves like 'tail -f' (auto-scrolls as new entries
-        arrive) but lets the user press Ctrl-C to switch to normal less
-        mode for scrollback / search. Fallback to the default text
-        editor if no terminal emulator is available."""
-        ok, msg = open_terminal_with(
-            str(LOG_DIR), ["less", "+F", str(LOG_FILE)]
-        )
-        if ok:
-            self.notify(f"Tailing log in {msg.split()[-1]}", timeout=2)
-            return
-        # Couldn't open a terminal — fall back to xdg-open / default app.
+        On POSIX `less +F` behaves like `tail -f` (auto-scrolls, Ctrl-C
+        flips to scrollback). Windows has no `less` by default, so we
+        skip the live-tail attempt and open the log with the default
+        text editor — the user can refresh manually."""
+        import sys
+        if sys.platform != "win32":
+            ok, msg = open_terminal_with(
+                str(LOG_DIR), ["less", "+F", str(LOG_FILE)]
+            )
+            if ok:
+                self.notify(f"Tailing log in {msg.split()[-1]}", timeout=2)
+                return
+        # Windows or no terminal emulator — open the file in the default
+        # editor. Loses live tailing, but the user can re-open after a
+        # refresh tick.
         ok, fallback_msg = open_file(LOG_FILE)
         self.notify(
             fallback_msg, severity="information" if ok else "warning"
