@@ -42,7 +42,7 @@ class PricingTable:
         self.reload()
 
     def reload(self) -> None:
-        data = json.loads(self.path.read_text())
+        data = json.loads(self.path.read_text(encoding="utf-8"))
         models = data.get("models", {})
         self._models = {
             name: ModelPrice(**price)
