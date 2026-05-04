@@ -2189,26 +2189,43 @@ class UsageMonitorApp(App):
         self.push_screen(HelpScreen())
 
     def action_open_claude_resume_last(self) -> None:
-        """Projects tab only — resume the most recent session of the
-        cursor project by id (not the interactive picker)."""
-        if self._active_tab() != "projects":
+        """Resume a session in a new terminal.
+
+        Sessions tab → resume the session under the cursor.
+        Projects tab → resume the most recent session of the cursor
+        project (non-interactive: uses the recorded session id).
+        Other tabs → no-op.
+        """
+        active = self._active_tab()
+        if active == "sessions":
+            sid = self._cursor_row_key("sessions")
+            if not sid:
+                self.notify("Move the cursor onto a row first", severity="warning")
+                return
+            path = self._project_path_for_session(sid)
+            if not path:
+                self.notify("Project path unknown", severity="warning")
+                return
+            ok, msg = open_terminal_with(path, ["claude", "--resume", sid])
+        elif active == "projects":
+            slug = self._cursor_row_key("projects")
+            if not slug:
+                self.notify("Move the cursor onto a row first", severity="warning")
+                return
+            path = self._project_path_for_slug(slug)
+            if not path:
+                self.notify("Project path unknown", severity="warning")
+                return
+            last_sid = self._last_session_id_in_project(slug)
+            if not last_sid:
+                self.notify(
+                    "No previous session recorded for this project",
+                    severity="warning",
+                )
+                return
+            ok, msg = open_terminal_with(path, ["claude", "--resume", last_sid])
+        else:
             return
-        slug = self._cursor_row_key("projects")
-        if not slug:
-            self.notify("Move the cursor onto a row first", severity="warning")
-            return
-        path = self._project_path_for_slug(slug)
-        if not path:
-            self.notify("Project path unknown", severity="warning")
-            return
-        last_sid = self._last_session_id_in_project(slug)
-        if not last_sid:
-            self.notify(
-                "No previous session recorded for this project",
-                severity="warning",
-            )
-            return
-        ok, msg = open_terminal_with(path, ["claude", "--resume", last_sid])
         if ok:
             self.notify(msg, timeout=2)
         else:
