@@ -915,23 +915,36 @@ class UsageMonitorApp(App):
     def _show_claude_missing_modal(self, status) -> None:
         """Push a Continue/Quit modal explaining what we couldn't find.
 
-        Body adapts to whether the user has data (likely an archive
-        scenario — viewing copied JSONLs) or nothing at all (likely a
-        pre-install state). Keeping the wording specific helps the user
-        decide whether Continue makes sense for them."""
-        bullets = []
-        if not status.binary_in_path:
-            bullets.append("• `claude` binary is not in PATH")
-        if not status.has_project_data:
-            bullets.append("• ~/.claude/projects/ is missing or empty")
-        body = (
-            "cc-monitor couldn't detect a Claude Code install:\n\n"
-            + "\n".join(bullets)
-            + "\n\nInstall it from "
-            "https://docs.claude.com/claude-code\n\n"
-            "Continue anyway (e.g. you copied data from another "
-            "machine for analysis)?"
-        )
+        Body adapts to whether the user has data (archive scenario —
+        viewing copied JSONLs from another machine) or nothing at all
+        (pre-install state). Keeping the wording specific helps the
+        user decide whether Continue makes sense for them."""
+        if status.has_project_data:
+            body = (
+                "Claude Code is not installed on this machine "
+                "(`claude` binary is not on PATH), but cc-monitor "
+                "found project data under ~/.claude/projects/.\n\n"
+                "You can continue in archive-viewer mode — every "
+                "tab will populate from the existing JSONLs and you'll "
+                "see costs, tokens, and per-session breakdowns. You "
+                "WON'T be able to start new Claude Code sessions, and "
+                "the hook auto-installer will be a no-op.\n\n"
+                "Install Claude Code: https://docs.claude.com/claude-code\n\n"
+                "Continue in archive-viewer mode?"
+            )
+        else:
+            body = (
+                "Claude Code is not installed on this machine and "
+                "cc-monitor didn't find any project data:\n\n"
+                "• `claude` binary is not on PATH\n"
+                "• ~/.claude/projects/ is missing or empty\n\n"
+                "There's nothing for cc-monitor to display until "
+                "Claude Code is installed and at least one session "
+                "has run.\n\n"
+                "Install Claude Code: https://docs.claude.com/claude-code\n\n"
+                "Continue anyway (e.g. you're about to install Claude "
+                "Code or copy archived data over)?"
+            )
         from .confirm_screen import ConfirmScreen
         self.push_screen(
             ConfirmScreen(body, yes_label="Continue", no_label="Quit"),
