@@ -68,6 +68,10 @@ guard.
 
 ## Installation
 
+> **Supported platforms:** Linux and macOS. Windows is not officially supported
+> in v0.1.0 — the code has best-effort cross-platform branches but is untested.
+> Please open an issue if you'd like Windows support tracked.
+
 ### uv (recommended)
 
 ```bash
