@@ -23,6 +23,26 @@ from .project_slug import decode_project_path, decode_project_slug
 
 log = get_logger(__name__)
 
+
+def _truncate_middle(s: str, max_len: int = 28) -> str:
+    """Shorten s to <= max_len characters by collapsing the middle to
+    `…`. Preserves the head and tail so users can still recognise both
+    the namespace prefix (e.g. `pr-review-toolkit:`) and the
+    distinguishing suffix (e.g. `silent-failure-hunter`).
+
+    Pure-tail truncation would drop the suffix that disambiguates
+    siblings within a namespace — useless for skill/agent names that
+    are mostly long because of common prefixes.
+    """
+    if len(s) <= max_len:
+        return s
+    if max_len < 4:
+        return s[:max_len]
+    keep = max_len - 1  # one slot for the ellipsis
+    head = keep - keep // 2
+    tail = keep // 2
+    return f"{s[:head]}…{s[-tail:]}"
+
 # Register a fixed plotext theme matching Textual's $panel (#242F38).
 # All surface widgets in the detail screen (info panel, charts, tabs,
 # footer) are painted with the same $panel color so the whole screen
@@ -309,6 +329,13 @@ class SessionDetailScreen(Screen):
                                         "File", "Reads", "Tokens (~est)",
                                     )
                                     yield files_table
+                                    # Footer with summed token estimate
+                                    # across all files in the session.
+                                    yield Static(
+                                        "",
+                                        id="files-total",
+                                        classes="usage-hint",
+                                    )
                                     yield Static(
                                         "",
                                         id="files-empty",
@@ -327,6 +354,11 @@ class SessionDetailScreen(Screen):
                                         "Tokens (~est)",
                                     )
                                     yield files_write_table
+                                    yield Static(
+                                        "",
+                                        id="files-write-total",
+                                        classes="usage-hint",
+                                    )
                                     yield Static(
                                         "",
                                         id="files-write-empty",
@@ -415,6 +447,12 @@ class SessionDetailScreen(Screen):
             sess.last_context_model, sess.max_context_tokens
         )
 
+        # Filter sidechain (sub-agent) turns out of the context series.
+        # Sub-agents have their own context window — mixing them into
+        # the parent's chart causes the spurious "dive to 2% then
+        # recover" pattern users were complaining about. Cost and
+        # token charts include all turns (sub-agents do cost real
+        # money) since they don't represent a single window's fill.
         ctx_series: list[float] = []
         cost_series: list[float] = []
         token_series: list[float] = []
@@ -425,7 +463,15 @@ class SessionDetailScreen(Screen):
                 + rec.cache_write_5m_tokens
                 + rec.cache_write_1h_tokens
             )
-            ctx_series.append(ctx / ctx_limit * 100.0)  # % of context window
+            if rec.is_sidechain:
+                # Cost / tokens still get plotted; but we leave the
+                # context % at the previous main-chain value so the
+                # line stays flat through sub-agent runs instead of
+                # dropping to the sub-agent's small context size.
+                last_ctx = ctx_series[-1] if ctx_series else 0.0
+                ctx_series.append(last_ctx)
+            else:
+                ctx_series.append(ctx / ctx_limit * 100.0)  # % of context window
             cost_series.append(cost)
             token_series.append((ctx + rec.output_tokens) / 1000.0)
 
@@ -705,6 +751,42 @@ class SessionDetailScreen(Screen):
             f"{_fmt_int(sess.max_context_tokens)} ({sess.max_context_tokens/ctx_limit*100:.1f}%)",
         )
 
+        # Current 5h block — what THIS session contributed and how it
+        # compares to the live block total. Skipped entirely when
+        # there's no active block or this session has no records in it.
+        block = self.aggregator.block_info()
+        in_block = self.aggregator.session_in_current_block(self.session_id)
+        if block is not None and in_block is not None and in_block.cost_usd > 0:
+            stats.add_row("", "")
+            block_total = block.sums.cost_usd
+            share = (
+                in_block.cost_usd / block_total * 100 if block_total else 0.0
+            )
+            # 5h % using same Wariant B math as the main view's column
+            api = self.aggregator.api_usage
+            api_util = (
+                api.five_hour.utilization
+                if api is not None and api.five_hour is not None
+                else None
+            )
+            cost_limit = self.aggregator.cost_limit
+            if api_util is not None and block_total > 0:
+                pct_of_plan = (in_block.cost_usd / block_total) * api_util
+                pct_label = f"{pct_of_plan:.2f}% of plan (API)"
+            elif cost_limit and cost_limit > 0:
+                pct_of_plan = in_block.cost_usd / cost_limit * 100
+                pct_label = f"{pct_of_plan:.2f}% of ceiling (${cost_limit:.0f})"
+            else:
+                pct_label = "—"
+            stats.add_row(
+                "5h block",
+                f"${in_block.cost_usd:,.4f}  ·  {_fmt_int(in_block.total_tokens)} tok",
+            )
+            stats.add_row(
+                "5h share",
+                f"{share:.1f}% of block · {pct_label}",
+            )
+
         return Group(Text("Totals", style="bold underline"), Text(""), stats)
 
     def _build_models_block(self, sess: SessionState | None) -> RenderableType:
@@ -777,10 +859,15 @@ class SessionDetailScreen(Screen):
                 if budget_5h is not None and budget_5h > 0
                 else "—"
             )
+            # Truncate names with middle ellipsis. Skill / Agent names
+            # like `pr-review-toolkit:silent-failure-hunter` (40+ chars)
+            # would otherwise stretch the table beyond the viewport.
+            name_raw = span.name or "(?)"
+            name_display = _truncate_middle(name_raw, max_len=28)
             table.add_row(
                 ts_str,
                 span.tool,
-                span.name or "(?)",
+                name_display,
                 duration,
                 tokens,
                 cost,
@@ -798,14 +885,33 @@ class SessionDetailScreen(Screen):
             return
 
         files = self.aggregator.count_file_reads_in_session(self.session_id)
+        try:
+            total_label = self.query_one("#files-total", Static)
+        except Exception:
+            total_label = None
         if not files:
             empty.update(
                 "No file reads recorded for this session — either the "
                 "session never used the Read tool or the JSONL file is gone."
             )
+            if total_label is not None:
+                total_label.update("")
             return
 
         empty.update("")
+        # Sum token estimates across every read so the user can see the
+        # session's total cache-context cost from file reads at a glance,
+        # without scanning every row.
+        total_tokens = sum(stats["tokens_est"] for stats in files.values())
+        if total_label is not None:
+            total_str = (
+                f"{total_tokens / 1000:.1f}K"
+                if total_tokens >= 1000 else str(total_tokens)
+            )
+            total_label.update(
+                f"[dim]Total: ~{total_str} tokens across "
+                f"{len(files)} file{'s' if len(files) != 1 else ''}[/dim]"
+            )
         # Strip the project-root prefix so paths read like
         # 'src/cc_usagemonitor/aggregator.py' instead of the absolute
         # '/home/.../Projekty/cc-usagemonitor/src/...' that overflows
@@ -844,14 +950,30 @@ class SessionDetailScreen(Screen):
             return
 
         files = self.aggregator.count_file_writes_in_session(self.session_id)
+        try:
+            total_label = self.query_one("#files-write-total", Static)
+        except Exception:
+            total_label = None
         if not files:
             empty.update(
                 "No file writes recorded for this session — either the "
                 "session never used Write/Edit or the JSONL file is gone."
             )
+            if total_label is not None:
+                total_label.update("")
             return
 
         empty.update("")
+        total_tokens = sum(stats["tokens_est"] for stats in files.values())
+        if total_label is not None:
+            total_str = (
+                f"{total_tokens / 1000:.1f}K"
+                if total_tokens >= 1000 else str(total_tokens)
+            )
+            total_label.update(
+                f"[dim]Total: ~{total_str} tokens across "
+                f"{len(files)} file{'s' if len(files) != 1 else ''}[/dim]"
+            )
         sess = self.aggregator.sessions.get(self.session_id)
         project_root = (sess.cwd if sess and sess.cwd else None) or (
             decode_project_path(sess.project_slug) if sess else None

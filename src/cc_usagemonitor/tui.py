@@ -1258,6 +1258,13 @@ class UsageMonitorApp(App):
         ("Last", "last"),
         ("Duration", "dur"),
         ("Cost", "cost"),
+        # 5h % — this session's contribution to the current 5h block
+        # as a percentage of the plan ceiling. Authoritative when API
+        # is enabled (Anthropic-utilization-apportioned), best-effort
+        # cost/ceiling when not. "—" when the session has no records
+        # in the current block (ended before block start, or no active
+        # block at all).
+        ("5h %", "block_pct"),
         ("Turns", "turns"),
         ("$/turn", "per_turn"),
         ("Context", "ctx"),
@@ -1837,6 +1844,40 @@ class UsageMonitorApp(App):
         )
         self._user_sort[table_id] = (col_key_value, reverse)
 
+    def _session_block_pct(
+        self,
+        session_id: str,
+        block_total_cost: float,
+        api_utilization_pct: float | None,
+        cost_limit: float | None,
+    ) -> tuple[str, float]:
+        """Compute (display_string, sort_key) for the '5h %' column.
+
+        When Anthropic API utilization is available we apportion it by
+        the session's cost share within the block — that matches
+        whatever Claude Code's status line shows because it uses the
+        same authoritative number. Without API we fall back to
+        cost_in_block / cost_limit, which is a close approximation
+        for OAuth users and the only option for API-key/no-plan users
+        with a custom ceiling.
+
+        Returns ("—", -1.0) when the session has no records in the
+        current block (the negative sentinel keeps it sorted to the
+        bottom; sort_key_factory's empty-cell handling does the rest).
+        """
+        sums = self.aggregator.session_in_current_block(session_id)
+        if sums is None or sums.cost_usd <= 0:
+            return ("—", -1.0)
+        # Wariant B: API number wins, fall back to cost/ceiling.
+        if api_utilization_pct is not None and block_total_cost > 0:
+            share = sums.cost_usd / block_total_cost
+            pct = share * api_utilization_pct
+        elif cost_limit and cost_limit > 0:
+            pct = sums.cost_usd / cost_limit * 100.0
+        else:
+            return ("—", -1.0)
+        return (f"{pct:.2f}%", pct)
+
     def _refresh_sessions_table(self) -> None:
         # Sort: existing-project sessions on top, then deleted ones, both
         # groups internally sorted by last_seen DESC (newest first). Same
@@ -1867,6 +1908,18 @@ class UsageMonitorApp(App):
         cost_min = self._cost_filter_min()
         model_substr = self._model_filter_substr()
         search_q = self.filter_search.strip().lower()
+        # 5h % column inputs — pull once per refresh tick instead of
+        # per row. block_info() walks the long-window archive and
+        # would dominate the loop if invoked per session.
+        block = self.aggregator.block_info()
+        block_total_cost = block.sums.cost_usd if block else 0.0
+        api_util_pct: float | None = None
+        if (
+            self.aggregator.api_usage is not None
+            and self.aggregator.api_usage.five_hour is not None
+        ):
+            api_util_pct = self.aggregator.api_usage.five_hour.utilization
+        block_cost_limit = self.aggregator.cost_limit
         for s in sorted_sessions:
             if not self._session_matches_filters(
                 s, _resolved_path(s), _exists(s),
@@ -1901,6 +1954,9 @@ class UsageMonitorApp(App):
                 if isinstance(value, str):
                     return Text(value, style=style)
                 return value
+            block_pct_str, _block_pct_val = self._session_block_pct(
+                s.session_id, block_total_cost, api_util_pct, block_cost_limit,
+            )
             cells = (
                 _styled(s.session_id[:8]),
                 _styled(project_name[-30:] if len(project_name) > 30 else project_name),
@@ -1908,6 +1964,7 @@ class UsageMonitorApp(App):
                 _styled(_fmt_datetime(s.last_seen)),
                 _styled(_fmt_duration(s.first_seen, s.last_seen)),
                 _styled(_fmt_usd(s.sums.cost_usd)),
+                _styled(block_pct_str),
                 _styled(_human(s.sums.turns)),
                 _styled(f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}"),
                 _ctx_cell(s.last_context_tokens, ctx_limit),
