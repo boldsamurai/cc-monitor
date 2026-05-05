@@ -91,7 +91,7 @@ def test_detect_installer_prefers_uv(monkeypatch):
     assert result is not None
     name, cmd = result
     assert name == "uv"
-    assert cmd == ["uv", "tool", "upgrade", "--refresh", "cc-monitor"]
+    assert cmd == ["uv", "tool", "install", "--reinstall", "cc-monitor"]
 
 
 def test_detect_installer_falls_back_to_pipx(monkeypatch):

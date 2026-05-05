@@ -49,20 +49,23 @@ CACHE_TTL_SECONDS = 60 * 60
 # blocked by PEP 668 on managed Python distributions, but worth
 # offering as a hint rather than refusing the upgrade entirely).
 #
-# `--refresh` on uv bypasses its HTTP index cache. Without it, uv's
-# Simple Index cache can lag behind PyPI's actual state by several
-# minutes after a publish — `uv tool upgrade` then says "Nothing to
-# upgrade" even when a newer version is on PyPI. Our own version
-# probe hits a different endpoint (/pypi/<pkg>/json) that refreshes
-# faster, so the modal can fire before uv's index sees the new
-# release. Adding --refresh closes that window.
+# `uv tool install --reinstall` instead of `uv tool upgrade` deliberately:
+# `tool upgrade` reads from uv's HTTP-cached Simple Index, which can
+# lag PyPI by several minutes after a publish and silently no-op
+# ("Nothing to upgrade") even when a newer version is on PyPI. Our
+# update probe hits /pypi/<pkg>/json (refreshes within seconds), so
+# the modal can fire and the user accepts before uv's index catches
+# up. `tool install --reinstall` re-resolves from the network, picks
+# up the freshly-published wheel, and overwrites the existing tool
+# install. Slightly more work than upgrade but always correct.
+# `tool upgrade` itself doesn't accept --refresh as a subcommand
+# flag (verified via 'unexpected argument' error in the wild).
 #
 # pip's analogous mechanism is `--no-cache-dir`, which bypasses the
-# wheel cache (less of an issue for small packages but still worth
-# the safety). pipx doesn't expose a refresh flag directly; users on
+# wheel cache. pipx doesn't expose a refresh flag directly; users on
 # pipx accept the small propagation lag.
 _INSTALLER_CANDIDATES: tuple[tuple[str, list[str]], ...] = (
-    ("uv", ["uv", "tool", "upgrade", "--refresh", "cc-monitor"]),
+    ("uv", ["uv", "tool", "install", "--reinstall", "cc-monitor"]),
     ("pipx", ["pipx", "upgrade", "cc-monitor"]),
     ("pip", ["pip", "install", "--upgrade", "--no-cache-dir", "cc-monitor"]),
 )
