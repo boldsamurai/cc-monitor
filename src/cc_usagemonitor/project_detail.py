@@ -251,21 +251,60 @@ class ProjectDetailScreen(Screen):
     # ----- on_mount: populate dynamic data -----
 
     def on_mount(self) -> None:
-        self._populate_sessions_table()
-        self._populate_charts()
-        self._populate_usage_tables()
+        self._populate_all()
         # Sessions table is the natural starting point — auto-focus
         # so Enter drills further without needing Tab first.
         try:
             self.query_one("#pd-sessions-table", DataTable).focus()
         except Exception:
             pass
+        # Mirror the session detail's periodic refresh: short-circuit
+        # via the aggregator's global revision counter so an idle
+        # project pays nothing.
+        self._last_revision = self.aggregator.revision
+        self.set_interval(3.0, self._refresh_if_changed)
+
+    def _populate_all(self) -> None:
+        """Re-render every dynamic widget. Called on mount and on
+        every tick that detects new aggregator data."""
+        # Re-capture sessions in case new ones arrived while the screen
+        # was open — _sessions cached at __init__ would otherwise miss
+        # fresh launches under this project.
+        self._sessions = sorted(
+            (
+                s for s in self.aggregator.sessions.values()
+                if s.project_slug == self.project_slug
+            ),
+            key=lambda s: s.last_seen or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+        # Update the static blocks (info, totals, by-model breakdown).
+        try:
+            self.query_one("#pd-info", Static).update(self._build_info_block())
+            self.query_one("#pd-totals", Static).update(self._build_totals_block())
+            self.query_one("#pd-models", Static).update(self._build_models_block())
+        except Exception:
+            pass
+        self._populate_sessions_table()
+        self._populate_charts()
+        self._populate_usage_tables()
+
+    def _refresh_if_changed(self) -> None:
+        """Tick handler — skip when nothing has been ingested since
+        the last paint."""
+        if self.aggregator.revision == self._last_revision:
+            return
+        self._last_revision = self.aggregator.revision
+        self._populate_all()
 
     def _populate_sessions_table(self) -> None:
         try:
             t = self.query_one("#pd-sessions-table", DataTable)
         except Exception:
             return
+        # Clear before refilling so the periodic refresh tick rebuilds
+        # cleanly instead of duplicating rows on every pass.
+        t.clear()
         for sess in self._sessions:
             duration = _fmt_duration(sess.first_seen, sess.last_seen)
             per_turn = (
@@ -375,6 +414,11 @@ class ProjectDetailScreen(Screen):
             )
         except Exception:
             return
+        # Clear all three tables before refilling — periodic refresh
+        # otherwise duplicates rows on every tick.
+        spans_table.clear()
+        files_table.clear()
+        files_write_table.clear()
 
         skills_agg: dict[str, TokenSums] = defaultdict(TokenSums)
         agents_agg: dict[str, TokenSums] = defaultdict(TokenSums)
