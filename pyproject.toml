@@ -1,6 +1,6 @@
 [project]
 name = "cc-monitor"
-version = "0.1.27"
+version = "0.1.28"
 description = "Real-time token usage and cost monitor for Claude Code sessions, in your terminal."
 readme = "README.md"
 license = "MIT"

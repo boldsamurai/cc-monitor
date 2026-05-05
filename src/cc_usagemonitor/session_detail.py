@@ -167,25 +167,15 @@ class SessionDetailScreen(Screen):
         padding: 0;
         background: $panel;
     }
-    /* All four Usage-tab tables stretch to fill their column's full
-       width via `width: 1fr`. Without this DataTable shrinks to its
-       content width, making the left column visually narrower than
-       the right even when their .usage-col-* containers are 50/50. */
-    #usage-table {
-        height: auto;
-        max-height: 25;
-        width: 1fr;
-        background: $panel;
-    }
-    #tool-cost-table {
-        height: auto;
-        max-height: 20;
-        width: 1fr;
-        background: $panel;
-    }
-    /* Files tables fill their section (1fr) so DataTable handles row
-       overflow with its own internal scroll — auto+max-height would
-       let the second table push below the visible column. */
+    /* All four Usage-tab tables fill their .usage-files-section
+       wrapper (height: 1fr each, see below). DataTable handles row
+       overflow with its own internal scroll, which is the only way
+       to keep both halves of each column visible regardless of how
+       many rows each table has. width: 1fr makes them stretch to
+       the column's full width too — without that DataTable shrinks
+       to its content width and the left column looks narrower than
+       the right even when their containers are equal. */
+    #usage-table, #tool-cost-table,
     #files-table, #files-write-table {
         height: 1fr;
         width: 1fr;
@@ -310,55 +300,64 @@ class SessionDetailScreen(Screen):
                         # + empty-state hint.
                         with Horizontal(id="usage-row"):
                             with Vertical(classes="usage-col-spans"):
-                                yield Static(
-                                    "Skill / Agent invocations",
-                                    classes="usage-section-heading",
-                                )
-                                usage_table = DataTable(
-                                    id="usage-table", cursor_type="row"
-                                )
-                                usage_table.add_columns(
-                                    "Time", "Type", "Name",
-                                    "Duration", "Tokens", "Cost",
-                                    "% session", "% 5h",
-                                )
-                                yield usage_table
-                                yield Static(
-                                    "",
-                                    id="usage-empty",
-                                    classes="usage-hint",
-                                )
-                                # Per-tool aggregate of result content
-                                # size — the heuristic for "what's
-                                # eating my context". Sits under the
-                                # Skill / Agent table in the same
-                                # column so the user can compare
-                                # span-level vs tool-level views
-                                # without scrolling.
-                                yield Static(
-                                    "Tool token cost (estimated from "
-                                    "result content size)",
-                                    classes="usage-section-heading",
-                                )
-                                tool_cost_table = DataTable(
-                                    id="tool-cost-table", cursor_type="row"
-                                )
-                                tool_cost_table.add_columns(
-                                    "Tool", "Calls",
-                                    "Result chars", "Tokens (~est)",
-                                    "Cost (~est)", "% session",
-                                )
-                                yield tool_cost_table
-                                yield Static(
-                                    "",
-                                    id="tool-cost-total",
-                                    classes="usage-hint",
-                                )
-                                yield Static(
-                                    "",
-                                    id="tool-cost-empty",
-                                    classes="usage-hint",
-                                )
+                                # Wrap each table in its own 50/50
+                                # section so the column splits evenly
+                                # like the right (Files read / Files
+                                # written). Without these wrappers the
+                                # tables stacked at their content
+                                # heights and the bottom one ate any
+                                # leftover space — visually unbalanced
+                                # against the right column.
+                                with Vertical(classes="usage-files-section"):
+                                    yield Static(
+                                        "Skill / Agent invocations",
+                                        classes="usage-section-heading",
+                                    )
+                                    usage_table = DataTable(
+                                        id="usage-table", cursor_type="row"
+                                    )
+                                    usage_table.add_columns(
+                                        "Time", "Type", "Name",
+                                        "Duration", "Tokens", "Cost",
+                                        "% session", "% 5h",
+                                    )
+                                    yield usage_table
+                                    yield Static(
+                                        "",
+                                        id="usage-empty",
+                                        classes="usage-hint",
+                                    )
+                                with Vertical(classes="usage-files-section"):
+                                    # Per-tool aggregate of result
+                                    # content size — the heuristic for
+                                    # "what's eating my context".
+                                    # Mirrors the right column's
+                                    # Files-written section in size
+                                    # for visual balance.
+                                    yield Static(
+                                        "Tool token cost (estimated from "
+                                        "result content size)",
+                                        classes="usage-section-heading",
+                                    )
+                                    tool_cost_table = DataTable(
+                                        id="tool-cost-table", cursor_type="row"
+                                    )
+                                    tool_cost_table.add_columns(
+                                        "Tool", "Calls",
+                                        "Result chars", "Tokens (~est)",
+                                        "Cost (~est)", "% session",
+                                    )
+                                    yield tool_cost_table
+                                    yield Static(
+                                        "",
+                                        id="tool-cost-total",
+                                        classes="usage-hint",
+                                    )
+                                    yield Static(
+                                        "",
+                                        id="tool-cost-empty",
+                                        classes="usage-hint",
+                                    )
                             with Vertical(classes="usage-col-files"):
                                 with Vertical(classes="usage-files-section"):
                                     yield Static(
