@@ -65,13 +65,26 @@ CACHE_TTL_SECONDS = 60 * 60
 # wheel cache. pipx doesn't expose a refresh flag directly; users on
 # pipx accept the small propagation lag.
 _INSTALLER_CANDIDATES: tuple[tuple[str, list[str]], ...] = (
-    # `--refresh` is a global uv flag (must come BEFORE the subcommand)
-    # that invalidates uv's cached package metadata. Without it,
-    # --reinstall re-installs whatever version uv last cached, not
-    # whatever PyPI now serves — observed in the wild as "Installed
-    # cc-monitor==0.1.22" two minutes after we published 0.1.24.
+    # `uv tool install --no-cache --reinstall cc-monitor`:
+    #   --no-cache  — uv skips its package metadata cache for this
+    #                 invocation and re-queries PyPI directly. Without
+    #                 this, --reinstall happily re-installs whatever
+    #                 version uv last cached (observed: re-installing
+    #                 v0.1.22 two minutes after publishing v0.1.24).
+    #   --reinstall — overwrites the existing tool install rather than
+    #                 short-circuiting on "already installed".
+    #
+    # Earlier attempts (`tool upgrade --refresh` and `--refresh tool
+    # install`) both errored with `unexpected argument '--refresh'`
+    # — uv exposes --refresh on `pip install` but not on `tool *`,
+    # and rejects it as a global flag too. --no-cache is the
+    # subcommand-supported escape hatch.
+    #
+    # pip's analogous mechanism is --no-cache-dir (covers wheel cache).
+    # pipx doesn't expose a refresh knob; users on pipx accept the
+    # small propagation lag in exchange for simpler tooling.
     ("uv", [
-        "uv", "--refresh", "tool", "install", "--reinstall", "cc-monitor",
+        "uv", "tool", "install", "--no-cache", "--reinstall", "cc-monitor",
     ]),
     ("pipx", ["pipx", "upgrade", "cc-monitor"]),
     ("pip", ["pip", "install", "--upgrade", "--no-cache-dir", "cc-monitor"]),
