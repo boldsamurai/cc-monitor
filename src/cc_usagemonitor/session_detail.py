@@ -446,6 +446,39 @@ class SessionDetailScreen(Screen):
         sess = self.aggregator.sessions.get(self.session_id)
         if sess is None:
             return
+        self._populate_all(sess)
+        # Track the aggregator's per-session revision counter so the
+        # periodic tick can short-circuit when nothing has changed —
+        # repainting a session detail with a 100K-line JSONL is a few
+        # hundred ms, not free.
+        self._last_revision = sess.revision
+        # Periodic refresh tick: 3 seconds matches the user's mental
+        # cadence for "this should feel live" without thrashing the
+        # JSONL parse on every paint. Faster intervals make the chart
+        # flicker; slower ones feel stale during an active session.
+        self.set_interval(3.0, self._refresh_if_changed)
+
+    def _populate_all(self, sess: SessionState) -> None:
+        """Re-render every dynamic widget in the detail screen.
+
+        Used both on mount (initial paint) and on every tick that
+        detects new aggregator data. Keeping the orchestration in
+        one place makes it impossible for one path to forget a
+        widget that the other remembers."""
+        # Static info / totals / models blocks live in compose() so
+        # they need explicit .update() calls to refresh.
+        try:
+            self.query_one("#detail-info", Static).update(
+                self._build_info_block(sess)
+            )
+            self.query_one("#detail-totals", Static).update(
+                self._build_totals_block(sess)
+            )
+            self.query_one("#detail-models", Static).update(
+                self._build_models_block(sess)
+            )
+        except Exception:
+            pass
         self._populate_usage_table(sess)
         self._populate_tool_cost_table(sess)
         self._populate_files_table()
@@ -453,6 +486,18 @@ class SessionDetailScreen(Screen):
         turns = self.aggregator.load_full_session_turns(self.session_id)
         if turns:
             self._populate_charts(turns, sess)
+
+    def _refresh_if_changed(self) -> None:
+        """Periodic refresh — skip when the session's revision counter
+        hasn't advanced. The aggregator bumps the counter on every
+        ingest into this session, so an idle session pays nothing."""
+        sess = self.aggregator.sessions.get(self.session_id)
+        if sess is None:
+            return
+        if sess.revision == self._last_revision:
+            return
+        self._last_revision = sess.revision
+        self._populate_all(sess)
         # Default tab is Usage — focus its primary table so arrows /
         # Enter work right away instead of sitting on the tab bar.
         self._focus_table_for_tab()
@@ -868,6 +913,9 @@ class SessionDetailScreen(Screen):
             empty = self.query_one("#usage-empty", Static)
         except Exception:
             return
+        # Clear rows first so the periodic refresh tick rebuilds the
+        # table cleanly instead of appending duplicates on every pass.
+        table.clear()
 
         spans = list(self.aggregator.spans_by_session.get(self.session_id, ()))
         if not spans:
@@ -940,6 +988,7 @@ class SessionDetailScreen(Screen):
             total_label = self.query_one("#tool-cost-total", Static)
         except Exception:
             return
+        table.clear()
 
         tool_results = self.aggregator.tool_results_in_session(self.session_id)
         if not tool_results:
@@ -1032,6 +1081,7 @@ class SessionDetailScreen(Screen):
             empty = self.query_one("#files-empty", Static)
         except Exception:
             return
+        table.clear()
 
         files = self.aggregator.count_file_reads_in_session(self.session_id)
         try:
@@ -1097,6 +1147,7 @@ class SessionDetailScreen(Screen):
             empty = self.query_one("#files-write-empty", Static)
         except Exception:
             return
+        table.clear()
 
         files = self.aggregator.count_file_writes_in_session(self.session_id)
         try:
