@@ -311,16 +311,24 @@ class Aggregator:
             sess.cwd = rec.cwd
 
         sess.last_seen = rec.ts
-        ctx = (
-            rec.input_tokens
-            + rec.cache_read_tokens
-            + rec.cache_write_5m_tokens
-            + rec.cache_write_1h_tokens
-        )
-        sess.last_context_tokens = ctx
-        sess.last_context_model = rec.model
-        if ctx > sess.max_context_tokens:
-            sess.max_context_tokens = ctx
+        # Context % is a measure of "how full is THIS session's context
+        # window". Sub-agents (is_sidechain=True) have their own
+        # independent context, so mixing their values into the parent
+        # session's `last_context_tokens` produces the dive-and-recover
+        # pattern users see on the chart (parent at 30% → sub-agent at
+        # 2% → parent back at 30%). Filter sidechain out of context
+        # accounting; their costs/tokens still flow into sums above.
+        if not rec.is_sidechain:
+            ctx = (
+                rec.input_tokens
+                + rec.cache_read_tokens
+                + rec.cache_write_5m_tokens
+                + rec.cache_write_1h_tokens
+            )
+            sess.last_context_tokens = ctx
+            sess.last_context_model = rec.model
+            if ctx > sess.max_context_tokens:
+                sess.max_context_tokens = ctx
         sess.sums.add(rec, cost)
         if rec.is_sidechain:
             sess.sums_sidechain.add(rec, cost)
@@ -829,6 +837,40 @@ class Aggregator:
         if len(block_costs) < 3:
             return None
         return _percentile(block_costs, 90)
+
+    def session_in_current_block(
+        self, session_id: str,
+    ) -> TokenSums | None:
+        """Sum tokens/cost a single session contributed to the current
+        5h block. Returns None when there's no active block (latest one
+        already ended) or when the session has no records inside it.
+
+        Used by the Sessions table's '5h %' column and the per-session
+        block panel in the detail screen — both want to express "how
+        much of the live block did THIS session burn", which requires
+        the same per-session-within-block aggregation.
+        """
+        if not self._long_window:
+            return None
+        sorted_records = list(self._long_window)
+        blocks = list(_iter_blocks(sorted_records))
+        if not blocks:
+            return None
+        block_start, block_end, indices = blocks[-1]
+
+        now = datetime.now(tz=timezone.utc)
+        if now >= block_end:
+            return None  # block already ended; nothing 'current' to attribute to
+
+        session_sums = TokenSums()
+        any_records = False
+        for i in indices:
+            _ts, rec, cost = sorted_records[i]
+            if rec.session_id != session_id:
+                continue
+            any_records = True
+            session_sums.add(rec, cost)
+        return session_sums if any_records else None
 
     def block_info(self) -> BlockInfo | None:
         """Compute the current 5-hour block from the long-window archive.

@@ -53,13 +53,14 @@ def _make_rec(
     cache_read: int = 0,
     cache_write_5m: int = 0,
     cache_write_1h: int = 0,
+    is_sidechain: bool = False,
 ) -> UsageRecord:
     return UsageRecord(
         ts=ts,
         session_id=session_id,
         project_slug="-p",
         model="claude-opus-4-7",
-        is_sidechain=False,
+        is_sidechain=is_sidechain,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         cache_read_tokens=cache_read,
@@ -417,3 +418,72 @@ def test_ingest_updates_first_and_last_seen(agg):
     sess = agg.sessions["s-1"]
     assert sess.first_seen == earlier
     assert sess.last_seen == later
+
+
+# ----- sidechain context filter (Bug A from session detail context dive) -----
+
+
+def test_sidechain_records_dont_overwrite_main_chain_context(agg):
+    base = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc)
+    # Main turn lands first with a fat context.
+    agg.ingest(_make_rec(
+        base, cache_read=50_000, input_tokens=10_000,
+    ))
+    sess = agg.sessions["s-1"]
+    assert sess.last_context_tokens == 60_000
+    main_max = sess.max_context_tokens
+
+    # Sub-agent runs with a small context — must NOT overwrite the
+    # main chain's last/max values. This is the bug that caused the
+    # context % chart to dive whenever a Task tool fired.
+    agg.ingest(_make_rec(
+        base + timedelta(seconds=5),
+        cache_read=500, input_tokens=200, is_sidechain=True,
+    ))
+    assert sess.last_context_tokens == 60_000
+    assert sess.max_context_tokens == main_max
+
+
+def test_sidechain_records_still_count_in_cost_sums(agg):
+    # Cost / token sums DO need to include sidechain — sub-agents
+    # cost real money. Only context tracking ignores them.
+    base = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc)
+    agg.ingest(_make_rec(base, input_tokens=100, is_sidechain=False))
+    agg.ingest(_make_rec(
+        base + timedelta(seconds=1), input_tokens=200, is_sidechain=True,
+    ))
+    sess = agg.sessions["s-1"]
+    assert sess.sums.input == 300  # both turns
+    assert sess.sums_main.input == 100
+    assert sess.sums_sidechain.input == 200
+
+
+# ----- session_in_current_block helper (per-session 5h aggregation) -----
+
+
+def test_session_in_current_block_returns_none_for_no_active_block(agg):
+    # Empty long-window → no block at all.
+    assert agg.session_in_current_block("s-1") is None
+
+
+def test_session_in_current_block_returns_none_for_unrelated_session(agg):
+    # Active block exists but only contains other sessions.
+    now = datetime.now(tz=timezone.utc)
+    agg._long_window.append((now, _make_rec(now, session_id="other"), 1.0))
+    assert agg.session_in_current_block("s-1") is None
+
+
+def test_session_in_current_block_sums_only_target_session(agg):
+    # Two sessions in the same active block; helper returns sums for
+    # one without leaking the other's tokens/cost.
+    now = datetime.now(tz=timezone.utc)
+    agg._long_window.append(
+        (now, _make_rec(now, session_id="target", input_tokens=100), 0.5)
+    )
+    agg._long_window.append(
+        (now, _make_rec(now, session_id="other", input_tokens=999), 0.9)
+    )
+    sums = agg.session_in_current_block("target")
+    assert sums is not None
+    assert sums.input == 100
+    assert sums.cost_usd == pytest.approx(0.5)
