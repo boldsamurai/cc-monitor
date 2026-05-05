@@ -65,7 +65,14 @@ CACHE_TTL_SECONDS = 60 * 60
 # wheel cache. pipx doesn't expose a refresh flag directly; users on
 # pipx accept the small propagation lag.
 _INSTALLER_CANDIDATES: tuple[tuple[str, list[str]], ...] = (
-    ("uv", ["uv", "tool", "install", "--reinstall", "cc-monitor"]),
+    # `--refresh` is a global uv flag (must come BEFORE the subcommand)
+    # that invalidates uv's cached package metadata. Without it,
+    # --reinstall re-installs whatever version uv last cached, not
+    # whatever PyPI now serves — observed in the wild as "Installed
+    # cc-monitor==0.1.22" two minutes after we published 0.1.24.
+    ("uv", [
+        "uv", "--refresh", "tool", "install", "--reinstall", "cc-monitor",
+    ]),
     ("pipx", ["pipx", "upgrade", "cc-monitor"]),
     ("pip", ["pip", "install", "--upgrade", "--no-cache-dir", "cc-monitor"]),
 )
