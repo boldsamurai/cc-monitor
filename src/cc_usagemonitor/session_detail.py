@@ -167,9 +167,20 @@ class SessionDetailScreen(Screen):
         padding: 0;
         background: $panel;
     }
+    /* All four Usage-tab tables stretch to fill their column's full
+       width via `width: 1fr`. Without this DataTable shrinks to its
+       content width, making the left column visually narrower than
+       the right even when their .usage-col-* containers are 50/50. */
     #usage-table {
         height: auto;
         max-height: 25;
+        width: 1fr;
+        background: $panel;
+    }
+    #tool-cost-table {
+        height: auto;
+        max-height: 20;
+        width: 1fr;
         background: $panel;
     }
     /* Files tables fill their section (1fr) so DataTable handles row
@@ -177,6 +188,7 @@ class SessionDetailScreen(Screen):
        let the second table push below the visible column. */
     #files-table, #files-write-table {
         height: 1fr;
+        width: 1fr;
         background: $panel;
     }
     /* height: auto + zero vertical padding lets an *empty* hint
