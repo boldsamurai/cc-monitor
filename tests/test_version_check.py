@@ -91,7 +91,7 @@ def test_detect_installer_prefers_uv(monkeypatch):
     assert result is not None
     name, cmd = result
     assert name == "uv"
-    assert cmd == ["uv", "tool", "upgrade", "cc-monitor"]
+    assert cmd == ["uv", "tool", "upgrade", "--refresh", "cc-monitor"]
 
 
 def test_detect_installer_falls_back_to_pipx(monkeypatch):
@@ -115,7 +115,9 @@ def test_detect_installer_falls_back_to_pip(monkeypatch):
     assert result is not None
     name, cmd = result
     assert name == "pip"
-    assert cmd == ["pip", "install", "--upgrade", "cc-monitor"]
+    assert cmd == [
+        "pip", "install", "--upgrade", "--no-cache-dir", "cc-monitor",
+    ]
 
 
 def test_cache_obsolete_when_running_newer_than_cached(monkeypatch):
