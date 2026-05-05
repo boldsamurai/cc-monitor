@@ -92,7 +92,7 @@ def test_detect_installer_prefers_uv(monkeypatch):
     name, cmd = result
     assert name == "uv"
     assert cmd == [
-        "uv", "--refresh", "tool", "install", "--reinstall", "cc-monitor",
+        "uv", "tool", "install", "--no-cache", "--reinstall", "cc-monitor",
     ]
 
 
