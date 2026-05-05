@@ -316,6 +316,19 @@ def test_session_jsonl_stats_extracts_reads_writes_and_tools(
     # 2 Read + 1 Write + 1 Edit + 1 Bash
     assert tools == {"Read": 2, "Write": 1, "Edit": 1, "Bash": 1}
 
+    # Per-tool result-content stats (for the "what's eating my context"
+    # table). Read got 600 chars total across two calls; Bash, Write,
+    # Edit got no tool_result blocks in this fixture so chars=0 but
+    # calls still count.
+    tool_costs = agg.tool_results_in_session(session_id)
+    assert tool_costs["Read"]["calls"] == 2
+    assert tool_costs["Read"]["chars"] == 600
+    assert tool_costs["Read"]["tokens_est"] == 150
+    assert tool_costs["Write"]["calls"] == 1
+    assert tool_costs["Write"]["chars"] == 0  # no result block in fixture
+    assert tool_costs["Bash"]["calls"] == 1
+    assert tool_costs["Edit"]["calls"] == 1
+
 
 def test_session_jsonl_stats_uses_single_pass_cache(
     agg, tmp_path, monkeypatch,

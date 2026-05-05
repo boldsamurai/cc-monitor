@@ -652,6 +652,16 @@ class Aggregator:
         """
         return self._session_jsonl_stats(session_id)["tools"]
 
+    def tool_results_in_session(
+        self, session_id: str,
+    ) -> dict[str, dict[str, int]]:
+        """Per-tool aggregate of result content size and estimated
+        token cost. Returns {tool_name: {'calls', 'chars',
+        'tokens_est'}}. Backed by the same single JSONL pass as
+        count_tools_in_session, so all `*_in_session` helpers cost
+        one parse per session per refresh window."""
+        return self._session_jsonl_stats(session_id)["tool_results"]
+
     def _session_jsonl_stats(self, session_id: str) -> dict:
         """Single-pass extractor for every per-session derived stat that
         needs the conversation JSONL.
@@ -671,7 +681,7 @@ class Aggregator:
         from .paths import PROJECTS_DIR
         import json
 
-        empty = {"reads": {}, "writes": {}, "tools": {}}
+        empty = {"reads": {}, "writes": {}, "tools": {}, "tool_results": {}}
         sess = self.sessions.get(session_id)
         if sess is None:
             return empty
@@ -683,14 +693,24 @@ class Aggregator:
         except (OSError, UnicodeDecodeError):
             return empty
 
-        # All three derived dicts come from one walk over the JSONL.
+        # All four derived dicts come from one walk over the JSONL.
         # 'pending' correlates a Read's tool_use_id to its file_path so
         # the later tool_result block can attribute its content size
-        # back to the right file.
+        # back to the right file. 'pending_tool' does the analogous
+        # thing for tool_costs — id → tool_name so we can sum per-tool
+        # result chars when the corresponding tool_result lands.
         reads: dict[str, dict[str, int]] = {}
         writes: dict[str, dict[str, int]] = {}
         tools: dict[str, int] = {}
+        # Per-tool aggregate of tool_result content size. Heuristic for
+        # "what's eating my context": each tool's results land in the
+        # next turn's input/cache_creation, then ride the cache for
+        # subsequent turns. The chars-based estimate captures the
+        # dominant cost channel even when we can't perfectly attribute
+        # back to a specific cache write event.
+        tool_results: dict[str, dict[str, int]] = {}
         pending: dict[str, str] = {}
+        pending_tool: dict[str, str] = {}
 
         for line in text.splitlines():
             try:
@@ -708,10 +728,21 @@ class Aggregator:
                 if itype == "tool_use":
                     name = item.get("name") or "?"
                     tools[name] = tools.get(name, 0) + 1
+                    tool_id = item.get("id") or ""
+                    if tool_id:
+                        pending_tool[tool_id] = name
+                    # Initialise the tool_results bucket eagerly so we
+                    # can show "Bash: 42 calls / 0 chars / 0 tokens"
+                    # for tools whose results haven't landed yet
+                    # (in-flight) or weren't text-shaped.
+                    bucket = tool_results.setdefault(
+                        name, {"calls": 0, "chars": 0, "tokens_est": 0}
+                    )
+                    bucket["calls"] += 1
                     inp = item.get("input") or {}
                     if name == "Read":
                         fp = inp.get("file_path") or "?"
-                        pending[item.get("id") or ""] = fp
+                        pending[tool_id] = fp
                         bucket = reads.setdefault(
                             fp, {"reads": 0, "chars": 0, "tokens_est": 0}
                         )
@@ -736,9 +767,7 @@ class Aggregator:
                             bucket["edits"] += 1
                             bucket["chars"] += len(inp.get("new_source") or "")
                 elif itype == "tool_result":
-                    fp = pending.get(item.get("tool_use_id") or "")
-                    if fp is None:
-                        continue
+                    tool_use_id = item.get("tool_use_id") or ""
                     result_content = item.get("content")
                     if isinstance(result_content, list):
                         chars = sum(
@@ -750,7 +779,16 @@ class Aggregator:
                         chars = len(result_content)
                     else:
                         chars = 0
-                    reads[fp]["chars"] += chars
+                    # File-Reads bucket: only when the tool was Read.
+                    fp = pending.get(tool_use_id)
+                    if fp is not None:
+                        reads[fp]["chars"] += chars
+                    # Per-tool bucket: covers every tool, including
+                    # Bash / Skill / Task / Agent — anything that
+                    # returns text and contributes to context.
+                    tool_name = pending_tool.get(tool_use_id)
+                    if tool_name is not None:
+                        tool_results[tool_name]["chars"] += chars
 
         # Rough estimate: 1 token ~ 4 chars (Anthropic tokenizer is
         # ~3.5 for prose, ~4–5 for code; within 20% either way).
@@ -758,7 +796,14 @@ class Aggregator:
             stats["tokens_est"] = stats["chars"] // 4
         for stats in writes.values():
             stats["tokens_est"] = stats["chars"] // 4
-        return {"reads": reads, "writes": writes, "tools": tools}
+        for stats in tool_results.values():
+            stats["tokens_est"] = stats["chars"] // 4
+        return {
+            "reads": reads,
+            "writes": writes,
+            "tools": tools,
+            "tool_results": tool_results,
+        }
 
     def load_full_session_turns(
         self, session_id: str

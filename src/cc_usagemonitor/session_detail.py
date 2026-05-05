@@ -316,6 +316,37 @@ class SessionDetailScreen(Screen):
                                     id="usage-empty",
                                     classes="usage-hint",
                                 )
+                                # Per-tool aggregate of result content
+                                # size — the heuristic for "what's
+                                # eating my context". Sits under the
+                                # Skill / Agent table in the same
+                                # column so the user can compare
+                                # span-level vs tool-level views
+                                # without scrolling.
+                                yield Static(
+                                    "Tool token cost (estimated from "
+                                    "result content size)",
+                                    classes="usage-section-heading",
+                                )
+                                tool_cost_table = DataTable(
+                                    id="tool-cost-table", cursor_type="row"
+                                )
+                                tool_cost_table.add_columns(
+                                    "Tool", "Calls",
+                                    "Result chars", "Tokens (~est)",
+                                    "Cost (~est)", "% session",
+                                )
+                                yield tool_cost_table
+                                yield Static(
+                                    "",
+                                    id="tool-cost-total",
+                                    classes="usage-hint",
+                                )
+                                yield Static(
+                                    "",
+                                    id="tool-cost-empty",
+                                    classes="usage-hint",
+                                )
                             with Vertical(classes="usage-col-files"):
                                 with Vertical(classes="usage-files-section"):
                                     yield Static(
@@ -404,6 +435,7 @@ class SessionDetailScreen(Screen):
         if sess is None:
             return
         self._populate_usage_table(sess)
+        self._populate_tool_cost_table(sess)
         self._populate_files_table()
         self._populate_files_write_table()
         turns = self.aggregator.load_full_session_turns(self.session_id)
@@ -874,6 +906,111 @@ class SessionDetailScreen(Screen):
                 pct_session,
                 pct_5h,
             )
+
+    def _populate_tool_cost_table(self, sess: SessionState) -> None:
+        """Fill the per-tool cost DataTable.
+
+        Each row is one tool name (Bash / Read / Edit / Skill /
+        SlashCommand / Task / etc.) with aggregate result-content
+        size and an estimated token + dollar cost. The token / cost
+        figures are heuristics — the JSONL doesn't tell us
+        per-tool token costs directly, only per-turn usage. We use
+        the dominant cost channel: each tool's result lands in the
+        next turn's input/cache_creation, then rides the cache for
+        subsequent turns. Estimated tokens = chars / 4 (Anthropic's
+        tokenizer averages ~3.5-4.5 chars per token across prose
+        and code). Estimated cost = tokens × the session's primary
+        model's input rate.
+        """
+        try:
+            table = self.query_one("#tool-cost-table", DataTable)
+            empty = self.query_one("#tool-cost-empty", Static)
+            total_label = self.query_one("#tool-cost-total", Static)
+        except Exception:
+            return
+
+        tool_results = self.aggregator.tool_results_in_session(self.session_id)
+        if not tool_results:
+            empty.update(
+                "No tool calls recorded for this session — either the "
+                "session never used any tools or its JSONL is gone."
+            )
+            total_label.update("")
+            return
+
+        empty.update("")
+        # Pricing: pick the model that contributed the most turns to
+        # this session and use its input rate. For mixed-model sessions
+        # this favours accuracy on the dominant model rather than
+        # blending rates that don't exist as a real per-token price.
+        primary_model = None
+        if sess.by_model:
+            primary_model = max(
+                sess.by_model.items(), key=lambda kv: kv[1].turns,
+            )[0]
+        model_price = (
+            self.aggregator.pricing.for_model(primary_model)
+            if primary_model else None
+        )
+        # cache_read rate is what the user pays per cached token on
+        # turns 2..N. Cache_write is paid once at first ingest; for
+        # heuristic display the read rate is the better representation
+        # of "this tool's recurring context cost".
+        per_token_input = model_price.input if model_price else 0.0
+        session_cost = sess.sums.cost_usd or 0.0
+
+        # Sort by estimated tokens desc — biggest context-eaters first.
+        ordered = sorted(
+            tool_results.items(),
+            key=lambda kv: -kv[1]["tokens_est"],
+        )
+        total_calls = 0
+        total_chars = 0
+        total_tokens = 0
+        total_cost_est = 0.0
+        for tool_name, stats in ordered:
+            calls = stats["calls"]
+            chars = stats["chars"]
+            tokens = stats["tokens_est"]
+            cost_est = tokens / 1_000_000 * per_token_input
+            total_calls += calls
+            total_chars += chars
+            total_tokens += tokens
+            total_cost_est += cost_est
+            chars_str = (
+                f"{chars / 1024:.1f} KB"
+                if chars >= 1024 else f"{chars} B"
+            )
+            tokens_str = (
+                f"{tokens / 1000:.1f}K"
+                if tokens >= 1000 else str(tokens)
+            )
+            cost_str = f"${cost_est:.4f}" if cost_est < 1 else f"${cost_est:.2f}"
+            pct_session = (
+                f"{cost_est / session_cost * 100:.1f}%"
+                if session_cost > 0 else "—"
+            )
+            table.add_row(
+                tool_name, str(calls),
+                chars_str, tokens_str, cost_str, pct_session,
+            )
+        total_chars_str = (
+            f"{total_chars / 1024:.1f} KB"
+            if total_chars >= 1024 else f"{total_chars} B"
+        )
+        total_tokens_str = (
+            f"{total_tokens / 1000:.1f}K"
+            if total_tokens >= 1000 else str(total_tokens)
+        )
+        total_cost_str = (
+            f"${total_cost_est:.4f}"
+            if total_cost_est < 1 else f"${total_cost_est:.2f}"
+        )
+        total_label.update(
+            f"[dim]Total: {total_calls} calls · {total_chars_str} · "
+            f"~{total_tokens_str} tokens · ~{total_cost_str} "
+            f"(estimated, {primary_model or 'unknown model'} input rate)[/dim]"
+        )
 
     def _populate_files_table(self) -> None:
         """Fill the Files-read DataTable with one row per unique file path
