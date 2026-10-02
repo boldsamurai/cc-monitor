@@ -1,0 +1,6 @@
+hangar: 1
+project: cc-usagemonitor
+modules:
+- core@^1
+- python@^1:
+    pkg_manager: uv

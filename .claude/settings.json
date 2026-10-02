@@ -1,0 +1,61 @@
+{
+  "enabledPlugins": {
+    "hangar-core@hangar": true
+  },
+  "extraKnownMarketplaces": {
+    "hangar": {
+      "source": {
+        "ref": "stable",
+        "repo": "boldsamurai/hangar",
+        "source": "github"
+      }
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git branch --show-current)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git status:*)",
+      "Bash(hangar doctor:*)",
+      "Bash(hangar render --dry-run:*)",
+      "Bash(poetry run pytest:*)",
+      "Bash(poetry run ruff:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)"
+    ],
+    "deny": [
+      "Edit(**/*.key)",
+      "Edit(**/*.p12)",
+      "Edit(**/*.pem)",
+      "Edit(**/*.pfx)",
+      "Edit(**/.env)",
+      "Edit(**/.env.*)",
+      "Edit(**/.netrc)",
+      "Edit(**/credentials.json)",
+      "Edit(**/id_ecdsa*)",
+      "Edit(**/id_ed25519*)",
+      "Edit(**/id_rsa*)",
+      "Edit(~/.aws/**)",
+      "Edit(~/.docker/config.json)",
+      "Edit(~/.gnupg/**)",
+      "Edit(~/.ssh/**)",
+      "Read(**/*.key)",
+      "Read(**/*.p12)",
+      "Read(**/*.pem)",
+      "Read(**/*.pfx)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/.netrc)",
+      "Read(**/credentials.json)",
+      "Read(**/id_ecdsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(**/id_rsa*)",
+      "Read(~/.aws/**)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.ssh/**)"
+    ]
+  }
+}
