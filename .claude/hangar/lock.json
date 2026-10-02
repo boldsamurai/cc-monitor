@@ -74,6 +74,96 @@
         ],
         "[\"permissions\",\"allow\",\"Bash(uv run ruff:*)\"]": [
           "python"
+        ],
+        "[\"permissions\",\"ask\",\"Bash(chgrp:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"ask\",\"Bash(chmod:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"ask\",\"Bash(chown:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"ask\",\"Bash(curl:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"ask\",\"Bash(rm -f:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"ask\",\"Bash(wget:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(doas:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(docker builder prune:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(docker container prune:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(docker image prune:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(docker network prune:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(docker system prune:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(docker volume prune:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git branch -D develop:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git branch -D main:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git branch -D master:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git clean -f:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git clean -fd:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git clean -fdx:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git filter-branch:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git push --force-with-lease:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git push --force:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git push -f:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git reset --hard:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(git update-ref -d:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(rm -fr:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(rm -r:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(rm -rf:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(su:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"deny\",\"Bash(sudo:*)\"]": [
+          "core"
         ]
       },
       "kind": "managed",
@@ -82,7 +172,7 @@
         "hangar",
         "python"
       ],
-      "sha256": "df8722a3158243727efe7dada8b37d45fb576e2a2e2b3f0040c96e77b18bf778"
+      "sha256": "f3055fe61622750e181d61cd687654d2d081823a15ce59ad18825f445751adb3"
     },
     ".gitignore": {
       "json_keys": {},
@@ -123,7 +213,7 @@
     }
   },
   "modules": {
-    "core": "1.0.0",
+    "core": "1.1.0",
     "python": "1.0.0"
   },
   "schema_version": 1
