@@ -8,5 +8,6 @@
   ordered by priority, top first.
 - Starting a task marks its first subtask `[~]`; resuming one that already has `[~]`
   starts by checking what was already done (code, `git log`).
-- Commit once per subtask, with the `TODO.md` update in the same commit.
+- Commit once per task (its branch and pull request), with the `TODO.md` update in the same
+  commit; keep the checkboxes current while working. `/go` keeps one commit per subtask.
 - When every subtask is `[x]`, move the whole task to Done.

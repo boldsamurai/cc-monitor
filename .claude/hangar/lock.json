@@ -16,7 +16,7 @@
       "owners": [
         "core"
       ],
-      "sha256": "5c76b08a0ead5ee4ef243fe7704c8efb1cbd04acad7b373830f26e5ad86961f6"
+      "sha256": "edaa57b54f59dc851f549fd79ab1883f9ebc87c22096f5d34d574997dc98b513"
     },
     ".claude/rules/python.md": {
       "json_keys": {},
@@ -32,7 +32,7 @@
       "owners": [
         "core"
       ],
-      "sha256": "75095e253f3232e87c26cf42314b6cba71f9849cbcb739bea29c7a0301b64255"
+      "sha256": "6f5590798cc9c87c7b07ce3c1739d6d0f84401e7a8b16bb5cda7892a2056eeab"
     },
     ".claude/settings.json": {
       "json_keys": {
@@ -40,6 +40,9 @@
           "core"
         ],
         "[\"extraKnownMarketplaces\",\"hangar\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(gh pr merge:*)\"]": [
           "core"
         ],
         "[\"permissions\",\"allow\",\"Bash(git branch --show-current)\"]": [
@@ -57,7 +60,52 @@
         "[\"permissions\",\"allow\",\"Bash(git status:*)\"]": [
           "core"
         ],
+        "[\"permissions\",\"allow\",\"Bash(glab mr merge:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar check:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar ci-policy:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar claim:*)\"]": [
+          "core"
+        ],
         "[\"permissions\",\"allow\",\"Bash(hangar doctor:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar forge:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar heartbeat:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar lanes check:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar lanes list:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar lanes peers:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar lanes sync:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar lanes wait:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar lesson suggest:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar limits:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar ready:*)\"]": [
+          "core"
+        ],
+        "[\"permissions\",\"allow\",\"Bash(hangar release:*)\"]": [
           "core"
         ],
         "[\"permissions\",\"allow\",\"Bash(hangar render --dry-run:*)\"]": [
@@ -172,7 +220,7 @@
         "hangar",
         "python"
       ],
-      "sha256": "f3055fe61622750e181d61cd687654d2d081823a15ce59ad18825f445751adb3"
+      "sha256": "5aeafe6531004947b82fb99c31a45691694ec123980ff1753abe5146d16c424c"
     },
     ".gitignore": {
       "json_keys": {},
@@ -181,7 +229,7 @@
         "core",
         "python"
       ],
-      "sha256": "9b4904dd0400ae94a8d7d1a1fa5c6172fc13b9461d7e08f8058c5db18fa0392c"
+      "sha256": "8cc6eefd3e881946729eebeb2cfe45ec3b232840997bbbc2ef0843e441223d95"
     },
     "CLAUDE.md": {
       "json_keys": {},
@@ -213,8 +261,8 @@
     }
   },
   "modules": {
-    "core": "1.1.0",
-    "python": "1.0.0"
+    "core": "1.8.0",
+    "python": "1.1.0"
   },
   "schema_version": 1
 }

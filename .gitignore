@@ -43,6 +43,7 @@ CLAUDE.local.md
 .claude/hangar/.txn*
 .claude/hangar/go-state.json
 .claude/hangar/go-hook.json
+.claude/worktrees/
 
 # --- python ---
 .venv/
