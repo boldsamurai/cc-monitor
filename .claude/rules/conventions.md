@@ -3,8 +3,13 @@
 
 - Run project commands from the Commands table in `.claude/hangar/index.md`, never a
   stack-specific command from memory. `check` runs every quality gate in order.
-- Run `check` before every commit when the Commands table defines it; a red gate is
-  fixed, not skipped.
+- Every `git commit` runs the gates it touches (hangar-core's commit hook, `hangar check
+  --changed`); a red gate is fixed, not skipped. Don't run `check` yourself right before
+  committing, and never edit files and commit in one shell command (the hook checks the tree
+  before the command runs). Without the hangar-core plugin active, run `check` before every
+  commit yourself.
+- Before merging a pull request run `hangar ci-policy --base origin/<target branch>`: on `wait` merge only once CI is green;
+  on `skip` the commit gate is enough and CI on the default branch is the alarm.
 - Commits follow Conventional Commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`,
   `chore:`), imperative mood, one logical change per commit.
 - Record a decision with a real trade-off in `docs/decisions.md` when it is made.
