@@ -12,3 +12,9 @@ paths: ["**/*.py"]
 - Tests live in `test_*.py` files named `test_<unit>_<scenario>_<expected>`; use
   `tmp_path` for file-system work.
 - Raise specific exceptions early; never swallow one with a bare `except`.
+
+## Lessons
+
+- monkeypatching module.subprocess.run patches the one global subprocess module: fake a module-level wrapper instead when other subprocess calls must stay real in the test — hangar, 2026-10-14
+- SQLAlchemy DateTime(timezone=True) on SQLite keeps no offset: store naive UTC and attach UTC when reading; never compare an aware value against the stored column — hangar, 2026-10-16
+- Arithmetic on two aware datetimes that share one ZoneInfo runs on the wall clock and breaks across DST: subtract and compare in UTC, convert to local only for dates — hangar, 2026-10-16

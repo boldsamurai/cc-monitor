@@ -11,3 +11,7 @@
 - Commit once per task (its branch and pull request), with the `TODO.md` update in the same
   commit; keep the checkboxes current while working. `/go` keeps one commit per subtask.
 - When every subtask is `[x]`, move the whole task to Done.
+- A subtask that ends with the merge ("merge once the round is done") is ticked, and the task
+  moved to Done, in the pull request itself, as its last commit before merging.
+- Every subtask can be finished within the task. A "later, only if…" idea is not a subtask:
+  put it in POST-MVP or in the decision's notes, so it doesn't keep the task out of Done.

@@ -24,7 +24,7 @@
       "owners": [
         "python"
       ],
-      "sha256": "7f0466d63359b050b4016e71f5f24c422239a18524d2595e17be24c818f1b37e"
+      "sha256": "f2ab833a940f526551b5b95ee798547825026531ff34fdb56b653474f41bf5bd"
     },
     ".claude/rules/task-tracking.md": {
       "json_keys": {},
@@ -32,7 +32,7 @@
       "owners": [
         "core"
       ],
-      "sha256": "6f5590798cc9c87c7b07ce3c1739d6d0f84401e7a8b16bb5cda7892a2056eeab"
+      "sha256": "ab64ec8f87984504dd1ff2d834537b45076fd71f8433eb6047ab596eda44dad4"
     },
     ".claude/settings.json": {
       "json_keys": {
@@ -261,7 +261,7 @@
     }
   },
   "modules": {
-    "core": "1.8.0",
+    "core": "1.9.0",
     "python": "1.1.0"
   },
   "schema_version": 1
