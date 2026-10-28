@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import patch
-
-import pytest
 
 from cc_usagemonitor import claude_detection as cd
 

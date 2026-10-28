@@ -20,6 +20,14 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, RadioButton, RadioSet, Static
 
+from . import __version__
+from .config import CONFIG_FILE, load_config, save_config
+from .formatting import DATE_FORMATS, apply_config, format_time
+from .install_hook import HOOK_MARKERS, SETTINGS_PATH, ensure_installed
+from .launchers import open_file, open_in_file_manager
+from .logger import LOG_FILE, get_logger
+from .paths import PROJECTS_DIR
+
 
 class CircleCheckbox(Checkbox):
     """Checkbox rendered as a bullet — ● when checked, ○ when not.
@@ -44,14 +52,6 @@ class CircleCheckbox(Checkbox):
         symbol = "●" if self.value else "○"
         return Content.assemble((symbol, button_style))
 
-
-from . import __version__
-from .config import CONFIG_FILE, load_config, save_config
-from .formatting import DATE_FORMATS, apply_config, format_time
-from .install_hook import HOOK_MARKERS, SETTINGS_PATH, ensure_installed
-from .launchers import open_file, open_in_file_manager
-from .logger import LOG_FILE, get_logger
-from .paths import PROJECTS_DIR
 
 log = get_logger(__name__)
 

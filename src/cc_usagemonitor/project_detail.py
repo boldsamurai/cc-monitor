@@ -27,15 +27,15 @@ from .launchers import open_terminal_with
 from .logger import get_logger
 from .project_slug import decode_project_path
 
-log = get_logger(__name__)
 from .session_detail import (
     SessionDetailScreen,
     _PLOTEXT_THEME_NAME,
     _fmt_duration,
     _fmt_dt,
     _fmt_int,
-    _fmt_turn_tick,
 )
+
+log = get_logger(__name__)
 
 
 class ProjectDetailScreen(Screen):

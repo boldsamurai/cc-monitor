@@ -9,7 +9,6 @@ snapshot rather than crashing.
 from __future__ import annotations
 
 import asyncio
-import os
 import pickle
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

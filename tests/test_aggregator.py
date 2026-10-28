@@ -7,7 +7,6 @@ totals match the input records.
 
 from __future__ import annotations
 
-from collections import deque
 from datetime import datetime, timedelta, timezone
 
 import pytest

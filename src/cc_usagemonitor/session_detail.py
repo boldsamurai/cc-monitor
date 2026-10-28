@@ -15,8 +15,9 @@ from textual.screen import Screen
 from textual.widgets import Button, DataTable, Static, TabbedContent, TabPane
 from textual_plotext import PlotextPlot
 
-from .aggregator import Aggregator, SessionState, TokenSums
+from .aggregator import Aggregator, SessionState
 from .parser import humanize_model_name
+from .formatting import format_datetime_full as _fmt_dt  # noqa: F401
 from .launchers import open_in_file_manager, open_terminal_with
 from .logger import get_logger
 from .project_slug import decode_project_path, decode_project_slug
@@ -92,9 +93,6 @@ def _fmt_turn_tick(v: int) -> str:
         kv = v / 1000
         return f"{kv:.0f}k" if kv == int(kv) else f"{kv:.1f}k"
     return str(v)
-
-
-from .formatting import format_datetime_full as _fmt_dt  # noqa: F401
 
 
 def _fmt_duration(start: datetime | None, end: datetime | None) -> str:

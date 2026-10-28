@@ -9,7 +9,7 @@ from rich.table import Table
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal
 from textual.reactive import reactive
 from textual.widgets import (
     ContentSwitcher,
@@ -29,13 +29,10 @@ from .config import load_config, save_config
 from .formatting import (
     apply_config as _apply_format_config,
     format_datetime as _fmt_datetime,
-    format_time as _fmt_ts,
 )
 from .launchers import open_file, open_in_file_manager, open_terminal_with
 from .logger import LOG_DIR, LOG_FILE, get_logger
-from .pricing import PricingTable
 
-log = get_logger(__name__)
 from .project_slug import decode_project_path, decode_project_slug
 from .project_detail import ProjectDetailScreen
 from .session_detail import (
@@ -43,7 +40,12 @@ from .session_detail import (
     _PLOTEXT_COLOR_CYCLE,
     _PLOTEXT_THEME_NAME,
 )
+from .sort_key import (
+    sort_key_factory as _sort_key_factory,
+)
 from .tailer import Tailer
+
+log = get_logger(__name__)
 
 
 def _fmt_int(n: int) -> str:
@@ -196,13 +198,6 @@ def _fmt_dollar_tick(v: float) -> str:
     if v >= 10:
         return f"${v:.0f}"
     return f"${v:.2f}"
-
-
-from .sort_key import (
-    parse_duration_seconds as _parse_duration_seconds,
-    sort_key as _sort_key,
-    sort_key_factory as _sort_key_factory,
-)
 
 
 def _fmt_token_tick(v: float) -> str:

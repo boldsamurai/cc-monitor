@@ -132,11 +132,11 @@ def _parse_version(s: str) -> tuple[int, ...] | None:
 
 
 def _is_newer(remote: str, local: str) -> bool:
-    r = _parse_version(remote)
-    l = _parse_version(local)
-    if r is None or l is None:
+    remote_version = _parse_version(remote)
+    local_version = _parse_version(local)
+    if remote_version is None or local_version is None:
         return False
-    return r > l
+    return remote_version > local_version
 
 
 def _load_cache() -> tuple[str, float] | None:

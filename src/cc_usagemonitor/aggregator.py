@@ -249,9 +249,9 @@ class Aggregator:
         predate a new field) — those just stay at their __init__
         defaults so a forward-compat snapshot still works without a
         SCHEMA_VERSION bump."""
-        for field in self._SNAPSHOT_FIELDS:
-            if field in data:
-                setattr(self, field, data[field])
+        for name in self._SNAPSHOT_FIELDS:
+            if name in data:
+                setattr(self, name, data[name])
         log.info(
             "aggregator restored: %d sessions, %d archive records",
             len(self.sessions),
