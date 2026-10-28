@@ -14,7 +14,7 @@
 
 | Command | Runs |
 | --- | --- |
-| `check` | `uv run ruff check . && uv run pytest` |
-| `lint` | `uv run ruff check .` |
+| `check` | `uv run ruff check . && uv run ruff format --check . && uv run pytest` |
+| `lint` | `uv run ruff check . && uv run ruff format --check .` |
 | `pyrun` | `uv run` |
 | `test` | `uv run pytest` |

@@ -20,6 +20,7 @@ IP and Python's default User-Agent. The 24h cache keeps that to ~1
 request per day per machine. Users who prefer no network traffic at all
 can disable the check via --no-update-check or the Settings screen.
 """
+
 from __future__ import annotations
 
 import json
@@ -83,9 +84,17 @@ _INSTALLER_CANDIDATES: tuple[tuple[str, list[str]], ...] = (
     # pip's analogous mechanism is --no-cache-dir (covers wheel cache).
     # pipx doesn't expose a refresh knob; users on pipx accept the
     # small propagation lag in exchange for simpler tooling.
-    ("uv", [
-        "uv", "tool", "install", "--no-cache", "--reinstall", "cc-monitor",
-    ]),
+    (
+        "uv",
+        [
+            "uv",
+            "tool",
+            "install",
+            "--no-cache",
+            "--reinstall",
+            "cc-monitor",
+        ],
+    ),
     ("pipx", ["pipx", "upgrade", "cc-monitor"]),
     ("pip", ["pip", "install", "--upgrade", "--no-cache-dir", "cc-monitor"]),
 )
@@ -123,11 +132,11 @@ def _parse_version(s: str) -> tuple[int, ...] | None:
 
 
 def _is_newer(remote: str, local: str) -> bool:
-    r = _parse_version(remote)
-    l = _parse_version(local)
-    if r is None or l is None:
+    remote_version = _parse_version(remote)
+    local_version = _parse_version(local)
+    if remote_version is None or local_version is None:
         return False
-    return r > l
+    return remote_version > local_version
 
 
 def _load_cache() -> tuple[str, float] | None:
@@ -271,7 +280,8 @@ async def check_for_update() -> str | None:
             # Cached "latest" is no longer newer than us — refetch.
             log.debug(
                 "version-check cache obsolete (cached=%s running=%s); refetching",
-                latest, __version__,
+                latest,
+                __version__,
             )
             cached = None
         else:
@@ -288,7 +298,8 @@ async def check_for_update() -> str | None:
     if _is_newer(latest, __version__):
         log.info(
             "update available: running %s, PyPI has %s",
-            __version__, latest,
+            __version__,
+            latest,
         )
         return latest
     return None

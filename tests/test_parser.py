@@ -1,4 +1,5 @@
 """Tests for parser pure helpers and JSONL line parsing."""
+
 from __future__ import annotations
 
 import json
@@ -17,34 +18,43 @@ from cc_usagemonitor.parser import (
 
 # ----- normalize_model_name -----
 
-@pytest.mark.parametrize("raw,want", [
-    ("claude-opus-4-7", "claude-opus-4-7"),
-    ("claude-sonnet-4-5-20250929", "claude-sonnet-4-5"),
-    ("claude-haiku-4-5-20251001", "claude-haiku-4-5"),
-    ("", ""),
-    ("opus-4-7", "opus-4-7"),  # No date suffix → unchanged.
-])
+
+@pytest.mark.parametrize(
+    "raw,want",
+    [
+        ("claude-opus-4-7", "claude-opus-4-7"),
+        ("claude-sonnet-4-5-20250929", "claude-sonnet-4-5"),
+        ("claude-haiku-4-5-20251001", "claude-haiku-4-5"),
+        ("", ""),
+        ("opus-4-7", "opus-4-7"),  # No date suffix → unchanged.
+    ],
+)
 def test_normalize_model_name(raw, want):
     assert normalize_model_name(raw) == want
 
 
 # ----- humanize_model_name -----
 
-@pytest.mark.parametrize("raw,want", [
-    ("claude-opus-4-7", "Opus 4.7"),
-    ("claude-sonnet-4-6", "Sonnet 4.6"),
-    ("claude-haiku-4-5", "Haiku 4.5"),
-    ("claude-opus-4-7[1m]", "Opus 4.7[1m]"),
-    # Older 3.x ids don't fit the family-major-minor shape — pass through.
-    ("claude-3-5-sonnet", "claude-3-5-sonnet"),
-    ("(unknown)", "(unknown)"),
-    ("", ""),
-])
+
+@pytest.mark.parametrize(
+    "raw,want",
+    [
+        ("claude-opus-4-7", "Opus 4.7"),
+        ("claude-sonnet-4-6", "Sonnet 4.6"),
+        ("claude-haiku-4-5", "Haiku 4.5"),
+        ("claude-opus-4-7[1m]", "Opus 4.7[1m]"),
+        # Older 3.x ids don't fit the family-major-minor shape — pass through.
+        ("claude-3-5-sonnet", "claude-3-5-sonnet"),
+        ("(unknown)", "(unknown)"),
+        ("", ""),
+    ],
+)
 def test_humanize_model_name(raw, want):
     assert humanize_model_name(raw) == want
 
 
 # ----- parse_session_line -----
+
 
 def _assistant_line(**overrides) -> str:
     """Build a minimal valid assistant JSONL line for the parser."""
@@ -94,17 +104,22 @@ def test_parse_session_line_skips_non_assistant():
 
 
 def test_parse_session_line_skips_synthetic():
-    line = _assistant_line(message={
-        "model": "<synthetic>", "usage": {"input_tokens": 0},
-    })
+    line = _assistant_line(
+        message={
+            "model": "<synthetic>",
+            "usage": {"input_tokens": 0},
+        }
+    )
     assert parse_session_line(line, "-x") is None
 
 
 def test_parse_session_line_skips_no_usage():
-    line = json.dumps({
-        "type": "assistant",
-        "message": {"model": "claude-opus-4-7"},
-    })
+    line = json.dumps(
+        {
+            "type": "assistant",
+            "message": {"model": "claude-opus-4-7"},
+        }
+    )
     assert parse_session_line(line, "-x") is None
 
 
@@ -118,15 +133,17 @@ def test_parse_session_line_lump_cache_creation_unsupported():
     # Lump-sum cache_creation_input_tokens is *not* expanded by parser
     # — only PricingTable.cost() understands the legacy fallback. Make
     # sure the parser doesn't accidentally pick it up.
-    line = _assistant_line(message={
-        "model": "claude-opus-4-7",
-        "usage": {
-            "input_tokens": 100,
-            "output_tokens": 50,
-            "cache_creation_input_tokens": 999,
-            # Empty cache_creation dict → ephemeral_5m/1h are 0.
-        },
-    })
+    line = _assistant_line(
+        message={
+            "model": "claude-opus-4-7",
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_creation_input_tokens": 999,
+                # Empty cache_creation dict → ephemeral_5m/1h are 0.
+            },
+        }
+    )
     rec = parse_session_line(line, "-x")
     assert rec is not None
     assert rec.cache_write_5m_tokens == 0
@@ -135,15 +152,18 @@ def test_parse_session_line_lump_cache_creation_unsupported():
 
 # ----- parse_hook_event_line -----
 
+
 def test_parse_hook_event_tool_start():
-    line = json.dumps({
-        "event": "tool_start",
-        "ts": "2026-04-30T12:00:00.000Z",
-        "session_id": "s-1",
-        "tool": "Bash",
-        "span_id": "tool-use-1",
-        "cwd": "/tmp/p",
-    })
+    line = json.dumps(
+        {
+            "event": "tool_start",
+            "ts": "2026-04-30T12:00:00.000Z",
+            "session_id": "s-1",
+            "tool": "Bash",
+            "span_id": "tool-use-1",
+            "cwd": "/tmp/p",
+        }
+    )
     ev = parse_hook_event_line(line)
     assert ev is not None
     assert ev.event == "tool_start"
@@ -164,6 +184,7 @@ def test_parse_hook_event_missing_ts():
 
 # ----- project_slug_from_path -----
 
+
 def test_project_slug_from_path_normal():
     p = Path("/home/u/.claude/projects/-tmp-proj/abc.jsonl")
     assert project_slug_from_path(p) == "-tmp-proj"
@@ -171,9 +192,7 @@ def test_project_slug_from_path_normal():
 
 def test_project_slug_from_path_subagent():
     # Subagent JSONLs nest under <slug>/<sess>/subagents/agent-N.jsonl.
-    p = Path(
-        "/home/u/.claude/projects/-tmp-proj/sess/subagents/agent-1.jsonl"
-    )
+    p = Path("/home/u/.claude/projects/-tmp-proj/sess/subagents/agent-1.jsonl")
     assert project_slug_from_path(p) == "-tmp-proj"
 
 

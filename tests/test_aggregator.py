@@ -4,9 +4,9 @@ Covers the percentile helper, sums_in_window / sums_in_range against a
 hand-built _long_window, and the ingest happy path so the cost+token
 totals match the input records.
 """
+
 from __future__ import annotations
 
-from collections import deque
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -22,6 +22,7 @@ from cc_usagemonitor.pricing import PricingTable
 
 
 # ----- _percentile -----
+
 
 def test_percentile_empty_is_zero():
     assert _percentile([], 90) == 0.0
@@ -43,6 +44,7 @@ def test_percentile_p50_is_median():
 
 
 # ----- sums helpers -----
+
 
 def _make_rec(
     ts: datetime,
@@ -120,12 +122,14 @@ def test_sums_in_range_handles_naive_timestamps(agg):
     base_naive = datetime(2026, 4, 30, 13, 0)  # treated as UTC
     agg._long_window.append((base_naive, _make_rec(base_aware), 1.0))
     sums = agg.sums_in_range(
-        base_aware, base_aware + timedelta(hours=2),
+        base_aware,
+        base_aware + timedelta(hours=2),
     )
     assert sums.turns == 1
 
 
 # ----- ingest happy path -----
+
 
 def test_ingest_assigns_session_and_sums(agg):
     ts = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc)
@@ -143,10 +147,17 @@ def test_ingest_assigns_session_and_sums(agg):
 
 # ----- block boundary detection -----
 
+
 def test_top_of_hour_truncates_minutes_seconds_micros():
     ts = datetime(2026, 4, 30, 14, 35, 42, 123456, tzinfo=timezone.utc)
     assert _top_of_hour(ts) == datetime(
-        2026, 4, 30, 14, 0, 0, tzinfo=timezone.utc,
+        2026,
+        4,
+        30,
+        14,
+        0,
+        0,
+        tzinfo=timezone.utc,
     )
 
 
@@ -230,7 +241,10 @@ def test_block_info_returns_none_when_block_already_ended(agg):
 
 # ----- session JSONL combined helper -----
 
-def _write_session_jsonl(tmp_path, project_slug: str, session_id: str, lines: list[dict]) -> None:
+
+def _write_session_jsonl(
+    tmp_path, project_slug: str, session_id: str, lines: list[dict]
+) -> None:
     """Write a fake session JSONL where the parser will find it.
 
     Aggregator's compute helpers use PROJECTS_DIR / slug / {session}.jsonl
@@ -238,6 +252,7 @@ def _write_session_jsonl(tmp_path, project_slug: str, session_id: str, lines: li
     via monkeypatch on the paths module.
     """
     import json
+
     proj_dir = tmp_path / project_slug
     proj_dir.mkdir(parents=True, exist_ok=True)
     path = proj_dir / f"{session_id}.jsonl"
@@ -245,15 +260,19 @@ def _write_session_jsonl(tmp_path, project_slug: str, session_id: str, lines: li
 
 
 def test_session_jsonl_stats_extracts_reads_writes_and_tools(
-    agg, tmp_path, monkeypatch,
+    agg,
+    tmp_path,
+    monkeypatch,
 ):
     # Redirect PROJECTS_DIR so _compute_session_jsonl_stats reads our
     # fixture file instead of the user's ~/.claude/projects.
     from cc_usagemonitor import paths as paths_module
+
     monkeypatch.setattr(paths_module, "PROJECTS_DIR", tmp_path)
     # aggregator caches a reference at import time inside its helper,
     # so monkeypatch the module-level too if it's already bound.
     import cc_usagemonitor.aggregator as agg_mod
+
     monkeypatch.setattr(agg_mod, "PROJECTS_DIR", tmp_path, raising=False)
 
     project_slug = "-fake-proj"
@@ -264,41 +283,106 @@ def test_session_jsonl_stats_extracts_reads_writes_and_tools(
     rec.project_slug = project_slug
     agg.ingest(rec)
 
-    _write_session_jsonl(tmp_path, project_slug, session_id, [
-        # Read 'a.py' twice with different result sizes.
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": "tu1", "name": "Read",
-             "input": {"file_path": "/tmp/a.py"}},
-        ]}},
-        {"type": "user", "message": {"content": [
-            {"type": "tool_result", "tool_use_id": "tu1",
-             "content": "x" * 400},
-        ]}},
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": "tu2", "name": "Read",
-             "input": {"file_path": "/tmp/a.py"}},
-        ]}},
-        {"type": "user", "message": {"content": [
-            {"type": "tool_result", "tool_use_id": "tu2",
-             "content": "y" * 200},
-        ]}},
-        # Write 'b.py' once.
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": "tu3", "name": "Write",
-             "input": {"file_path": "/tmp/b.py", "content": "hello"}},
-        ]}},
-        # Edit 'a.py' once.
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": "tu4", "name": "Edit",
-             "input": {"file_path": "/tmp/a.py",
-                       "new_string": "fix"}},
-        ]}},
-        # Bash tool just to populate counts.
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": "tu5", "name": "Bash",
-             "input": {"command": "ls"}},
-        ]}},
-    ])
+    _write_session_jsonl(
+        tmp_path,
+        project_slug,
+        session_id,
+        [
+            # Read 'a.py' twice with different result sizes.
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu1",
+                            "name": "Read",
+                            "input": {"file_path": "/tmp/a.py"},
+                        },
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "tu1",
+                            "content": "x" * 400,
+                        },
+                    ]
+                },
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu2",
+                            "name": "Read",
+                            "input": {"file_path": "/tmp/a.py"},
+                        },
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "tu2",
+                            "content": "y" * 200,
+                        },
+                    ]
+                },
+            },
+            # Write 'b.py' once.
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu3",
+                            "name": "Write",
+                            "input": {"file_path": "/tmp/b.py", "content": "hello"},
+                        },
+                    ]
+                },
+            },
+            # Edit 'a.py' once.
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu4",
+                            "name": "Edit",
+                            "input": {"file_path": "/tmp/a.py", "new_string": "fix"},
+                        },
+                    ]
+                },
+            },
+            # Bash tool just to populate counts.
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "tu5",
+                            "name": "Bash",
+                            "input": {"command": "ls"},
+                        },
+                    ]
+                },
+            },
+        ],
+    )
 
     reads = agg.count_file_reads_in_session(session_id)
     assert "/tmp/a.py" in reads
@@ -331,11 +415,14 @@ def test_session_jsonl_stats_extracts_reads_writes_and_tools(
 
 
 def test_session_jsonl_stats_uses_single_pass_cache(
-    agg, tmp_path, monkeypatch,
+    agg,
+    tmp_path,
+    monkeypatch,
 ):
     # The three count_*_in_session methods now share a cache key, so
     # calling all three after one ingest should compute exactly once.
     import cc_usagemonitor.aggregator as agg_mod
+
     monkeypatch.setattr(agg_mod, "PROJECTS_DIR", tmp_path, raising=False)
 
     project_slug = "-fake-proj"
@@ -344,12 +431,21 @@ def test_session_jsonl_stats_uses_single_pass_cache(
     rec = _make_rec(ts, session_id=session_id)
     rec.project_slug = project_slug
     agg.ingest(rec)
-    _write_session_jsonl(tmp_path, project_slug, session_id, [
-        {"type": "assistant", "message": {"content": [
-            {"type": "tool_use", "id": "t", "name": "Bash",
-             "input": {}},
-        ]}},
-    ])
+    _write_session_jsonl(
+        tmp_path,
+        project_slug,
+        session_id,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "tool_use", "id": "t", "name": "Bash", "input": {}},
+                    ]
+                },
+            },
+        ],
+    )
 
     # Wrap _compute_session_jsonl_stats so we can count invocations.
     calls = {"n": 0}
@@ -369,6 +465,7 @@ def test_session_jsonl_stats_uses_single_pass_cache(
 
 # ----- per-session cache -----
 
+
 def test_session_cache_returns_same_object_until_revision_bump(agg):
     # Build a session by ingesting once.
     ts = datetime.now(tz=timezone.utc)
@@ -386,7 +483,9 @@ def test_session_cache_returns_same_object_until_revision_bump(agg):
     out1 = agg._cached_for_session("s-1", "k", lambda: result_a)
     # Second call hits the cache — fn isn't even invoked.
     out2 = agg._cached_for_session(
-        "s-1", "k", lambda: (_ for _ in ()).throw(AssertionError("recomputed")),
+        "s-1",
+        "k",
+        lambda: (_ for _ in ()).throw(AssertionError("recomputed")),
     )
     assert out1 is result_a and out2 is result_a
 
@@ -439,9 +538,13 @@ def test_ingest_updates_first_and_last_seen(agg):
 def test_sidechain_records_dont_overwrite_main_chain_context(agg):
     base = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc)
     # Main turn lands first with a fat context.
-    agg.ingest(_make_rec(
-        base, cache_read=50_000, input_tokens=10_000,
-    ))
+    agg.ingest(
+        _make_rec(
+            base,
+            cache_read=50_000,
+            input_tokens=10_000,
+        )
+    )
     sess = agg.sessions["s-1"]
     assert sess.last_context_tokens == 60_000
     main_max = sess.max_context_tokens
@@ -449,10 +552,14 @@ def test_sidechain_records_dont_overwrite_main_chain_context(agg):
     # Sub-agent runs with a small context — must NOT overwrite the
     # main chain's last/max values. This is the bug that caused the
     # context % chart to dive whenever a Task tool fired.
-    agg.ingest(_make_rec(
-        base + timedelta(seconds=5),
-        cache_read=500, input_tokens=200, is_sidechain=True,
-    ))
+    agg.ingest(
+        _make_rec(
+            base + timedelta(seconds=5),
+            cache_read=500,
+            input_tokens=200,
+            is_sidechain=True,
+        )
+    )
     assert sess.last_context_tokens == 60_000
     assert sess.max_context_tokens == main_max
 
@@ -462,9 +569,13 @@ def test_sidechain_records_still_count_in_cost_sums(agg):
     # cost real money. Only context tracking ignores them.
     base = datetime(2026, 4, 30, 12, 0, tzinfo=timezone.utc)
     agg.ingest(_make_rec(base, input_tokens=100, is_sidechain=False))
-    agg.ingest(_make_rec(
-        base + timedelta(seconds=1), input_tokens=200, is_sidechain=True,
-    ))
+    agg.ingest(
+        _make_rec(
+            base + timedelta(seconds=1),
+            input_tokens=200,
+            is_sidechain=True,
+        )
+    )
     sess = agg.sessions["s-1"]
     assert sess.sums.input == 300  # both turns
     assert sess.sums_main.input == 100

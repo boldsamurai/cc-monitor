@@ -8,6 +8,7 @@ quiet skip line) if anything referencing 'cc-monitor' (or the legacy
 never overwrite a user's existing config, even if it points at the
 legacy scripts/hook.py.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,17 +62,23 @@ def _make_entries(hook_cmd: str) -> dict:
     catches every tool; the script filters to Skill/Agent itself so
     we don't depend on Claude Code's regex-matcher behavior."""
     return {
-        "PreToolUse": [{
-            "matcher": "*",
-            "hooks": [{"type": "command", "command": f"{hook_cmd} pre"}],
-        }],
-        "PostToolUse": [{
-            "matcher": "*",
-            "hooks": [{"type": "command", "command": f"{hook_cmd} post"}],
-        }],
-        "Stop": [{
-            "hooks": [{"type": "command", "command": f"{hook_cmd} stop"}],
-        }],
+        "PreToolUse": [
+            {
+                "matcher": "*",
+                "hooks": [{"type": "command", "command": f"{hook_cmd} pre"}],
+            }
+        ],
+        "PostToolUse": [
+            {
+                "matcher": "*",
+                "hooks": [{"type": "command", "command": f"{hook_cmd} post"}],
+            }
+        ],
+        "Stop": [
+            {
+                "hooks": [{"type": "command", "command": f"{hook_cmd} stop"}],
+            }
+        ],
     }
 
 
@@ -129,7 +136,9 @@ def ensure_installed() -> None:
         return
 
     log.info(
-        "hook auto-install: added entries %s in %s", added, SETTINGS_PATH,
+        "hook auto-install: added entries %s in %s",
+        added,
+        SETTINGS_PATH,
     )
     print(
         f"cc-monitor: installed Claude Code hook for {', '.join(added)} "

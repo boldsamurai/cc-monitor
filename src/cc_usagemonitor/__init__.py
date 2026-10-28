@@ -6,6 +6,7 @@ diagnostics block, and the PyPI update-checker. Falls back to a sentinel
 when running from an uninstalled checkout (e.g. `python -m
 cc_usagemonitor` directly out of src/) so the value is still defined.
 """
+
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version

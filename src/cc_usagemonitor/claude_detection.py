@@ -19,6 +19,7 @@ Detection is intentionally conservative — false positives ("Claude is
 installed!") are worse than false negatives because we'd skip the
 warning for a user who really does need to install Claude Code first.
 """
+
 from __future__ import annotations
 
 import shutil

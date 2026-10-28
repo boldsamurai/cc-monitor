@@ -12,6 +12,7 @@ pulling in Textual. The factory has three jobs:
   3. Recognize numbers with optional $-sign / K/M/B/T suffix and order
      by magnitude. Falls through to lower-cased text otherwise.
 """
+
 from __future__ import annotations
 
 import re

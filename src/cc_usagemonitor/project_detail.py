@@ -4,6 +4,7 @@ Aggregates every session whose project_slug matches across all stats:
 total cost / tokens, top tools and files, sessions list, charts of
 activity over time.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -26,15 +27,15 @@ from .launchers import open_terminal_with
 from .logger import get_logger
 from .project_slug import decode_project_path
 
-log = get_logger(__name__)
 from .session_detail import (
     SessionDetailScreen,
     _PLOTEXT_THEME_NAME,
     _fmt_duration,
     _fmt_dt,
     _fmt_int,
-    _fmt_turn_tick,
 )
+
+log = get_logger(__name__)
 
 
 class ProjectDetailScreen(Screen):
@@ -153,10 +154,7 @@ class ProjectDetailScreen(Screen):
         # iterations cheap and the result stable even if new sessions
         # arrive while the screen is open.
         self._sessions: list[SessionState] = sorted(
-            (
-                s for s in aggregator.sessions.values()
-                if s.project_slug == project_slug
-            ),
+            (s for s in aggregator.sessions.values() if s.project_slug == project_slug),
             key=lambda s: s.last_seen or datetime.min.replace(tzinfo=timezone.utc),
             reverse=True,
         )
@@ -186,7 +184,11 @@ class ProjectDetailScreen(Screen):
                                 id="pd-spans-table", cursor_type="row"
                             )
                             spans_table.add_columns(
-                                "Type", "Name", "Calls", "Tokens", "Cost",
+                                "Type",
+                                "Name",
+                                "Calls",
+                                "Tokens",
+                                "Cost",
                             )
                             yield spans_table
                             yield Static("", id="pd-spans-empty", classes="pd-hint")
@@ -200,7 +202,9 @@ class ProjectDetailScreen(Screen):
                                     id="pd-files-table", cursor_type="row"
                                 )
                                 files_table.add_columns(
-                                    "File", "Reads", "Tokens (~est)",
+                                    "File",
+                                    "Reads",
+                                    "Tokens (~est)",
                                 )
                                 yield files_table
                                 yield Static("", id="pd-files-empty", classes="pd-hint")
@@ -213,7 +217,10 @@ class ProjectDetailScreen(Screen):
                                     id="pd-files-write-table", cursor_type="row"
                                 )
                                 files_write_table.add_columns(
-                                    "File", "Writes", "Edits", "Tokens (~est)",
+                                    "File",
+                                    "Writes",
+                                    "Edits",
+                                    "Tokens (~est)",
                                 )
                                 yield files_write_table
                                 yield Static(
@@ -244,7 +251,13 @@ class ProjectDetailScreen(Screen):
     def _make_sessions_table(self) -> DataTable:
         t = DataTable(id="pd-sessions-table", cursor_type="row", zebra_stripes=True)
         t.add_columns(
-            "Session", "Last", "Duration", "Cost", "Turns", "$/turn", "Tokens",
+            "Session",
+            "Last",
+            "Duration",
+            "Cost",
+            "Turns",
+            "$/turn",
+            "Tokens",
         )
         return t
 
@@ -272,7 +285,8 @@ class ProjectDetailScreen(Screen):
         # fresh launches under this project.
         self._sessions = sorted(
             (
-                s for s in self.aggregator.sessions.values()
+                s
+                for s in self.aggregator.sessions.values()
                 if s.project_slug == self.project_slug
             ),
             key=lambda s: s.last_seen or datetime.min.replace(tzinfo=timezone.utc),
@@ -307,12 +321,8 @@ class ProjectDetailScreen(Screen):
         t.clear()
         for sess in self._sessions:
             duration = _fmt_duration(sess.first_seen, sess.last_seen)
-            per_turn = (
-                sess.sums.cost_usd / sess.sums.turns if sess.sums.turns else 0
-            )
-            per_turn_str = (
-                f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}"
-            )
+            per_turn = sess.sums.cost_usd / sess.sums.turns if sess.sums.turns else 0
+            per_turn_str = f"${per_turn:.4f}" if per_turn < 1 else f"${per_turn:.2f}"
             t.add_row(
                 sess.session_id[:8],
                 _fmt_dt(sess.last_seen),
@@ -333,10 +343,17 @@ class ProjectDetailScreen(Screen):
             for ts, rec, cost in self.aggregator.load_full_session_turns(
                 sess.session_id
             ):
-                records.append((ts, cost, rec.input_tokens + rec.output_tokens
-                                + rec.cache_read_tokens
-                                + rec.cache_write_5m_tokens
-                                + rec.cache_write_1h_tokens))
+                records.append(
+                    (
+                        ts,
+                        cost,
+                        rec.input_tokens
+                        + rec.output_tokens
+                        + rec.cache_read_tokens
+                        + rec.cache_write_5m_tokens
+                        + rec.cache_write_1h_tokens,
+                    )
+                )
         if not records:
             return
         records.sort(key=lambda r: r[0])
@@ -344,9 +361,7 @@ class ProjectDetailScreen(Screen):
 
         def _to_secs(ts: datetime) -> float:
             t = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
-            ft = (
-                first_ts if first_ts.tzinfo else first_ts.replace(tzinfo=timezone.utc)
-            )
+            ft = first_ts if first_ts.tzinfo else first_ts.replace(tzinfo=timezone.utc)
             return (t - ft).total_seconds()
 
         times = [_to_secs(r[0]) for r in records]
@@ -367,6 +382,7 @@ class ProjectDetailScreen(Screen):
 
         def _fmt_time_tick(secs: float) -> str:
             from datetime import timedelta as _td
+
             ft = first_ts if first_ts.tzinfo else first_ts.replace(tzinfo=timezone.utc)
             ts_local = (ft + _td(seconds=secs)).astimezone()
             if total_secs > 86400 * 7:
@@ -406,12 +422,8 @@ class ProjectDetailScreen(Screen):
             spans_empty = self.query_one("#pd-spans-empty", Static)
             files_table = self.query_one("#pd-files-table", DataTable)
             files_empty = self.query_one("#pd-files-empty", Static)
-            files_write_table = self.query_one(
-                "#pd-files-write-table", DataTable
-            )
-            files_write_empty = self.query_one(
-                "#pd-files-write-empty", Static
-            )
+            files_write_table = self.query_one("#pd-files-write-table", DataTable)
+            files_write_empty = self.query_one("#pd-files-write-empty", Static)
         except Exception:
             return
         # Clear all three tables before refilling — periodic refresh
@@ -479,24 +491,18 @@ class ProjectDetailScreen(Screen):
                 bucket["tokens_est"] += stats["tokens_est"]
 
         if not files_agg:
-            files_empty.update(
-                "No Read tool calls recorded across these sessions."
-            )
+            files_empty.update("No Read tool calls recorded across these sessions.")
         else:
             project_root = self._project_path()
-            ordered = sorted(
-                files_agg.items(), key=lambda kv: -kv[1]["tokens_est"]
-            )
+            ordered = sorted(files_agg.items(), key=lambda kv: -kv[1]["tokens_est"])
             for fp, stats in ordered:
                 display = fp
                 if project_root and fp.startswith(project_root + "/"):
-                    display = fp[len(project_root) + 1:]
+                    display = fp[len(project_root) + 1 :]
                 if len(display) > 60:
                     display = "…" + display[-59:]
                 tokens = stats["tokens_est"]
-                tokens_str = (
-                    f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
-                )
+                tokens_str = f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
                 files_table.add_row(display, str(stats["reads"]), tokens_str)
 
         # Files written: sum writes/edits/chars across all sessions,
@@ -527,13 +533,11 @@ class ProjectDetailScreen(Screen):
             for fp, stats in ordered:
                 display = fp
                 if project_root and fp.startswith(project_root + "/"):
-                    display = fp[len(project_root) + 1:]
+                    display = fp[len(project_root) + 1 :]
                 if len(display) > 60:
                     display = "…" + display[-59:]
                 tokens = stats["tokens_est"]
-                tokens_str = (
-                    f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
-                )
+                tokens_str = f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
                 files_write_table.add_row(
                     display,
                     str(stats["writes"]),
@@ -565,8 +569,10 @@ class ProjectDetailScreen(Screen):
         title = Text()
         title.append("Project: ", style="bold")
         title.append(name, style="bold cyan")
-        title.append("  " + ("✓" if exists else "✗ deleted"),
-                     style="green" if exists else "red dim")
+        title.append(
+            "  " + ("✓" if exists else "✗ deleted"),
+            style="green" if exists else "red dim",
+        )
 
         sub = Text()
         sub.append("Path:     ", style="dim")
@@ -610,24 +616,21 @@ class ProjectDetailScreen(Screen):
         if not agg:
             return "(no Read tool calls)"
         top = sorted(agg.items(), key=lambda kv: -kv[1])[:3]
-        return " · ".join(
-            f"{Path(fp).name} ({n})" for fp, n in top
-        )
+        return " · ".join(f"{Path(fp).name} ({n})" for fp, n in top)
 
     def _build_totals_block(self) -> RenderableType:
         total_cost = sum(s.sums.cost_usd for s in self._sessions)
         total_turns = sum(s.sums.turns for s in self._sessions)
         total_tokens = sum(s.sums.total_tokens for s in self._sessions)
-        per_session = (
-            total_cost / len(self._sessions) if self._sessions else 0.0
-        )
+        per_session = total_cost / len(self._sessions) if self._sessions else 0.0
         per_turn = total_cost / total_turns if total_turns else 0.0
         cache_read = sum(s.sums.cache_read for s in self._sessions)
         cache_write = sum(
-            s.sums.cache_write_5m + s.sums.cache_write_1h
-            for s in self._sessions
+            s.sums.cache_write_5m + s.sums.cache_write_1h for s in self._sessions
         )
-        input_total = sum(s.sums.input for s in self._sessions) + cache_read + cache_write
+        input_total = (
+            sum(s.sums.input for s in self._sessions) + cache_read + cache_write
+        )
         cache_pct = cache_read / input_total * 100 if input_total else 0.0
 
         stats = Table.grid(padding=(0, 2))
@@ -664,9 +667,7 @@ class ProjectDetailScreen(Screen):
         t.add_column("Model")
         t.add_column("Turns", justify="right")
         t.add_column("Cost", justify="right")
-        for model, sums in sorted(
-            model_sums.items(), key=lambda kv: -kv[1].cost_usd
-        ):
+        for model, sums in sorted(model_sums.items(), key=lambda kv: -kv[1].cost_usd):
             t.add_row(
                 humanize_model_name(model) or "(unknown)",
                 _fmt_int(sums.turns),
@@ -684,6 +685,7 @@ class ProjectDetailScreen(Screen):
 
     def action_open_help(self) -> None:
         from .help_screen import HelpScreen
+
         self.app.push_screen(HelpScreen())
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -781,15 +783,10 @@ class ProjectDetailScreen(Screen):
             # Enter drills into the highlighted session's detail screen.
             # 'i' (copy session ID) is also session-specific, so both are
             # gated on the Sessions tab.
-            actions = (
-                "[b]↵[/b] details   "
-                + actions
-                + "   [b]i[/b] copy session ID"
-            )
+            actions = "[b]↵[/b] details   " + actions + "   [b]i[/b] copy session ID"
         left.update(actions)
         right.update(
-            "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-            "[b]ctrl+h[/b] help   [b]esc[/b] back"
+            "[b]Tab[/b] / [b]shift+Tab[/b] focus   [b]ctrl+h[/b] help   [b]esc[/b] back"
         )
 
     def _last_session_id(self) -> str | None:
@@ -838,12 +835,11 @@ class ProjectDetailScreen(Screen):
             self.app.notify("Project path unknown", severity="warning")
             return
         if not Path(path).is_dir():
-            self.app.notify(
-                f"Path no longer exists: {path}", severity="warning"
-            )
+            self.app.notify(f"Path no longer exists: {path}", severity="warning")
             return
         import sys
         import subprocess
+
         try:
             if sys.platform == "darwin":
                 subprocess.Popen(["open", path])

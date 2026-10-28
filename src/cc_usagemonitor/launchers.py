@@ -5,6 +5,7 @@ user works in Claude Code. Both the main view and the detail screens
 need this, so it lives in its own module to avoid a tui ↔ detail-screen
 import cycle.
 """
+
 from __future__ import annotations
 
 import os
@@ -79,7 +80,7 @@ def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
         cmd_str = " ".join(shlex.quote(c) for c in command)
         try:
             subprocess.Popen(
-                f'start "" cmd /k "cd /d \"{cwd}\" && {cmd_str}"',
+                f'start "" cmd /k "cd /d "{cwd}" && {cmd_str}"',
                 shell=True,
                 **detach,
             )
@@ -93,9 +94,13 @@ def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
     if env_term:
         candidates.append(env_term)
     candidates += [
-        "kitty", "alacritty", "wezterm",
-        "gnome-terminal", "konsole",
-        "xterm", "x-terminal-emulator",
+        "kitty",
+        "alacritty",
+        "wezterm",
+        "gnome-terminal",
+        "konsole",
+        "xterm",
+        "x-terminal-emulator",
     ]
     last_error = ""
     for term in candidates:
@@ -103,9 +108,7 @@ def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
             continue
         try:
             if term == "kitty":
-                subprocess.Popen(
-                    [term, "--directory", cwd, *command], **detach
-                )
+                subprocess.Popen([term, "--directory", cwd, *command], **detach)
             elif term == "alacritty":
                 subprocess.Popen(
                     [term, "--working-directory", cwd, "-e", *command],
@@ -121,13 +124,9 @@ def open_terminal_with(cwd: str, command: list[str]) -> tuple[bool, str]:
                     **detach,
                 )
             elif term == "konsole":
-                subprocess.Popen(
-                    [term, "--workdir", cwd, "-e", *command], **detach
-                )
+                subprocess.Popen([term, "--workdir", cwd, "-e", *command], **detach)
             else:
-                subprocess.Popen(
-                    [term, "-e", *command], cwd=cwd, **detach
-                )
+                subprocess.Popen([term, "-e", *command], cwd=cwd, **detach)
             return True, f"Opened in {term}"
         except Exception as e:
             # Don't stop on the first failure — try the next candidate.

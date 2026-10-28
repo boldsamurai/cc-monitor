@@ -7,6 +7,7 @@ change. Some settings are live (theme, date format), some only take
 effect on next launch (API toggle, plan, default tab, filter
 preferences) — the latter carry a '(restart required)' note.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,6 +19,14 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Button, Checkbox, RadioButton, RadioSet, Static
+
+from . import __version__
+from .config import CONFIG_FILE, load_config, save_config
+from .formatting import DATE_FORMATS, apply_config, format_time
+from .install_hook import HOOK_MARKERS, SETTINGS_PATH, ensure_installed
+from .launchers import open_file, open_in_file_manager
+from .logger import LOG_FILE, get_logger
+from .paths import PROJECTS_DIR
 
 
 class CircleCheckbox(Checkbox):
@@ -43,13 +52,6 @@ class CircleCheckbox(Checkbox):
         symbol = "●" if self.value else "○"
         return Content.assemble((symbol, button_style))
 
-from . import __version__
-from .config import CONFIG_FILE, load_config, save_config
-from .formatting import DATE_FORMATS, apply_config, format_time
-from .install_hook import HOOK_MARKERS, SETTINGS_PATH, ensure_installed
-from .launchers import open_file, open_in_file_manager
-from .logger import LOG_FILE, get_logger
-from .paths import PROJECTS_DIR
 
 log = get_logger(__name__)
 
@@ -217,22 +219,16 @@ class SettingsScreen(Screen):
 
                 yield Static("Date format", classes="settings-row")
                 current_date_fmt = self._cfg.get("date_format", "DD-MM-YYYY")
-                with RadioSet(
-                    id="date-format-radio", classes="radio-horizontal"
-                ):
+                with RadioSet(id="date-format-radio", classes="radio-horizontal"):
                     for fmt in DATE_FORMATS:
-                        yield RadioButton(
-                            fmt, value=(fmt == current_date_fmt)
-                        )
+                        yield RadioButton(fmt, value=(fmt == current_date_fmt))
 
                 # ===== Behavior =====
                 yield Static("Behavior", classes="settings-heading")
 
                 yield Static("Default tab on startup", classes="settings-row")
                 current_default_tab = self._cfg.get("default_tab", "sessions")
-                with RadioSet(
-                    id="default-tab-radio", classes="radio-horizontal"
-                ):
+                with RadioSet(id="default-tab-radio", classes="radio-horizontal"):
                     for t in _DEFAULT_TABS:
                         yield RadioButton(t, value=(t == current_default_tab))
 
@@ -250,9 +246,7 @@ class SettingsScreen(Screen):
                     classes="radio-horizontal",
                 ):
                     for opt in _REFRESH_INTERVALS:
-                        yield RadioButton(
-                            opt, value=(opt == current_interval)
-                        )
+                        yield RadioButton(opt, value=(opt == current_interval))
 
                 yield CircleCheckbox(
                     "Persist filters between sessions",
@@ -290,7 +284,8 @@ class SettingsScreen(Screen):
                 )
                 with Horizontal(classes="button-row"):
                     yield Button(
-                        "Reinstall hook", id="hook-reinstall-btn",
+                        "Reinstall hook",
+                        id="hook-reinstall-btn",
                         variant="primary",
                     )
 
@@ -304,7 +299,8 @@ class SettingsScreen(Screen):
                 )
                 with Horizontal(classes="button-row"):
                     yield Button(
-                        "Force re-scan", id="rescan-btn",
+                        "Force re-scan",
+                        id="rescan-btn",
                         variant="warning",
                     )
 
@@ -320,16 +316,19 @@ class SettingsScreen(Screen):
                 )
                 with Horizontal(classes="button-row"):
                     yield Button(
-                        "Export CSV", id="export-csv-btn",
+                        "Export CSV",
+                        id="export-csv-btn",
                         variant="primary",
                     )
                     yield Button(
-                        "Export JSON", id="export-json-btn",
+                        "Export JSON",
+                        id="export-json-btn",
                         variant="primary",
                     )
                 with Horizontal(classes="button-row"):
                     yield Button(
-                        "Open export folder", id="export-open-btn",
+                        "Open export folder",
+                        id="export-open-btn",
                     )
 
                 # ===== Paths =====
@@ -339,14 +338,14 @@ class SettingsScreen(Screen):
                         yield Static(label, classes="path-label")
                         yield Static(str(path), classes="path-value")
                         yield Button(
-                            "Open", classes="path-open-btn",
+                            "Open",
+                            classes="path-open-btn",
                             name=str(path),
                         )
 
             with Horizontal(id="settings-footer"):
                 yield Static(
-                    "[b]Tab[/b] / [b]shift+Tab[/b] focus   "
-                    "[b]esc[/b] back",
+                    "[b]Tab[/b] / [b]shift+Tab[/b] focus   [b]esc[/b] back",
                     id="settings-footer-right",
                 )
 
@@ -360,8 +359,14 @@ class SettingsScreen(Screen):
             if isinstance(obj, list):
                 return sorted(obj)
         return [
-            "textual-dark", "textual-light", "nord", "gruvbox",
-            "dracula", "tokyo-night", "monokai", "solarized-light",
+            "textual-dark",
+            "textual-light",
+            "nord",
+            "gruvbox",
+            "dracula",
+            "tokyo-night",
+            "monokai",
+            "solarized-light",
         ]
 
     def _paths(self) -> list[tuple[str, Path]]:
@@ -414,16 +419,18 @@ class SettingsScreen(Screen):
         # CLI/config setting. Tells the user where the displayed plan
         # name actually came from.
         plan_local = self._cfg.get("plan", "none")
-        if agg is not None and agg.api_usage is not None and not agg.api_usage.api_unavailable:
+        if (
+            agg is not None
+            and agg.api_usage is not None
+            and not agg.api_usage.api_unavailable
+        ):
             api_plan = agg.api_usage.plan_name or "?"
             lines.append(
-                f"[b]Plan detected:[/b]   {api_plan}  "
-                f"[dim](via Anthropic API)[/dim]"
+                f"[b]Plan detected:[/b]   {api_plan}  [dim](via Anthropic API)[/dim]"
             )
         else:
             lines.append(
-                f"[b]Plan detected:[/b]   {plan_local}  "
-                f"[dim](from config / CLI)[/dim]"
+                f"[b]Plan detected:[/b]   {plan_local}  [dim](from config / CLI)[/dim]"
             )
 
         # API status — auto-detected based on OAuth credentials.
@@ -442,8 +449,7 @@ class SettingsScreen(Screen):
             )
         elif agg is None or agg.api_usage is None:
             lines.append(
-                "[b]Anthropic API:[/b]   [yellow]waiting for first "
-                "fetch…[/yellow]"
+                "[b]Anthropic API:[/b]   [yellow]waiting for first fetch…[/yellow]"
             )
         else:
             usage = agg.api_usage
@@ -454,9 +460,7 @@ class SettingsScreen(Screen):
                 )
             else:
                 # fetched_at is epoch seconds — convert via datetime.
-                fetched = datetime.fromtimestamp(
-                    usage.fetched_at, tz=timezone.utc
-                )
+                fetched = datetime.fromtimestamp(usage.fetched_at, tz=timezone.utc)
                 lines.append(
                     "[b]Anthropic API:[/b]   [green]✓ connected[/green]  "
                     f"[dim](last fetch {format_time(fetched)})[/dim]"
@@ -526,11 +530,13 @@ class SettingsScreen(Screen):
         if btn.id == "rescan-btn":
             if self._cfg.get("confirm_destructive", True):
                 from .confirm_screen import ConfirmScreen
+
                 self.app.push_screen(
                     ConfirmScreen(
                         "Force re-scan? This clears the in-memory "
                         "cache and re-reads every JSONL from the start.",
-                        yes_label="Re-scan", no_label="Cancel",
+                        yes_label="Re-scan",
+                        no_label="Cancel",
                     ),
                     self._handle_rescan_confirm,
                 )
@@ -592,13 +598,15 @@ class SettingsScreen(Screen):
         most file managers refuse to open a missing path.
         """
         from .export import export_dir
+
         path = export_dir()
         path.mkdir(parents=True, exist_ok=True)
         ok, msg = open_in_file_manager(str(path))
         if not ok:
             log.warning("could not open export dir: %s", msg)
             self.app.notify(
-                f"Could not open {path}: {msg}", severity="error",
+                f"Could not open {path}: {msg}",
+                severity="error",
             )
 
     def _run_export(self, fmt: str) -> None:
@@ -618,12 +626,14 @@ class SettingsScreen(Screen):
             )
             return
         from .export import export_csv, export_json
+
         try:
             result = export_csv(agg) if fmt == "csv" else export_json(agg)
         except Exception as e:
             log.exception("export failed")
             self.app.notify(
-                f"Export failed: {e}", severity="error",
+                f"Export failed: {e}",
+                severity="error",
             )
             return
         # Toast: file count + directory. The directory is the most
@@ -631,9 +641,7 @@ class SettingsScreen(Screen):
         if len(result.paths) == 1:
             msg = f"Wrote {result.paths[0].name} to {result.directory}"
         else:
-            msg = (
-                f"Wrote {len(result.paths)} files to {result.directory}"
-            )
+            msg = f"Wrote {len(result.paths)} files to {result.directory}"
         self.app.notify(
             msg,
             title=f"Export ({result.fmt.upper()}) complete",
@@ -660,6 +668,7 @@ class SettingsScreen(Screen):
         # next clean quit would resurrect the pre-rescan archive on
         # the next launch.
         from . import state as state_io
+
         state_io.discard()
         try:
             text = self.query_one("#diagnostics-text", Static)

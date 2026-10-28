@@ -5,10 +5,10 @@ round-trip preserves the aggregator's archive and the tailer's
 per-file offsets, and that schema-version mismatches drop the
 snapshot rather than crashing.
 """
+
 from __future__ import annotations
 
 import asyncio
-import os
 import pickle
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -58,7 +58,9 @@ def test_round_trip_preserves_aggregator_state(tmp_state_dir):
     queue: asyncio.Queue = asyncio.Queue()
     tailer = Tailer(queue)
     tailer._session_tails[Path("/tmp/x.jsonl")] = _FileTail(
-        path=Path("/tmp/x.jsonl"), pos=12345, inode=99,
+        path=Path("/tmp/x.jsonl"),
+        pos=12345,
+        inode=99,
     )
 
     state_io.save(agg, tailer)

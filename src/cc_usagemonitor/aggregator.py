@@ -109,7 +109,9 @@ class SessionState:
     sums_main: TokenSums = field(default_factory=TokenSums)
     sums_sidechain: TokenSums = field(default_factory=TokenSums)
     sums_from_agents: TokenSums = field(default_factory=TokenSums)
-    by_model: dict[str, TokenSums] = field(default_factory=lambda: defaultdict(TokenSums))
+    by_model: dict[str, TokenSums] = field(
+        default_factory=lambda: defaultdict(TokenSums)
+    )
     last_seen: datetime | None = None
     first_seen: datetime | None = None
     # Approximation of how full the model's context window was on the most
@@ -142,6 +144,7 @@ class SessionState:
 @dataclass
 class ToolSpan:
     """A pending or completed tool span built from hook events."""
+
     span_id: str
     session_id: str
     tool: str
@@ -156,6 +159,7 @@ class ToolSpan:
 @dataclass
 class BlockInfo:
     """Snapshot of the current 5-hour Anthropic session block."""
+
     start: datetime
     end: datetime  # start + 5h
     sums: TokenSums
@@ -212,9 +216,7 @@ class Aggregator:
         # is silently recomputed. Most detail-screen helpers re-read
         # the JSONL from disk and are the dominant cost of opening a
         # session/project detail twice.
-        self._session_cache: dict[
-            tuple[str, str], tuple[int, object]
-        ] = {}
+        self._session_cache: dict[tuple[str, str], tuple[int, object]] = {}
 
     # ----- snapshot / restore for cross-run persistence -----
 
@@ -239,10 +241,7 @@ class Aggregator:
         """Return a dict of state for cross-run persistence. The dict is
         pickled by state.save() — keep values to plain Python / dataclass
         instances so unpickling doesn't depend on third-party state."""
-        return {
-            field: getattr(self, field)
-            for field in self._SNAPSHOT_FIELDS
-        }
+        return {field: getattr(self, field) for field in self._SNAPSHOT_FIELDS}
 
     def restore(self, data: dict) -> None:
         """Replace runtime state from a snapshot dict produced by
@@ -250,12 +249,13 @@ class Aggregator:
         predate a new field) — those just stay at their __init__
         defaults so a forward-compat snapshot still works without a
         SCHEMA_VERSION bump."""
-        for field in self._SNAPSHOT_FIELDS:
-            if field in data:
-                setattr(self, field, data[field])
+        for name in self._SNAPSHOT_FIELDS:
+            if name in data:
+                setattr(self, name, data[name])
         log.info(
             "aggregator restored: %d sessions, %d archive records",
-            len(self.sessions), len(self._long_window),
+            len(self.sessions),
+            len(self._long_window),
         )
 
     def reset_state(self) -> None:
@@ -297,12 +297,16 @@ class Aggregator:
 
         sess = self.sessions.get(rec.session_id)
         if sess is None:
-            sess = SessionState(session_id=rec.session_id, project_slug=rec.project_slug)
+            sess = SessionState(
+                session_id=rec.session_id, project_slug=rec.project_slug
+            )
             self.sessions[rec.session_id] = sess
             sess.first_seen = rec.ts
             log.info(
                 "new session %s in project %s (model=%s)",
-                rec.session_id[:8], rec.project_slug, rec.model,
+                rec.session_id[:8],
+                rec.project_slug,
+                rec.model,
             )
 
         # Latch the cwd the first time we see it. Lines without cwd
@@ -345,7 +349,10 @@ class Aggregator:
     def _ingest_event(self, ev: HookEvent) -> None:
         log.debug(
             "hook event %s session=%s tool=%s name=%s",
-            ev.event, ev.session_id[:8], ev.tool, ev.name,
+            ev.event,
+            ev.session_id[:8],
+            ev.tool,
+            ev.name,
         )
         # Bump last_seen on every hook tick so the Sessions tab sorts by
         # real activity, not just the last completed assistant turn.
@@ -414,12 +421,14 @@ class Aggregator:
                 self.by_agent[span.name].add(rec, cost)
                 if sess is not None:
                     sess.sums_from_agents.add(rec, cost)
-                    sess.agents.setdefault(span.name, TokenSums()).add(
-                        rec, cost
-                    )
+                    sess.agents.setdefault(span.name, TokenSums()).add(rec, cost)
         log.info(
             "agent span attributed: %s/%s in session %s -> %d sidechain records, $%.4f",
-            span.tool, span.name, span.session_id[:8], attributed, span.sums.cost_usd,
+            span.tool,
+            span.name,
+            span.session_id[:8],
+            attributed,
+            span.sums.cost_usd,
         )
 
     # ----- helpers -----
@@ -498,9 +507,7 @@ class Aggregator:
 
         ``value`` selects the per-record metric: 'cost' or 'tokens'."""
         today = datetime.now(tz=timezone.utc).date()
-        dates: list[date] = [
-            today - timedelta(days=i) for i in range(days - 1, -1, -1)
-        ]
+        dates: list[date] = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
         date_index = {d: i for i, d in enumerate(dates)}
 
         per_model: dict[str, list[float]] = {}
@@ -569,9 +576,7 @@ class Aggregator:
                 sums.add(rec, cost)
         return sums
 
-    def sums_in_range(
-        self, start: datetime, end: datetime | None = None
-    ) -> TokenSums:
+    def sums_in_range(self, start: datetime, end: datetime | None = None) -> TokenSums:
         """Aggregate tokens/cost for records whose ts falls in
         ``[start, end)``. ``end=None`` means 'up to now'.
 
@@ -611,7 +616,8 @@ class Aggregator:
         """Return chronological per-turn records for a session, limited to
         what's still in the 8-day archive. Empty if the session is older."""
         return self._cached_for_session(
-            session_id, "turns_for_session",
+            session_id,
+            "turns_for_session",
             lambda: [
                 (ts, rec, cost)
                 for ts, rec, cost in self._long_window
@@ -619,9 +625,7 @@ class Aggregator:
             ],
         )
 
-    def count_file_reads_in_session(
-        self, session_id: str
-    ) -> dict[str, dict[str, int]]:
+    def count_file_reads_in_session(self, session_id: str) -> dict[str, dict[str, int]]:
         """Per-file Read tool stats for a session.
 
         Returns {file_path: {'reads': N, 'chars': total, 'tokens_est': T}}.
@@ -653,7 +657,8 @@ class Aggregator:
         return self._session_jsonl_stats(session_id)["tools"]
 
     def tool_results_in_session(
-        self, session_id: str,
+        self,
+        session_id: str,
     ) -> dict[str, dict[str, int]]:
         """Per-tool aggregate of result content size and estimated
         token cost. Returns {tool_name: {'calls', 'chars',
@@ -673,7 +678,8 @@ class Aggregator:
         is cached on the session's revision so a second open is free.
         """
         return self._cached_for_session(
-            session_id, "session_jsonl_stats",
+            session_id,
+            "session_jsonl_stats",
             lambda: self._compute_session_jsonl_stats(session_id),
         )
 
@@ -748,11 +754,7 @@ class Aggregator:
                         )
                         bucket["reads"] += 1
                     elif name in ("Write", "Edit", "NotebookEdit"):
-                        fp = (
-                            inp.get("file_path")
-                            or inp.get("notebook_path")
-                            or "?"
-                        )
+                        fp = inp.get("file_path") or inp.get("notebook_path") or "?"
                         bucket = writes.setdefault(
                             fp,
                             {"writes": 0, "edits": 0, "chars": 0, "tokens_est": 0},
@@ -815,7 +817,8 @@ class Aggregator:
         per-turn data has aged out.
         """
         return self._cached_for_session(
-            session_id, "load_full_session_turns",
+            session_id,
+            "load_full_session_turns",
             lambda: self._compute_full_session_turns(session_id),
         )
 
@@ -836,9 +839,7 @@ class Aggregator:
         # the agents made (with sessionId pointing at this parent and
         # isSidechain=True). Without these the chart undercounts cost
         # for sessions that delegate heavy work to agents.
-        subagent_dir = (
-            PROJECTS_DIR / sess.project_slug / session_id / "subagents"
-        )
+        subagent_dir = PROJECTS_DIR / sess.project_slug / session_id / "subagents"
         files_to_read = [path]
         if subagent_dir.is_dir():
             files_to_read.extend(sorted(subagent_dir.glob("*.jsonl")))
@@ -854,11 +855,7 @@ class Aggregator:
                 if rec is None:
                     continue
                 cost = self.pricing.for_model(rec.model).cost(rec.raw_usage)
-                ts = (
-                    rec.ts
-                    if rec.ts.tzinfo
-                    else rec.ts.replace(tzinfo=timezone.utc)
-                )
+                ts = rec.ts if rec.ts.tzinfo else rec.ts.replace(tzinfo=timezone.utc)
                 turns.append((ts, rec, cost))
         turns.sort(key=lambda x: x[0])
         return turns
@@ -884,7 +881,8 @@ class Aggregator:
         return _percentile(block_costs, 90)
 
     def session_in_current_block(
-        self, session_id: str,
+        self,
+        session_id: str,
     ) -> TokenSums | None:
         """Sum tokens/cost a single session contributed to the current
         5h block. Returns None when there's no active block (latest one

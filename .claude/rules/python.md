@@ -6,7 +6,7 @@ paths: ["**/*.py"]
 
 - Run code and tools through the package manager: `uv run <tool>`, never a
   global interpreter.
-- Lint with `uv run ruff check .` and test with `uv run pytest`; `check` runs both.
+- Lint with `uv run ruff check . && uv run ruff format --check .` and test with `uv run pytest`; `check` runs both.
 - Type hints on every function signature; prefer `X | None` and built-in generics
   (`list[str]`).
 - Tests live in `test_*.py` files named `test_<unit>_<scenario>_<expected>`; use
@@ -18,3 +18,5 @@ paths: ["**/*.py"]
 - monkeypatching module.subprocess.run patches the one global subprocess module: fake a module-level wrapper instead when other subprocess calls must stay real in the test — hangar, 2026-10-14
 - SQLAlchemy DateTime(timezone=True) on SQLite keeps no offset: store naive UTC and attach UTC when reading; never compare an aware value against the stored column — hangar, 2026-10-16
 - Arithmetic on two aware datetimes that share one ZoneInfo runs on the wall clock and breaks across DST: subtract and compare in UTC, convert to local only for dates — hangar, 2026-10-16
+- A test that seeds data at a fixed date but calls code reading the real clock breaks once time moves on: seed relative to now() or inject the clock — hangar, 2026-10-23
+- pip projects through uv run --no-project use the nearest .venv upwards and fall back to the system Python silently when there is none: check .venv/bin has the tools — hangar, 2026-10-23

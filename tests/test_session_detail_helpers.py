@@ -1,7 +1,7 @@
 """Tests for pure helpers in session_detail (no Textual import needed)."""
+
 from __future__ import annotations
 
-import pytest
 
 from cc_usagemonitor.session_detail import _truncate_middle
 

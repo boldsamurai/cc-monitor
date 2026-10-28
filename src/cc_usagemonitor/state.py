@@ -15,6 +15,7 @@ removing/renaming fields on Aggregator or Tailer state.
 Atomicity: writes go to state.pickle.tmp first, then rename — readers
 never see a half-written file.
 """
+
 from __future__ import annotations
 
 import os
@@ -109,7 +110,8 @@ def load() -> Snapshot | None:
     if version != SCHEMA_VERSION:
         log.info(
             "state snapshot schema mismatch (got %s, want %s) — discarding",
-            version, SCHEMA_VERSION,
+            version,
+            SCHEMA_VERSION,
         )
         try:
             path.unlink()

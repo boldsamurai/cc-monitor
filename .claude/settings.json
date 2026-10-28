@@ -37,42 +37,16 @@
       "Bash(hangar ready:*)",
       "Bash(hangar release:*)",
       "Bash(hangar render --dry-run:*)",
-      "Bash(poetry run pytest:*)",
-      "Bash(poetry run ruff:*)",
       "Bash(uv run pytest:*)",
       "Bash(uv run ruff:*)"
     ],
     "ask": [
       "Bash(chgrp:*)",
       "Bash(chmod:*)",
-      "Bash(chown:*)",
-      "Bash(curl:*)",
-      "Bash(rm -f:*)",
-      "Bash(wget:*)"
+      "Bash(chown:*)"
     ],
     "deny": [
       "Bash(doas:*)",
-      "Bash(docker builder prune:*)",
-      "Bash(docker container prune:*)",
-      "Bash(docker image prune:*)",
-      "Bash(docker network prune:*)",
-      "Bash(docker system prune:*)",
-      "Bash(docker volume prune:*)",
-      "Bash(git branch -D develop:*)",
-      "Bash(git branch -D main:*)",
-      "Bash(git branch -D master:*)",
-      "Bash(git clean -f:*)",
-      "Bash(git clean -fd:*)",
-      "Bash(git clean -fdx:*)",
-      "Bash(git filter-branch:*)",
-      "Bash(git push --force-with-lease:*)",
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(git reset --hard:*)",
-      "Bash(git update-ref -d:*)",
-      "Bash(rm -fr:*)",
-      "Bash(rm -r:*)",
-      "Bash(rm -rf:*)",
       "Bash(su:*)",
       "Bash(sudo:*)",
       "Edit(**/*.key)",
@@ -132,7 +106,17 @@
       "Read(~/.aws/**)",
       "Read(~/.docker/config.json)",
       "Read(~/.gnupg/**)",
-      "Read(~/.ssh/**)"
+      "Read(~/.ssh/**)",
+      "Edit(**/*.ovpn)",
+      "Edit(~/.claude/.credentials.json)",
+      "Edit(~/.config/gh/**)",
+      "Edit(~/.config/glab-cli/**)",
+      "Edit(~/.git-credentials)",
+      "Read(**/*.ovpn)",
+      "Read(~/.claude/.credentials.json)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.config/glab-cli/**)",
+      "Read(~/.git-credentials)"
     ]
   }
 }

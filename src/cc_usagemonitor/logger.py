@@ -5,6 +5,7 @@ rotating cap (one .1 backup, so disk usage tops out at ~20MB total).
 Modules grab named child loggers via `get_logger(__name__)` and the
 configuration in setup_logging() applies to all descendants.
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,7 +17,7 @@ LOG_FILE = LOG_DIR / "usagemonitor.log"
 ROOT_LOGGER_NAME = "cc_usagemonitor"
 
 _MAX_BYTES = 10 * 1024 * 1024  # 10 MB hard cap
-_BACKUP_COUNT = 1               # one .1 backup, then overwrite
+_BACKUP_COUNT = 1  # one .1 backup, then overwrite
 _FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
 
@@ -53,5 +54,5 @@ def get_logger(module_name: str) -> logging.Logger:
     short = module_name
     prefix = "cc_usagemonitor."
     if short.startswith(prefix):
-        short = short[len(prefix):]
+        short = short[len(prefix) :]
     return logging.getLogger(f"{ROOT_LOGGER_NAME}.{short}")

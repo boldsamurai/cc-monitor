@@ -8,7 +8,7 @@
         "hangar",
         "python"
       ],
-      "sha256": "1c4c824b4c18949cba77ab411bf8e6024be8143d524f078366b80aee1d1ec8bd"
+      "sha256": "4b4f00c85c1d329f2bce8153d9eab26153d4fcc4d006d0a35eb813b2bac0a9d5"
     },
     ".claude/rules/conventions.md": {
       "json_keys": {},
@@ -24,7 +24,7 @@
       "owners": [
         "python"
       ],
-      "sha256": "f2ab833a940f526551b5b95ee798547825026531ff34fdb56b653474f41bf5bd"
+      "sha256": "2dcf9bfe59136d517c9a9e43b89a6375fceaa222976cd4e07e06107a9f5614cc"
     },
     ".claude/rules/task-tracking.md": {
       "json_keys": {},
@@ -111,12 +111,6 @@
         "[\"permissions\",\"allow\",\"Bash(hangar render --dry-run:*)\"]": [
           "core"
         ],
-        "[\"permissions\",\"allow\",\"Bash(poetry run pytest:*)\"]": [
-          "python"
-        ],
-        "[\"permissions\",\"allow\",\"Bash(poetry run ruff:*)\"]": [
-          "python"
-        ],
         "[\"permissions\",\"allow\",\"Bash(uv run pytest:*)\"]": [
           "python"
         ],
@@ -132,79 +126,7 @@
         "[\"permissions\",\"ask\",\"Bash(chown:*)\"]": [
           "core"
         ],
-        "[\"permissions\",\"ask\",\"Bash(curl:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"ask\",\"Bash(rm -f:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"ask\",\"Bash(wget:*)\"]": [
-          "core"
-        ],
         "[\"permissions\",\"deny\",\"Bash(doas:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(docker builder prune:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(docker container prune:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(docker image prune:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(docker network prune:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(docker system prune:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(docker volume prune:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git branch -D develop:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git branch -D main:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git branch -D master:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git clean -f:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git clean -fd:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git clean -fdx:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git filter-branch:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git push --force-with-lease:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git push --force:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git push -f:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git reset --hard:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(git update-ref -d:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(rm -fr:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(rm -r:*)\"]": [
-          "core"
-        ],
-        "[\"permissions\",\"deny\",\"Bash(rm -rf:*)\"]": [
           "core"
         ],
         "[\"permissions\",\"deny\",\"Bash(su:*)\"]": [
@@ -214,13 +136,116 @@
           "core"
         ]
       },
-      "kind": "managed",
+      "key_hashes": {
+        "/enabledPlugins/hangar-core@hangar": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+        "/extraKnownMarketplaces/hangar": "8072e7bcaa860810497ef8658d7d9404f81d92346db14ab04d83ca59d4d48223",
+        "/permissions/allow/#09d9bde307ba1a13": "09d9bde307ba1a1356825f713e71f788219b2015ff97ffe84aac2f1faccaa1ee",
+        "/permissions/allow/#12475ae2c998c376": "12475ae2c998c376ab266f6efe44e2b0ee7dc16b15978ecd9a69e32503a7100c",
+        "/permissions/allow/#15779a5e085824f6": "15779a5e085824f668895736e9c7cd2b816d9877a8692c9644d58830adf44513",
+        "/permissions/allow/#20101dbafbd30186": "20101dbafbd3018684fbd7d22ee7d33b2a97761fa90a0a8b844e0e7d5ecaeeb3",
+        "/permissions/allow/#2637628bbd83bbc0": "2637628bbd83bbc01045e65fa32f7db148f59cbdea3fb1d785d473bf6bed6cb2",
+        "/permissions/allow/#48531751d32b4bf0": "48531751d32b4bf056c174abf27e189e8a476617cc65acded1d40a9f20ad2c1c",
+        "/permissions/allow/#4ccd1555c44eedb2": "4ccd1555c44eedb2e24bfd33293824b632575855cba69b1fff5cbac9ac26d202",
+        "/permissions/allow/#5224ad4688cf4cf8": "5224ad4688cf4cf8af23c5cef2ab6a7f835abeefef79d9f8baece9a8e7eb76d0",
+        "/permissions/allow/#5b6f0101479db333": "5b6f0101479db333d7c449c68b12b0759dee31814ff2bd7a24f146e4f8b2d465",
+        "/permissions/allow/#5ee7ae2110712ecd": "5ee7ae2110712ecd828bdbed1df9c54ca150619593a5d6491a21a4a97b577ee8",
+        "/permissions/allow/#65361f18511c1bbf": "65361f18511c1bbf02085ba86a0bd8f877b10924c3bc16583f6b0e8609c83379",
+        "/permissions/allow/#70b85b602d2bcbf1": "70b85b602d2bcbf12438e3d4fbaa7e8b701fbedd115b1ffbac5502cc68d41121",
+        "/permissions/allow/#75bdf075183236a0": "75bdf075183236a00662cb6278b74c66c40b55c1bcb5721b1a8f4348e88cb063",
+        "/permissions/allow/#841bc6159175166a": "841bc6159175166a693fd5d9a52c75062a6534d0433ebf74a1220538eb7c856f",
+        "/permissions/allow/#9494d97a3a0cffe6": "9494d97a3a0cffe69a34b9bae743f33a17fbc4d8f7e5ffe7b50fadc9501013c5",
+        "/permissions/allow/#b0b5ff95bc144411": "b0b5ff95bc144411a020cdb1a6206e2d0b262c750adbe9e046ca1a280c457c8c",
+        "/permissions/allow/#bae69c92501a6b4d": "bae69c92501a6b4d56c38c92775cbb7d92ff6371fc40472558036ecf1c0c00e7",
+        "/permissions/allow/#c4815b6bc6c2e13e": "c4815b6bc6c2e13eb1b03a43ba4f3f54b7eb7854c56ffa761c5158154c5e4d4d",
+        "/permissions/allow/#d4b0ac01a5f6ba9c": "d4b0ac01a5f6ba9c497c27a8026c32e7f0f5f5416602fcbd057e3d60fb1e94bc",
+        "/permissions/allow/#de47d698df6b4e96": "de47d698df6b4e96d7e4f25f0676f97b71867c6b121507d8fa9fea127a7a3d4e",
+        "/permissions/allow/#e267d433e5ab760d": "e267d433e5ab760d22b1a5292496a48428ca4c2aca63e7fb1c4648e6ae12f2d9",
+        "/permissions/allow/#ecd24e0c4dfdc598": "ecd24e0c4dfdc598467326678aa57b83ffe3409575beda4f9a1cc162a79174b1",
+        "/permissions/allow/#f8925e809bda10a8": "f8925e809bda10a8ecda8d03f8f16d3ad8cf15602dc669df6469b3caa04a3196",
+        "/permissions/allow/#fc7e3e4c3f399bd6": "fc7e3e4c3f399bd60bcbc223f441f033035a84bc477396e36957f093a89eb4df",
+        "/permissions/allow/#fc9a00a1603ca775": "fc9a00a1603ca77526e608e291aaa6c3a0525516350da4cea78faaa7810614aa",
+        "/permissions/ask/#682a958d65db88c3": "682a958d65db88c3924e0e9431be94ab9426b40d62f99767770884280e02ad45",
+        "/permissions/ask/#9564fa048a3695d2": "9564fa048a3695d271717bd632e818f48444d6bd242e257a36593e29ac005920",
+        "/permissions/ask/#f1e8d785073ade40": "f1e8d785073ade40c74ced5045d9baa646b4cf9c499d9560c05e1d372d666835",
+        "/permissions/deny/#0340b3cf786cf23b": "0340b3cf786cf23bea55d9e355c8971814c6da846aad6e04ad533671f5a3adcb",
+        "/permissions/deny/#04c2ef33619b38ec": "04c2ef33619b38ec6fa1b5b438dfa8cd4b5e8ed0e5b53cfc46591ba878a52442",
+        "/permissions/deny/#061f91e6b19f1545": "061f91e6b19f1545ca3e0fb8ca0df759ff29b7daa19a08ce10f6dd9cf08cacb4",
+        "/permissions/deny/#095bf56e0e7792b7": "095bf56e0e7792b7a535396126a78849d922c03dc36ad7f3dc958e998969a0ef",
+        "/permissions/deny/#138336d8df534ad3": "138336d8df534ad3dacd9960685fb6839f083537b759a5236e64302f3afae54f",
+        "/permissions/deny/#141c2a30c5e7aa08": "141c2a30c5e7aa08eaef514ec854726f232e8a097065924f3d341cfad5aa43fc",
+        "/permissions/deny/#1a95dec8339c8afc": "1a95dec8339c8afca1acc2520d7beae650ea8d27d8b8c03b28509a12a41b709b",
+        "/permissions/deny/#1ee4511c3afa24a8": "1ee4511c3afa24a807b6716fb10d91d59916c8d11e817f1326a22c82c8ff4381",
+        "/permissions/deny/#215ad1e373797fbd": "215ad1e373797fbd7e04370b54572d1a558eae47d4d9c49951aa4fbea6be6411",
+        "/permissions/deny/#29377a77140308f1": "29377a77140308f12c0521379ad8cbf00a131aa78b6a101867596b18e6f4d52d",
+        "/permissions/deny/#2e0856ed753a81f1": "2e0856ed753a81f1b68e4abde27bf318c972601a1f3521b7880aa604245cb9f4",
+        "/permissions/deny/#2e360167d7b77fbc": "2e360167d7b77fbcf542c0b9a1f4240c1f22c696aae532d400e3f26484624edd",
+        "/permissions/deny/#2f1c7f843fedd622": "2f1c7f843fedd622403ea7d3df01574a0cf1f9abd0d61e4b3db3808034ee8d66",
+        "/permissions/deny/#301fe42b6d1851c7": "301fe42b6d1851c766797d39a593e1be0db46108bf1d0e81aebf3135b12cd648",
+        "/permissions/deny/#3254caca7ddc6177": "3254caca7ddc617737b358dc11bde663dfc3dd0d0e4f471e9ead14e80a79dfc7",
+        "/permissions/deny/#3adf48f4e4f194f9": "3adf48f4e4f194f91cdda7de36e33ec907b0c8f9daea609e1f328da414f55ba4",
+        "/permissions/deny/#3ca2e88d0aa29f97": "3ca2e88d0aa29f97eeab42dea03af4170f3d32cde4b6a46762b0e622adc226c4",
+        "/permissions/deny/#3ced7c80edd4f615": "3ced7c80edd4f615ce3d4a8e2013c570b19b6e91d414c28eaafaa7e208ad2e1f",
+        "/permissions/deny/#3d5f4f4290cbb2a5": "3d5f4f4290cbb2a5104a47d71c080c52befa21c69205dc1908af5acb1601c8f7",
+        "/permissions/deny/#40778257653c93db": "40778257653c93db3a495cb2dd2b0f336f90df8592b3a5f45a2a955000f48ccf",
+        "/permissions/deny/#44c04c7b32ce016e": "44c04c7b32ce016e66c7cd025bb3c2dd5f1d0398bf853a4b2e6438b5aaff5c64",
+        "/permissions/deny/#45b00384f7ab0de5": "45b00384f7ab0de527dd520b4fc7212a295f8d81fcacbd9dc54501736e7f3493",
+        "/permissions/deny/#475b8d88c4bd7b95": "475b8d88c4bd7b95176eeb580e3210d82a94e9cf8ff241341e77613db0e315ec",
+        "/permissions/deny/#48dd798a49ff22ef": "48dd798a49ff22efed995e90c56f30b9647fe925203ddbb1587065a620ebd202",
+        "/permissions/deny/#4d93c838ce73d0f0": "4d93c838ce73d0f010426dddad693296234712cabce646017413e5a7cae56cb9",
+        "/permissions/deny/#4ea98afaa3450a59": "4ea98afaa3450a59de0f6bb1fdb5052274005661c021a84e62321723540e5296",
+        "/permissions/deny/#54b8bc6d0be0b03e": "54b8bc6d0be0b03ecc9d442d8fbce94cdde795e2abd86afda60f3ef320ced468",
+        "/permissions/deny/#5983a987f34ebe8f": "5983a987f34ebe8faf713b7bb2e1361ed5fd2578f02e963cd8b5d0e32d77c2f5",
+        "/permissions/deny/#5bfdccc899a5a94c": "5bfdccc899a5a94c02ebb3addd95909161a554934b541776b4b2c74c966533f3",
+        "/permissions/deny/#5ca04c12fdea4e1a": "5ca04c12fdea4e1a13888fdcb14c72676202ccb5eb9d61f7def1bedcb0764570",
+        "/permissions/deny/#5ffaec96e9d601fa": "5ffaec96e9d601fab988941d15d429695ea2a619af704c3ffc0acd9bf0642a71",
+        "/permissions/deny/#6857dce8f8581214": "6857dce8f8581214517ec1a4bd7f5eff495b55ff99bc4c2eb6b380bade084d4c",
+        "/permissions/deny/#696c2f29390746e5": "696c2f29390746e5f2a882b45af24752f687a82d13ec617ecbdf79976ba8ad94",
+        "/permissions/deny/#6c169382c4339e1b": "6c169382c4339e1b745f2df8a44b294f8486775ca780507b82ed450c1d0756f6",
+        "/permissions/deny/#6cd64bc268cdd939": "6cd64bc268cdd939dc4ee6fb53f52c0afae19c43c83fa58c44c62d5bf391a1ce",
+        "/permissions/deny/#6e864ce5c262171d": "6e864ce5c262171d35ac64e9d94a3ed8f00d7734142f68d35ee3c74f409dab42",
+        "/permissions/deny/#714cace138fb7280": "714cace138fb7280b46eae8de3be91d67bec8c37ff0263a13685e02eb5825a1f",
+        "/permissions/deny/#72befba13b03f748": "72befba13b03f748f60f249138703062451828f2bcffae04d27c6d258c0a6a52",
+        "/permissions/deny/#75b1718ce4b50c49": "75b1718ce4b50c49004a2fbf4f34f43f8d29fadb78827de31257875020c9bec6",
+        "/permissions/deny/#7e55768345464bad": "7e55768345464bad3743f28d226fb34dd9f43de4763b2e50382abe3a59e0dc2f",
+        "/permissions/deny/#8192bce9f5735683": "8192bce9f573568391dffecde006812aaef8feab13c8692a834ba480be755f9b",
+        "/permissions/deny/#853de09d4b005f82": "853de09d4b005f8246af64a300b0897741063e89af911edd46e0b4b4f0eee2f2",
+        "/permissions/deny/#8567c3e2a73cd5f0": "8567c3e2a73cd5f02d346f6f47da6397f7db53232069970c804fda8b2fa79cba",
+        "/permissions/deny/#87e557fadc37dd6f": "87e557fadc37dd6f8ede4f0c643bea71a50c1720415038ae4f347c19ac260132",
+        "/permissions/deny/#8bf0c7079169d64c": "8bf0c7079169d64cc5329ddb6f2db122b1d49bd7c2657b4326521177886a1442",
+        "/permissions/deny/#925a75c482f465e6": "925a75c482f465e6f56be0e373a3c2b2b76cfa68d458a9877002c9fcb93a901e",
+        "/permissions/deny/#9a0c3878d87ba4f3": "9a0c3878d87ba4f368ba32b67136e94276e1b6dd2101bfe8ab025ac5fef3d3fc",
+        "/permissions/deny/#9d9611adb2863659": "9d9611adb28636593e18e037f22f864e230e002e689e9ab5fcafe7dfff01c2f4",
+        "/permissions/deny/#a9891486eef0b2c9": "a9891486eef0b2c971941477204d39c98b077c123b6c6aa2a4ded13f488ff0a8",
+        "/permissions/deny/#aa3378fcefd23e0d": "aa3378fcefd23e0db19e78043dca6bc2812b61ec88869a564a6de2922d1fd0b9",
+        "/permissions/deny/#b0421f970eecfbb1": "b0421f970eecfbb144dbff199bd67369a98d2b6b4adb2481c86bddd77ad21f7d",
+        "/permissions/deny/#b1472dc56fe8ef64": "b1472dc56fe8ef649ee59f02f99cbae021caab97e04bc92b9c69580a61b8bea6",
+        "/permissions/deny/#b66006b277b7a707": "b66006b277b7a70767543ffd6953f8f2c65ac492323e0f4f413b6358504b9522",
+        "/permissions/deny/#ba396298f2d24e5a": "ba396298f2d24e5abdd19c3394be384cadca33fde82b6189d967047d34967b81",
+        "/permissions/deny/#bd6cc47dfcf2b527": "bd6cc47dfcf2b527fcbdbe014fae7320d2690c0d7fdc8767d0aee5e236d0f2b8",
+        "/permissions/deny/#c0c03fda30629f08": "c0c03fda30629f081b34d6492c07f50069a6408edf9ae6ddee86c25bc73485af",
+        "/permissions/deny/#c9cddefcd6dde80d": "c9cddefcd6dde80dd5e95753e212ec4cae1b4b537fec91f0dcfcb36952938924",
+        "/permissions/deny/#cf2891be715f0524": "cf2891be715f05245b3364e7ea88c99be30afce61f79ed8c318f90e15d482da6",
+        "/permissions/deny/#d0074629b18ffacc": "d0074629b18ffaccc81ccd498d306dc1313b25391fff6e3539f1dcbde39054a2",
+        "/permissions/deny/#da9699f9a9652c43": "da9699f9a9652c431203fe2c57b81f9ed4e6d6507389c1f8d963d0ad870cba6e",
+        "/permissions/deny/#daea52ea89a6b905": "daea52ea89a6b905c2317cf5594c9676f5e3e28ee891bb12bff159b13626abe7",
+        "/permissions/deny/#dc150e6f3b9b7650": "dc150e6f3b9b76503cb002ec867cf33564939b4fba60fe3ec874aad6464cc863",
+        "/permissions/deny/#dfb1e8421a433c4f": "dfb1e8421a433c4fb402c6e07b777b288d38e6bb00c21e415220c7b80382c044",
+        "/permissions/deny/#dfb7994f26c4f6b4": "dfb7994f26c4f6b48cd5e9a63b13007b4beb287cf27e2f92b91c5e66a1a2d425",
+        "/permissions/deny/#e75d1775d0685f52": "e75d1775d0685f522fa552f6d1dd0a3742d56dd96b0860a2dc61913ccef981dd",
+        "/permissions/deny/#e883e89fae290d55": "e883e89fae290d5593cfdc13ff92d7fea01f8167b9fe7319ed87fb3c6b9a3ae7",
+        "/permissions/deny/#e8ed232adc36c3e7": "e8ed232adc36c3e7003b069c744470523f9c160e4deec62f1fb2f362d11462e2",
+        "/permissions/deny/#efd3543a1292355a": "efd3543a1292355a13eeb25612a4887b2430ba780b2f7bded4619f14b8b075f2",
+        "/permissions/deny/#f2854ff5eac1682e": "f2854ff5eac1682e76ddc278c575c727c8d1198c83e46ffe8eac00736e879498",
+        "/permissions/deny/#f630cc2d91adc05e": "f630cc2d91adc05edd7e43745bfe26ee599d9c8f524233088419f07cb6500cfe",
+        "/permissions/deny/#faa65e889d103936": "faa65e889d1039367ab48c8d3a7e1e036bce64129a0b964fc982e35018e57726"
+      },
+      "kind": "managed-keys",
       "owners": [
         "core",
         "hangar",
         "python"
       ],
-      "sha256": "5aeafe6531004947b82fb99c31a45691694ec123980ff1753abe5146d16c424c"
+      "sha256": "1e89dc32a3bffafad570e7eb2f463f8d284cda4cb599fd819f97af8e410b9306"
     },
     ".gitignore": {
       "json_keys": {},
@@ -230,6 +255,14 @@
         "python"
       ],
       "sha256": "8cc6eefd3e881946729eebeb2cfe45ec3b232840997bbbc2ef0843e441223d95"
+    },
+    ".worktreeinclude": {
+      "json_keys": {},
+      "kind": "managed-block",
+      "owners": [
+        "core"
+      ],
+      "sha256": "535b40a62359fda0abdab9cd66d0169faf3ae07744afe53eb30320025f70927f"
     },
     "CLAUDE.md": {
       "json_keys": {},
@@ -261,8 +294,8 @@
     }
   },
   "modules": {
-    "core": "1.9.0",
-    "python": "1.1.0"
+    "core": "1.13.1",
+    "python": "1.4.1"
   },
   "schema_version": 1
 }

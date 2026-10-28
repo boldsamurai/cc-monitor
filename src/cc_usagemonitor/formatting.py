@@ -12,6 +12,7 @@ system's local zone via datetime.astimezone(). Users running on a
 foreign-TZ host who want a different display zone can set the TZ
 environment variable when launching cc-monitor.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone

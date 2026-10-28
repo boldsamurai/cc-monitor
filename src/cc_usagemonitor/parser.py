@@ -44,7 +44,7 @@ def humanize_model_name(model: str) -> str:
         base = base[:idx]
     if not base.startswith("claude-"):
         return model
-    parts = base[len("claude-"):].split("-")
+    parts = base[len("claude-") :].split("-")
     # Expected shape: <family>-<major>-<minor> where major/minor are
     # plain integers. Anything else (e.g., 'claude-3-5-sonnet') stays
     # as-is — better readable raw than mangled.
@@ -58,6 +58,7 @@ def humanize_model_name(model: str) -> str:
 @dataclass
 class UsageRecord:
     """One assistant turn's usage, parsed from a session JSONL file."""
+
     ts: datetime
     session_id: str
     project_slug: str
@@ -80,6 +81,7 @@ class UsageRecord:
 @dataclass
 class HookEvent:
     """One event emitted by a hook in settings.json."""
+
     ts: datetime
     event: Literal["tool_start", "tool_end", "stop"]
     session_id: str
@@ -105,8 +107,11 @@ def parse_session_line(line: str, project_slug: str) -> UsageRecord | None:
         d = json.loads(line)
     except json.JSONDecodeError as e:
         from .logger import get_logger
+
         get_logger(__name__).debug(
-            "skipping malformed session line in %s: %s", project_slug, e,
+            "skipping malformed session line in %s: %s",
+            project_slug,
+            e,
         )
         return None
 
