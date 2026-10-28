@@ -5,6 +5,7 @@ Pushed at on_mount and popped from _refresh_view once
 user can see the layout but not interact until data is loaded —
 clearer than a frozen-looking page or a banner that flashes by.
 """
+
 from __future__ import annotations
 
 from textual.app import ComposeResult

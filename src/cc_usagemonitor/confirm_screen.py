@@ -6,6 +6,7 @@ Used by the main view's quit action and Settings' Force re-scan
 button — anything else that needs 'are you sure?' should reuse this
 rather than rolling its own dialog.
 """
+
 from __future__ import annotations
 
 from textual.app import ComposeResult
@@ -70,9 +71,7 @@ class ConfirmScreen(ModalScreen[bool]):
         with Vertical(id="confirm-box"):
             yield Static(self.message, id="confirm-message")
             with Horizontal(id="confirm-buttons"):
-                yield Button(
-                    self.yes_label, id="confirm-yes", variant="primary"
-                )
+                yield Button(self.yes_label, id="confirm-yes", variant="primary")
                 yield Button(self.no_label, id="confirm-no")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

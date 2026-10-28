@@ -43,6 +43,7 @@ def _truncate_middle(s: str, max_len: int = 28) -> str:
     tail = keep // 2
     return f"{s[:head]}…{s[-tail:]}"
 
+
 # Register a fixed plotext theme matching Textual's $panel (#242F38).
 # All surface widgets in the detail screen (info panel, charts, tabs,
 # footer) are painted with the same $panel color so the whole screen
@@ -53,17 +54,24 @@ _PLOTEXT_THEME_NAME = "cc-monitor-panel"
 # colorize model names with the exact RGBs plotext picks for each
 # stacked-bar segment.
 _PLOTEXT_COLOR_CYCLE: list[tuple[int, int, int]] = [
-    (0, 130, 200), (60, 180, 75), (230, 25, 75), (255, 225, 25),
-    (245, 130, 48), (145, 30, 180), (70, 240, 240), (240, 50, 230),
+    (0, 130, 200),
+    (60, 180, 75),
+    (230, 25, 75),
+    (255, 225, 25),
+    (245, 130, 48),
+    (145, 30, 180),
+    (70, 240, 240),
+    (240, 50, 230),
 ]
 try:
     from plotext._dict import themes as _plotext_themes
+
     if _PLOTEXT_THEME_NAME not in _plotext_themes:
         _plotext_themes[_PLOTEXT_THEME_NAME] = (
-            _PANEL_RGB,        # canvas color
-            _PANEL_RGB,        # axes color
-            (224, 224, 224),   # ticks/foreground
-            "default",         # default style
+            _PANEL_RGB,  # canvas color
+            _PANEL_RGB,  # axes color
+            (224, 224, 224),  # ticks/foreground
+            "default",  # default style
             list(_PLOTEXT_COLOR_CYCLE),  # data series color cycle
         )
 except Exception as e:
@@ -131,7 +139,9 @@ class SessionDetailScreen(Screen):
         Binding("i", "copy_session_id", "Copy session ID"),
         Binding("p", "copy_project_path", "Copy project path"),
         Binding("f1", "open_in_explorer", "Open in file manager", show=False),
-        Binding("f2", "open_resume_session", "Resume session in new terminal", show=False),
+        Binding(
+            "f2", "open_resume_session", "Resume session in new terminal", show=False
+        ),
         Binding("f3", "copy_session_id", "Copy session ID", show=False),
         Binding("f4", "copy_project_path", "Copy project path", show=False),
     ]
@@ -272,11 +282,7 @@ class SessionDetailScreen(Screen):
         # with 4958 assistant turns spread over 2 weeks shows up as ~12
         # records in the archive), so trusting it here would silently
         # truncate the charts.
-        turns = (
-            self.aggregator.load_full_session_turns(self.session_id)
-            if sess
-            else []
-        )
+        turns = self.aggregator.load_full_session_turns(self.session_id) if sess else []
 
         with Vertical():
             with Horizontal(id="screen-header"):
@@ -317,9 +323,14 @@ class SessionDetailScreen(Screen):
                                         id="usage-table", cursor_type="row"
                                     )
                                     usage_table.add_columns(
-                                        "Time", "Type", "Name",
-                                        "Duration", "Tokens", "Cost",
-                                        "% session", "% 5h",
+                                        "Time",
+                                        "Type",
+                                        "Name",
+                                        "Duration",
+                                        "Tokens",
+                                        "Cost",
+                                        "% session",
+                                        "% 5h",
                                     )
                                     yield usage_table
                                     yield Static(
@@ -343,9 +354,12 @@ class SessionDetailScreen(Screen):
                                         id="tool-cost-table", cursor_type="row"
                                     )
                                     tool_cost_table.add_columns(
-                                        "Tool", "Calls",
-                                        "Result chars", "Tokens (~est)",
-                                        "Cost (~est)", "% session",
+                                        "Tool",
+                                        "Calls",
+                                        "Result chars",
+                                        "Tokens (~est)",
+                                        "Cost (~est)",
+                                        "% session",
                                     )
                                     yield tool_cost_table
                                     yield Static(
@@ -368,7 +382,9 @@ class SessionDetailScreen(Screen):
                                         id="files-table", cursor_type="row"
                                     )
                                     files_table.add_columns(
-                                        "File", "Reads", "Tokens (~est)",
+                                        "File",
+                                        "Reads",
+                                        "Tokens (~est)",
                                     )
                                     yield files_table
                                     # Footer with summed token estimate
@@ -392,7 +408,9 @@ class SessionDetailScreen(Screen):
                                         id="files-write-table", cursor_type="row"
                                     )
                                     files_write_table.add_columns(
-                                        "File", "Writes", "Edits",
+                                        "File",
+                                        "Writes",
+                                        "Edits",
                                         "Tokens (~est)",
                                     )
                                     yield files_write_table
@@ -467,9 +485,7 @@ class SessionDetailScreen(Screen):
         # Static info / totals / models blocks live in compose() so
         # they need explicit .update() calls to refresh.
         try:
-            self.query_one("#detail-info", Static).update(
-                self._build_info_block(sess)
-            )
+            self.query_one("#detail-info", Static).update(self._build_info_block(sess))
             self.query_one("#detail-totals", Static).update(
                 self._build_totals_block(sess)
             )
@@ -531,9 +547,8 @@ class SessionDetailScreen(Screen):
         # case where the API reports a 200K model id but the session
         # actually exceeded 200K tokens.
         from .tui import _context_limit_for
-        ctx_limit = _context_limit_for(
-            sess.last_context_model, sess.max_context_tokens
-        )
+
+        ctx_limit = _context_limit_for(sess.last_context_model, sess.max_context_tokens)
 
         # Filter sidechain (sub-agent) turns out of the context series.
         # Sub-agents have their own context window — mixing them into
@@ -692,6 +707,7 @@ class SessionDetailScreen(Screen):
 
     def action_open_help(self) -> None:
         from .help_screen import HelpScreen
+
         self.app.push_screen(HelpScreen())
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -713,9 +729,7 @@ class SessionDetailScreen(Screen):
         if not path:
             self.app.notify("Project path unknown", severity="warning")
             return
-        ok, msg = open_terminal_with(
-            path, ["claude", "--resume", self.session_id]
-        )
+        ok, msg = open_terminal_with(path, ["claude", "--resume", self.session_id])
         self.app.notify(msg, severity="information" if ok else "error")
 
     def action_copy_session_id(self) -> None:
@@ -747,7 +761,9 @@ class SessionDetailScreen(Screen):
 
         # Ground-truth cwd from JSONL beats slug-decode; fall back when
         # the session hasn't surfaced one (older or hook-only state).
-        project_path = sess.cwd or decode_project_path(sess.project_slug) or "(not found on disk)"
+        project_path = (
+            sess.cwd or decode_project_path(sess.project_slug) or "(not found on disk)"
+        )
         project_name = (
             project_path.rsplit("/", 1)[-1]
             if project_path and project_path != "(not found on disk)"
@@ -779,13 +795,12 @@ class SessionDetailScreen(Screen):
     def _top_reads_summary(self, sess: SessionState) -> str:
         """Top 3 files by read count, basename only ('foo.py (12)')."""
         from pathlib import Path as _Path
+
         files = self.aggregator.count_file_reads_in_session(self.session_id)
         if not files:
             return "(no Read tool calls)"
         top = sorted(files.items(), key=lambda kv: -kv[1]["reads"])[:3]
-        return " · ".join(
-            f"{_Path(fp).name} ({stats['reads']})" for fp, stats in top
-        )
+        return " · ".join(f"{_Path(fp).name} ({stats['reads']})" for fp, stats in top)
 
     def _tools_summary(self, sess: SessionState) -> str:
         """Top 3 tools by frequency, fits on one info-block line."""
@@ -829,14 +844,15 @@ class SessionDetailScreen(Screen):
         stats.add_row("", "")
 
         from .tui import _context_limit_for
+
         ctx_limit = _context_limit_for(sess.last_context_model, sess.max_context_tokens)
         stats.add_row(
             "Ctx (last)",
-            f"{_fmt_int(sess.last_context_tokens)} ({sess.last_context_tokens/ctx_limit*100:.1f}%)",
+            f"{_fmt_int(sess.last_context_tokens)} ({sess.last_context_tokens / ctx_limit * 100:.1f}%)",
         )
         stats.add_row(
             "Ctx (peak)",
-            f"{_fmt_int(sess.max_context_tokens)} ({sess.max_context_tokens/ctx_limit*100:.1f}%)",
+            f"{_fmt_int(sess.max_context_tokens)} ({sess.max_context_tokens / ctx_limit * 100:.1f}%)",
         )
 
         # Current 5h block — what THIS session contributed and how it
@@ -847,9 +863,7 @@ class SessionDetailScreen(Screen):
         if block is not None and in_block is not None and in_block.cost_usd > 0:
             stats.add_row("", "")
             block_total = block.sums.cost_usd
-            share = (
-                in_block.cost_usd / block_total * 100 if block_total else 0.0
-            )
+            share = in_block.cost_usd / block_total * 100 if block_total else 0.0
             # 5h % using same Wariant B math as the main view's column
             api = self.aggregator.api_usage
             api_util = (
@@ -1006,11 +1020,11 @@ class SessionDetailScreen(Screen):
         primary_model = None
         if sess.by_model:
             primary_model = max(
-                sess.by_model.items(), key=lambda kv: kv[1].turns,
+                sess.by_model.items(),
+                key=lambda kv: kv[1].turns,
             )[0]
         model_price = (
-            self.aggregator.pricing.for_model(primary_model)
-            if primary_model else None
+            self.aggregator.pricing.for_model(primary_model) if primary_model else None
         )
         # cache_read rate is what the user pays per cached token on
         # turns 2..N. Cache_write is paid once at first ingest; for
@@ -1037,34 +1051,30 @@ class SessionDetailScreen(Screen):
             total_chars += chars
             total_tokens += tokens
             total_cost_est += cost_est
-            chars_str = (
-                f"{chars / 1024:.1f} KB"
-                if chars >= 1024 else f"{chars} B"
-            )
-            tokens_str = (
-                f"{tokens / 1000:.1f}K"
-                if tokens >= 1000 else str(tokens)
-            )
+            chars_str = f"{chars / 1024:.1f} KB" if chars >= 1024 else f"{chars} B"
+            tokens_str = f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
             cost_str = f"${cost_est:.4f}" if cost_est < 1 else f"${cost_est:.2f}"
             pct_session = (
-                f"{cost_est / session_cost * 100:.1f}%"
-                if session_cost > 0 else "—"
+                f"{cost_est / session_cost * 100:.1f}%" if session_cost > 0 else "—"
             )
             table.add_row(
-                tool_name, str(calls),
-                chars_str, tokens_str, cost_str, pct_session,
+                tool_name,
+                str(calls),
+                chars_str,
+                tokens_str,
+                cost_str,
+                pct_session,
             )
         total_chars_str = (
             f"{total_chars / 1024:.1f} KB"
-            if total_chars >= 1024 else f"{total_chars} B"
+            if total_chars >= 1024
+            else f"{total_chars} B"
         )
         total_tokens_str = (
-            f"{total_tokens / 1000:.1f}K"
-            if total_tokens >= 1000 else str(total_tokens)
+            f"{total_tokens / 1000:.1f}K" if total_tokens >= 1000 else str(total_tokens)
         )
         total_cost_str = (
-            f"${total_cost_est:.4f}"
-            if total_cost_est < 1 else f"${total_cost_est:.2f}"
+            f"${total_cost_est:.4f}" if total_cost_est < 1 else f"${total_cost_est:.2f}"
         )
         total_label.update(
             f"[dim]Total: {total_calls} calls · {total_chars_str} · "
@@ -1104,7 +1114,8 @@ class SessionDetailScreen(Screen):
         if total_label is not None:
             total_str = (
                 f"{total_tokens / 1000:.1f}K"
-                if total_tokens >= 1000 else str(total_tokens)
+                if total_tokens >= 1000
+                else str(total_tokens)
             )
             total_label.update(
                 f"[dim]Total: ~{total_str} tokens across "
@@ -1120,21 +1131,17 @@ class SessionDetailScreen(Screen):
         )
         # Order: biggest tokens first — that's the actionable signal
         # ('which file is bloating my context the most').
-        ordered = sorted(
-            files.items(), key=lambda kv: -kv[1]["tokens_est"]
-        )
+        ordered = sorted(files.items(), key=lambda kv: -kv[1]["tokens_est"])
         for fp, stats in ordered:
             display = fp
             if project_root and fp.startswith(project_root + "/"):
-                display = fp[len(project_root) + 1:]
+                display = fp[len(project_root) + 1 :]
             # Truncate from the start so the filename + immediate parent
             # always stay visible — that's the actionable part.
             if len(display) > 60:
                 display = "…" + display[-59:]
             tokens = stats["tokens_est"]
-            tokens_str = (
-                f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
-            )
+            tokens_str = f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
             table.add_row(display, str(stats["reads"]), tokens_str)
 
     def _populate_files_write_table(self) -> None:
@@ -1167,7 +1174,8 @@ class SessionDetailScreen(Screen):
         if total_label is not None:
             total_str = (
                 f"{total_tokens / 1000:.1f}K"
-                if total_tokens >= 1000 else str(total_tokens)
+                if total_tokens >= 1000
+                else str(total_tokens)
             )
             total_label.update(
                 f"[dim]Total: ~{total_str} tokens across "
@@ -1186,13 +1194,11 @@ class SessionDetailScreen(Screen):
         for fp, stats in ordered:
             display = fp
             if project_root and fp.startswith(project_root + "/"):
-                display = fp[len(project_root) + 1:]
+                display = fp[len(project_root) + 1 :]
             if len(display) > 60:
                 display = "…" + display[-59:]
             tokens = stats["tokens_est"]
-            tokens_str = (
-                f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
-            )
+            tokens_str = f"{tokens / 1000:.1f}K" if tokens >= 1000 else str(tokens)
             table.add_row(
                 display,
                 str(stats["writes"]),

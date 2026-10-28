@@ -81,12 +81,12 @@ def _human(n: int) -> str:
     if n < 1_000:
         return f"{n:,}"
     if n < 1_000_000:
-        return f"{n/1_000:.2f}K"
+        return f"{n / 1_000:.2f}K"
     if n < 1_000_000_000:
-        return f"{n/1_000_000:.2f}M"
+        return f"{n / 1_000_000:.2f}M"
     if n < 1_000_000_000_000:
-        return f"{n/1_000_000_000:.2f}B"
-    return f"{n/1_000_000_000_000:.2f}T"
+        return f"{n / 1_000_000_000:.2f}B"
+    return f"{n / 1_000_000_000_000:.2f}T"
 
 
 def _context_limit_for(model: str, observed_max: int = 0) -> int:
@@ -366,12 +366,14 @@ class BlockPanel(Static):
         # not give burn rate.
         if info is not None:
             sums = info.sums
-            lines.append(Text.from_markup(
-                f"[b]Local[/b]   tokens={_human(sums.total_tokens)}  ·  "
-                f"cost=${sums.cost_usd:,.2f}  ·  "
-                f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
-                f"${info.burn_cost_per_min:,.2f}/min"
-            ))
+            lines.append(
+                Text.from_markup(
+                    f"[b]Local[/b]   tokens={_human(sums.total_tokens)}  ·  "
+                    f"cost=${sums.cost_usd:,.2f}  ·  "
+                    f"burn={_human(int(info.burn_tokens_per_min))} tok/min · "
+                    f"${info.burn_cost_per_min:,.2f}/min"
+                )
+            )
             projection = self._format_projection(info)
             if projection is not None:
                 lines.append(projection)
@@ -382,13 +384,15 @@ class BlockPanel(Static):
             stale_age = max(0, int(time.time() - api.fetched_at))
             if api.retry_after_epoch:
                 wait_s = max(0, int(api.retry_after_epoch - time.time()))
-                wait_str = f"retry in {_fmt_minutes(wait_s/60)}"
+                wait_str = f"retry in {_fmt_minutes(wait_s / 60)}"
             else:
                 wait_str = "retrying with backoff"
-            lines.append(Text.from_markup(
-                f"[yellow]API: {api.error}[/yellow]  ·  "
-                f"last update {stale_age}s ago  ·  {wait_str}"
-            ))
+            lines.append(
+                Text.from_markup(
+                    f"[yellow]API: {api.error}[/yellow]  ·  "
+                    f"last update {stale_age}s ago  ·  {wait_str}"
+                )
+            )
 
         return Group(*lines)
 
@@ -406,12 +410,10 @@ class BlockPanel(Static):
         if info.burn_cost_per_min <= 0 and info.burn_tokens_per_min <= 0:
             return None
         projected_cost = (
-            info.sums.cost_usd
-            + info.burn_cost_per_min * info.minutes_remaining
+            info.sums.cost_usd + info.burn_cost_per_min * info.minutes_remaining
         )
         projected_tokens = int(
-            info.sums.total_tokens
-            + info.burn_tokens_per_min * info.minutes_remaining
+            info.sums.total_tokens + info.burn_tokens_per_min * info.minutes_remaining
         )
         end_local = info.end.astimezone()
         return Text.from_markup(
@@ -439,7 +441,7 @@ class BlockPanel(Static):
         if pct < 1000:
             pct_str = f"{pct:.0f}%"
         else:
-            pct_str = f"{pct/1000:.0f}K%"
+            pct_str = f"{pct / 1000:.0f}K%"
         if suffix:
             line.append(f"  {suffix}  {pct_str}")
         else:
@@ -508,8 +510,7 @@ class BlockPanel(Static):
             # 'how much by then' even without a plan attached).
             payg_lines: list[Text] = [
                 Text.from_markup(
-                    "[b]💳  Pay-as-you-go[/b]  "
-                    "[dim](API key — no plan limits)[/dim]"
+                    "[b]💳  Pay-as-you-go[/b]  [dim](API key — no plan limits)[/dim]"
                 ),
                 raw_stats,
             ]
@@ -550,10 +551,13 @@ class BlockPanel(Static):
         # plan gives a P90-derived sensible token line via the raw
         # 'Local' line below.
         if info.pct_cost is not None:
-            lines.append(self._progress_line(
-                "5h $   ", info.pct_cost,
-                f"${sums.cost_usd:,.2f} / ${info.cost_limit or 0:,.0f}",
-            ))
+            lines.append(
+                self._progress_line(
+                    "5h $   ",
+                    info.pct_cost,
+                    f"${sums.cost_usd:,.2f} / ${info.cost_limit or 0:,.0f}",
+                )
+            )
         lines.append(raw_stats)
         projection = self._format_projection(info)
         if projection is not None:
@@ -872,7 +876,9 @@ class UsageMonitorApp(App):
                 self.theme = saved_theme
             except Exception as e:
                 log.warning(
-                    "could not apply saved theme %r: %s", saved_theme, e,
+                    "could not apply saved theme %r: %s",
+                    saved_theme,
+                    e,
                 )
         # Push date format into the formatting module's global state
         # so all _fmt_* helpers see the user's preference on the very
@@ -942,6 +948,7 @@ class UsageMonitorApp(App):
             # easily exit), pop it synchronously now. This is a pure
             # disk read, no HTTP, and runs in <1ms.
             from .version_check import get_pending_modal
+
             pending = get_pending_modal()
             if pending:
                 log.info(
@@ -957,6 +964,7 @@ class UsageMonitorApp(App):
         # behind it. Pop happens in _refresh_view via the
         # _loading_dismissed flag.
         from .loading_screen import LoadingScreen
+
         self.push_screen(LoadingScreen())
 
         # Run the Claude Code presence probe regardless of whether the
@@ -964,14 +972,13 @@ class UsageMonitorApp(App):
         # correctly for the BlockPanel's header. --skip-claude-check
         # only suppresses the modal, not the detection itself.
         from .claude_detection import detect_claude_install
+
         status = detect_claude_install()
         # archive_mode = "no claude binary AND not authenticated".
         # has_oauth implies a working install (credentials come from
         # Claude Code), so we don't need to flip into archive mode in
         # that case even if the binary check were to misfire.
-        self._archive_mode = (
-            not status.binary_in_path and not self.has_oauth
-        )
+        self._archive_mode = not status.binary_in_path and not self.has_oauth
         if not self._skip_claude_check and status.is_missing:
             # Soft warning when Claude Code isn't installed: stack the
             # modal ON TOP of LoadingScreen so the user sees it first.
@@ -1024,6 +1031,7 @@ class UsageMonitorApp(App):
                 "Code or copy archived data over)?"
             )
         from .confirm_screen import ConfirmScreen
+
         self.push_screen(
             ConfirmScreen(body, yes_label="Continue", no_label="Quit"),
             self._handle_claude_missing_choice,
@@ -1057,6 +1065,7 @@ class UsageMonitorApp(App):
             "tracking from your very first turn."
         )
         from .confirm_screen import ConfirmScreen
+
         self.push_screen(
             ConfirmScreen(body, yes_label="Got it", no_label="Don't show again"),
             self._handle_onboarding_choice,
@@ -1077,6 +1086,7 @@ class UsageMonitorApp(App):
         """One-shot PyPI check; modal on hit, silent on miss/failure."""
         try:
             from .version_check import check_for_update
+
             latest = await check_for_update()
         except Exception as e:
             log.debug("update check task failed: %s", e)
@@ -1095,6 +1105,7 @@ class UsageMonitorApp(App):
         can't miss the modal even if they quit before it renders."""
         from .version_check import detect_installer, set_pending_modal
         from . import __version__
+
         installer = detect_installer()
         if installer is None:
             self.notify(
@@ -1118,13 +1129,16 @@ class UsageMonitorApp(App):
             f"once the upgrade finishes."
         )
         from .confirm_screen import ConfirmScreen
+
         self.push_screen(
             ConfirmScreen(body, yes_label="Update", no_label="Not now"),
             lambda confirmed: self._handle_update_choice(confirmed, cmd),
         )
 
     def _handle_update_choice(
-        self, confirmed: bool | None, cmd: list[str],
+        self,
+        confirmed: bool | None,
+        cmd: list[str],
     ) -> None:
         """Modal callback: if user picked Update, stash the upgrade
         command for run_app to execute AFTER Textual tears down. We
@@ -1141,11 +1155,13 @@ class UsageMonitorApp(App):
         them on the next launch.
         """
         from .version_check import clear_pending_modal
+
         clear_pending_modal()
         if not confirmed:
             return
-        log.info("user accepted auto-upgrade; deferring to post-exit: %s",
-                 " ".join(cmd))
+        log.info(
+            "user accepted auto-upgrade; deferring to post-exit: %s", " ".join(cmd)
+        )
         self._pending_upgrade_cmd = cmd
         self.exit()
 
@@ -1230,11 +1246,7 @@ class UsageMonitorApp(App):
             return
         active = self._active_tab()
         if active == "sessions":
-            actions = (
-                "[b]o[/b] open dir   "
-                "[b]s[/b] resume session   "
-                "[b]↵[/b] details"
-            )
+            actions = "[b]o[/b] open dir   [b]s[/b] resume session   [b]↵[/b] details"
         elif active == "projects":
             actions = (
                 "[b]o[/b] open dir   "
@@ -1350,10 +1362,7 @@ class UsageMonitorApp(App):
         """
         self._maybe_dismiss_loading_screen()
         self._refresh_block_panel()
-        if (
-            self.aggregator.revision != self._last_data_revision
-            or self._view_dirty
-        ):
+        if self.aggregator.revision != self._last_data_revision or self._view_dirty:
             self._refresh_heavy()
             self._last_data_revision = self.aggregator.revision
             self._view_dirty = False
@@ -1386,6 +1395,7 @@ class UsageMonitorApp(App):
             return
         try:
             from .loading_screen import LoadingScreen
+
             if isinstance(self.screen, LoadingScreen):
                 self.pop_screen()
                 self._loading_dismissed = True
@@ -1420,13 +1430,17 @@ class UsageMonitorApp(App):
         # UTC. Convert local-midnight to UTC before passing in.
         now_local = datetime.now().astimezone()
         local_midnight = now_local.replace(
-            hour=0, minute=0, second=0, microsecond=0,
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
         today_start_utc = local_midnight.astimezone(timezone.utc)
         yesterday_start_utc = today_start_utc - timedelta(days=1)
         summary.sums_today = agg.sums_in_range(today_start_utc)
         summary.sums_yesterday = agg.sums_in_range(
-            yesterday_start_utc, today_start_utc,
+            yesterday_start_utc,
+            today_start_utc,
         )
         summary.rate_tokens = agg.recent_token_rate_per_min()
         summary.rate_cost = agg.recent_cost_per_min()
@@ -1474,22 +1488,22 @@ class UsageMonitorApp(App):
         observe so the dict can't grow without bound.
         """
         active_keys: set[str] = set()
-        if (
-            self.use_api
-            and api is not None
-            and not api.api_unavailable
-        ):
+        if self.use_api and api is not None and not api.api_unavailable:
             if api.five_hour is not None:
                 key = f"api_5h:{api.five_hour.resets_at.isoformat()}"
                 active_keys.add(key)
                 self._maybe_notify_threshold(
-                    key, api.five_hour.utilization, "5h block",
+                    key,
+                    api.five_hour.utilization,
+                    "5h block",
                 )
             if api.seven_day is not None:
                 key = f"api_7d:{api.seven_day.resets_at.isoformat()}"
                 active_keys.add(key)
                 self._maybe_notify_threshold(
-                    key, api.seven_day.utilization, "7d window",
+                    key,
+                    api.seven_day.utilization,
+                    "7d window",
                 )
         elif (
             not self.use_api
@@ -1509,7 +1523,10 @@ class UsageMonitorApp(App):
             del self._notified_thresholds[stale]
 
     def _maybe_notify_threshold(
-        self, window_id: str, pct: float, label: str,
+        self,
+        window_id: str,
+        pct: float,
+        label: str,
     ) -> None:
         seen = self._notified_thresholds.setdefault(window_id, set())
         # Order matters: fire 80 before 100 so a single jump past both
@@ -1541,18 +1558,14 @@ class UsageMonitorApp(App):
         if active == "sessions":
             total = len(agg.sessions)
             try:
-                visible = self.query_one(
-                    "#t-sessions", DataTable
-                ).row_count
+                visible = self.query_one("#t-sessions", DataTable).row_count
             except Exception:
                 visible = 0
             base = f"[b]{visible}[/b] / {total} sessions"
         elif active == "projects":
             total = len({s.project_slug for s in agg.sessions.values()})
             try:
-                visible = self.query_one(
-                    "#t-projects", DataTable
-                ).row_count
+                visible = self.query_one("#t-projects", DataTable).row_count
             except Exception:
                 visible = 0
             base = f"[b]{visible}[/b] / {total} projects"
@@ -1569,13 +1582,11 @@ class UsageMonitorApp(App):
                 "projects": self.PROJECTS_COLS,
             }.get(active, [])
             label = next(
-                (lbl for lbl, k in cols if k == col_key), col_key,
+                (lbl for lbl, k in cols if k == col_key),
+                col_key,
             )
             arrow = "↓" if reverse else "↑"
-            base += (
-                f"  ·  [b]{label}[/b] {arrow}  "
-                f"[dim](ctrl+s to change)[/dim]"
-            )
+            base += f"  ·  [b]{label}[/b] {arrow}  [dim](ctrl+s to change)[/dim]"
         count_widget.update(base)
 
     def _update_empty_states(self) -> None:
@@ -1661,7 +1672,8 @@ class UsageMonitorApp(App):
             col_key, reverse = sort_pref
             try:
                 table.sort(
-                    col_key, reverse=reverse,
+                    col_key,
+                    reverse=reverse,
                     key=_sort_key_factory(reverse),
                 )
             except Exception:
@@ -1693,7 +1705,8 @@ class UsageMonitorApp(App):
                 pass
 
     def on_data_table_header_selected(
-        self, event: DataTable.HeaderSelected,
+        self,
+        event: DataTable.HeaderSelected,
     ) -> None:
         """Three-state click cycle on the column header:
         asc → desc → reset → asc on next click."""
@@ -1701,7 +1714,8 @@ class UsageMonitorApp(App):
         table_id_raw = table.id
         log.info(
             "header_selected: table=%s col=%s",
-            table_id_raw, event.column_key,
+            table_id_raw,
+            event.column_key,
         )
         table_id = f"#{table_id_raw}" if table_id_raw else None
         if table_id not in ("#t-sessions", "#t-projects", "#t-models"):
@@ -1731,6 +1745,7 @@ class UsageMonitorApp(App):
         current_reverse = current[1] if current else False
 
         from .sort_picker import SortPickerScreen
+
         picker = SortPickerScreen(
             columns=cols_per_tab[active],
             current_col=current_col,
@@ -1749,7 +1764,10 @@ class UsageMonitorApp(App):
         self.push_screen(picker, _on_picker_dismissed)
 
     def _apply_sort_for(
-        self, table_id: str, col_key_value: str, reverse: bool,
+        self,
+        table_id: str,
+        col_key_value: str,
+        reverse: bool,
     ) -> None:
         """Apply a sort directly without the asc → desc → reset cycle.
         Used by the modal picker, where the user explicitly chose
@@ -1769,18 +1787,24 @@ class UsageMonitorApp(App):
             return
         try:
             table.sort(
-                col_key, reverse=reverse, key=_sort_key_factory(reverse),
+                col_key,
+                reverse=reverse,
+                key=_sort_key_factory(reverse),
             )
         except Exception as e:
             log.warning(
                 "apply_sort failed for %s/%s: %s",
-                table_id, col_key_value, e,
+                table_id,
+                col_key_value,
+                e,
             )
             return
         self._user_sort[table_id] = (col_key_value, reverse)
         log.info(
             "applied sort %s by %s reverse=%s (modal)",
-            table_id, col_key_value, reverse,
+            table_id,
+            col_key_value,
+            reverse,
         )
 
     def _reset_sort_for(self, table_id: str) -> None:
@@ -1835,12 +1859,17 @@ class UsageMonitorApp(App):
             )
         except Exception as e:
             log.warning(
-                "sort failed for %s/%s: %s", table_id, col_key_value, e,
+                "sort failed for %s/%s: %s",
+                table_id,
+                col_key_value,
+                e,
             )
             return
         log.info(
             "sorted %s by %s reverse=%s",
-            table_id, col_key_value, reverse,
+            table_id,
+            col_key_value,
+            reverse,
         )
         self._user_sort[table_id] = (col_key_value, reverse)
 
@@ -1922,8 +1951,13 @@ class UsageMonitorApp(App):
         block_cost_limit = self.aggregator.cost_limit
         for s in sorted_sessions:
             if not self._session_matches_filters(
-                s, _resolved_path(s), _exists(s),
-                date_cutoff, cost_min, model_substr, search_q,
+                s,
+                _resolved_path(s),
+                _exists(s),
+                date_cutoff,
+                cost_min,
+                model_substr,
+                search_q,
             ):
                 continue
             total_in = (
@@ -1954,8 +1988,12 @@ class UsageMonitorApp(App):
                 if isinstance(value, str):
                     return Text(value, style=style)
                 return value
+
             block_pct_str, _block_pct_val = self._session_block_pct(
-                s.session_id, block_total_cost, api_util_pct, block_cost_limit,
+                s.session_id,
+                block_total_cost,
+                api_util_pct,
+                block_cost_limit,
             )
             cells = (
                 _styled(s.session_id[:8]),
@@ -2000,15 +2038,11 @@ class UsageMonitorApp(App):
             # Cache% = share of input that came from cache hits — high is
             # good (cheap reads). Denominator is "input-side" tokens only.
             input_side = sums.input + sums.cache_read + cache_w
-            cache_pct = (
-                sums.cache_read / input_side * 100 if input_side else 0.0
-            )
+            cache_pct = sums.cache_read / input_side * 100 if input_side else 0.0
             # Out/In = how chatty the model is per unit of input. Excludes
             # cache from the denominator so we measure real prompt size.
             out_in = sums.output / sums.input if sums.input else 0.0
-            per_turn = (
-                sums.cost_usd / sums.turns if sums.turns else 0.0
-            )
+            per_turn = sums.cost_usd / sums.turns if sums.turns else 0.0
             cells = (
                 humanize_model_name(model) or "(unknown)",
                 _human(sums.turns),
@@ -2040,9 +2074,7 @@ class UsageMonitorApp(App):
         color→model mappings between the two charts.
         """
         days = 7
-        cost_dates, cost_per_model = self.aggregator.cost_per_day_per_model(
-            days=days
-        )
+        cost_dates, cost_per_model = self.aggregator.cost_per_day_per_model(days=days)
         token_dates, token_per_model = self.aggregator.tokens_per_day_per_model(
             days=days
         )
@@ -2053,17 +2085,13 @@ class UsageMonitorApp(App):
         # where it actually matters.
         cost_total = sum(sum(v) for v in cost_per_model.values()) or 1.0
         token_total = sum(sum(v) for v in token_per_model.values()) or 1.0
-        cost_share = {
-            m: sum(v) / cost_total for m, v in cost_per_model.items()
-        }
-        token_share = {
-            m: sum(v) / token_total for m, v in token_per_model.items()
-        }
+        cost_share = {m: sum(v) / cost_total for m, v in cost_per_model.items()}
+        token_share = {m: sum(v) / token_total for m, v in token_per_model.items()}
         all_models = set(cost_per_model) | set(token_per_model)
         keep = [
-            m for m in all_models
-            if cost_share.get(m, 0.0) > 0.01
-            or token_share.get(m, 0.0) > 0.01
+            m
+            for m in all_models
+            if cost_share.get(m, 0.0) > 0.01 or token_share.get(m, 0.0) > 0.01
         ] or list(all_models)
         # Sort by cost share desc — same order applied to both charts so
         # the bottom of each stack is consistent across them.
@@ -2078,14 +2106,22 @@ class UsageMonitorApp(App):
         ]
 
         self._render_stacked_chart(
-            "#chart-tokens-time", token_dates, token_series, colors,
+            "#chart-tokens-time",
+            token_dates,
+            token_series,
+            colors,
             title="Tokens / day per model",
-            ylabel="tokens", tick_fmt=_fmt_token_tick,
+            ylabel="tokens",
+            tick_fmt=_fmt_token_tick,
         )
         self._render_stacked_chart(
-            "#chart-cost-time", cost_dates, cost_series, colors,
+            "#chart-cost-time",
+            cost_dates,
+            cost_series,
+            colors,
             title="Cost / day per model",
-            ylabel="$", tick_fmt=_fmt_dollar_tick,
+            ylabel="$",
+            tick_fmt=_fmt_dollar_tick,
         )
 
         # Single legend, Rich markup with RGB-tuple bullets matching the
@@ -2139,8 +2175,11 @@ class UsageMonitorApp(App):
         tick_labels: list[str] = []
         if max_stack > 0:
             tick_positions = [
-                0.0, max_stack * 0.25, max_stack * 0.5,
-                max_stack * 0.75, max_stack,
+                0.0,
+                max_stack * 0.25,
+                max_stack * 0.5,
+                max_stack * 0.75,
+                max_stack,
             ]
             tick_labels = [tick_fmt(v) for v in tick_positions]
 
@@ -2246,8 +2285,10 @@ class UsageMonitorApp(App):
             # Dim the entire row when the project is gone so it visually
             # recedes; the ✗ marker in Exists is still readable.
             style = "" if exists else "dim"
+
             def _styled(s: str) -> Text:
                 return Text(s, style=style) if style else Text(s)
+
             # Prefer the basename of the captured cwd (ground-truth name)
             # over the slug guess.
             real_path = entry["cwd"]
@@ -2263,9 +2304,7 @@ class UsageMonitorApp(App):
                 _styled(_fmt_usd(entry["cost"])),
                 _styled(_fmt_usd(last_7d.get(slug, 0.0))),
                 _styled(
-                    f"${per_session:.2f}"
-                    if per_session >= 1
-                    else f"${per_session:.4f}"
+                    f"${per_session:.2f}" if per_session >= 1 else f"${per_session:.4f}"
                 ),
                 _styled(_human(entry["tokens"])),
             )
@@ -2295,10 +2334,12 @@ class UsageMonitorApp(App):
         cfg = load_config()
         if cfg.get("confirm_on_quit", True):
             from .confirm_screen import ConfirmScreen
+
             self.push_screen(
                 ConfirmScreen(
                     "Quit cc-monitor?",
-                    yes_label="Quit", no_label="Stay",
+                    yes_label="Quit",
+                    no_label="Stay",
                 ),
                 self._handle_quit_confirm,
             )
@@ -2329,6 +2370,7 @@ class UsageMonitorApp(App):
         # Best-effort — state.save catches and logs its own errors.
         try:
             from . import state as state_io
+
             state_io.save(self.aggregator, self.tailer)
         except Exception as e:
             log.warning("snapshot save on quit failed: %s", e)
@@ -2451,8 +2493,10 @@ class UsageMonitorApp(App):
         often has no default-app association, so we explicitly launch
         Notepad — at least guaranteed to display the file."""
         import sys
+
         if sys.platform == "win32":
             import subprocess
+
             try:
                 subprocess.Popen(["notepad.exe", str(LOG_FILE)])
                 self.notify(f"Opened {LOG_FILE} in Notepad", timeout=2)
@@ -2460,26 +2504,24 @@ class UsageMonitorApp(App):
                 self.notify(f"Open failed: {e}", severity="warning")
             return
 
-        ok, msg = open_terminal_with(
-            str(LOG_DIR), ["less", "+F", str(LOG_FILE)]
-        )
+        ok, msg = open_terminal_with(str(LOG_DIR), ["less", "+F", str(LOG_FILE)])
         if ok:
             self.notify(f"Tailing log in {msg.split()[-1]}", timeout=2)
             return
         # No terminal emulator on POSIX either — fall back to default app.
         ok, fallback_msg = open_file(LOG_FILE)
-        self.notify(
-            fallback_msg, severity="information" if ok else "warning"
-        )
+        self.notify(fallback_msg, severity="information" if ok else "warning")
 
     def action_open_settings(self) -> None:
         """Push the Settings overlay onto the screen stack."""
         from .settings_screen import SettingsScreen
+
         self.push_screen(SettingsScreen())
 
     def action_open_help(self) -> None:
         """Push the keyboard-shortcut cheatsheet."""
         from .help_screen import HelpScreen
+
         self.push_screen(HelpScreen())
 
     def action_open_claude_resume_last(self) -> None:
@@ -2602,8 +2644,14 @@ class UsageMonitorApp(App):
         return None if self.filter_model == "all" else self.filter_model
 
     def _session_matches_filters(
-        self, s, resolved_path, exists,
-        date_cutoff, cost_min, model_substr, search_q,
+        self,
+        s,
+        resolved_path,
+        exists,
+        date_cutoff,
+        cost_min,
+        model_substr,
+        search_q,
     ) -> bool:
         if self.filter_hide_deleted and not exists:
             return False
@@ -2629,7 +2677,11 @@ class UsageMonitorApp(App):
         return True
 
     def _project_matches_filters(
-        self, slug: str, entry: dict, exists: bool, search_q: str,
+        self,
+        slug: str,
+        entry: dict,
+        exists: bool,
+        search_q: str,
     ) -> bool:
         if self.filter_hide_deleted and not exists:
             return False
@@ -2665,8 +2717,7 @@ class UsageMonitorApp(App):
         # mouse users can click each segment independently.
         labels = {
             "hide": (
-                f"[b]h[/b] [{'✓' if self.filter_hide_deleted else ' '}] "
-                f"hide missing"
+                f"[b]h[/b] [{'✓' if self.filter_hide_deleted else ' '}] hide missing"
             ),
             "date": f"[b]d[/b] date: {self.filter_date}",
             "cost": f"[b]c[/b] cost: {self._cost_label()}",
@@ -2704,7 +2755,9 @@ def run_app(
     skip_claude_check: bool = False,
 ) -> None:
     app = UsageMonitorApp(
-        aggregator, tailer, queue,
+        aggregator,
+        tailer,
+        queue,
         auto_limits=auto_limits,
         use_api=use_api,
         has_oauth=has_oauth,
@@ -2775,9 +2828,7 @@ def _run_pending_upgrade(cmd: list[str]) -> None:
         return
 
     if result.returncode == 0:
-        print(
-            "\n✓ Upgrade complete. Run `cc-monitor` to launch the new version."
-        )
+        print("\n✓ Upgrade complete. Run `cc-monitor` to launch the new version.")
     else:
         print(
             f"\n✗ Upgrade failed with exit code {result.returncode}. "

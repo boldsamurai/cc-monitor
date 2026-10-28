@@ -6,6 +6,7 @@ package version is wired to a console entry point (cc-monitor-hook)
 so the auto-installer can drop a stable absolute path into
 ~/.claude/settings.json regardless of where the package lives.
 """
+
 from __future__ import annotations
 
 import json

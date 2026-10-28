@@ -1,4 +1,5 @@
 """Tests for the Claude Code presence probe."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,7 +38,8 @@ def test_has_project_data_returns_false_for_empty_dir(tmp_path, monkeypatch):
 
 
 def test_has_project_data_returns_false_when_subdirs_have_no_jsonl(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     proj = tmp_path / "-some-project"
     proj.mkdir()

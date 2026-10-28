@@ -61,11 +61,11 @@ class Tailer:
         """
         return {
             "session_tails": [
-                (str(t.path), t.pos, t.inode)
-                for t in self._session_tails.values()
+                (str(t.path), t.pos, t.inode) for t in self._session_tails.values()
             ],
             "event_tail": (
-                None if self._event_tail is None
+                None
+                if self._event_tail is None
                 else (
                     str(self._event_tail.path),
                     self._event_tail.pos,
@@ -84,13 +84,17 @@ class Tailer:
         for path_str, pos, inode in data.get("session_tails", []):
             p = Path(path_str)
             self._session_tails[p] = _FileTail(
-                path=p, pos=pos, inode=inode,
+                path=p,
+                pos=pos,
+                inode=inode,
             )
         ev = data.get("event_tail")
         if ev is not None:
             path_str, pos, inode = ev
             self._event_tail = _FileTail(
-                path=Path(path_str), pos=pos, inode=inode,
+                path=Path(path_str),
+                pos=pos,
+                inode=inode,
             )
         # Treat the restored state as a 'completed initial sweep' so
         # the LoadingScreen modal in the TUI can come down immediately
@@ -118,7 +122,9 @@ class Tailer:
         # Seed event log if it doesn't exist yet — tail still works once it appears.
         log.info(
             "tailer starting: projects=%s event_log=%s tracked_files=%d",
-            self.projects_dir, self.event_log, len(self._session_tails),
+            self.projects_dir,
+            self.event_log,
+            len(self._session_tails),
         )
         # Yield once so any pending UI work scheduled at on_mount time
         # (notably the LoadingScreen modal) gets render time before we
@@ -216,7 +222,9 @@ class Tailer:
             # the snapshot mechanism handles 'don't re-read what you
             # already saw' via persisted offsets.
             start = 0
-            self._event_tail = _FileTail(path=self.event_log, pos=start, inode=st.st_ino)
+            self._event_tail = _FileTail(
+                path=self.event_log, pos=start, inode=st.st_ino
+            )
 
         tail = self._event_tail
         if st.st_size < tail.pos:

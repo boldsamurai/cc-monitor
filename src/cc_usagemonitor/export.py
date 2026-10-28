@@ -9,6 +9,7 @@ Files land in ~/.cache/cc-monitor/exports/ (XDG_CACHE_HOME aware).
 File names embed an ISO timestamp so successive exports don't overwrite
 each other.
 """
+
 from __future__ import annotations
 
 import csv
@@ -107,22 +108,24 @@ def _session_rows(agg: Aggregator) -> list[dict]:
     rows: list[dict] = []
     for sess in agg.sessions.values():
         s = sess.sums
-        rows.append({
-            "session_id": sess.session_id,
-            "project_slug": sess.project_slug,
-            "cwd": sess.cwd or "",
-            "first_seen": _iso(sess.first_seen),
-            "last_seen": _iso(sess.last_seen),
-            "turns": s.turns,
-            "input_tokens": s.input,
-            "output_tokens": s.output,
-            "cache_read_tokens": s.cache_read,
-            "cache_write_5m_tokens": s.cache_write_5m,
-            "cache_write_1h_tokens": s.cache_write_1h,
-            "total_tokens": s.total_tokens,
-            "cost_usd": round(s.cost_usd, 6),
-            "models": ";".join(sorted(sess.by_model)),
-        })
+        rows.append(
+            {
+                "session_id": sess.session_id,
+                "project_slug": sess.project_slug,
+                "cwd": sess.cwd or "",
+                "first_seen": _iso(sess.first_seen),
+                "last_seen": _iso(sess.last_seen),
+                "turns": s.turns,
+                "input_tokens": s.input,
+                "output_tokens": s.output,
+                "cache_read_tokens": s.cache_read,
+                "cache_write_5m_tokens": s.cache_write_5m,
+                "cache_write_1h_tokens": s.cache_write_1h,
+                "total_tokens": s.total_tokens,
+                "cost_usd": round(s.cost_usd, 6),
+                "models": ";".join(sorted(sess.by_model)),
+            }
+        )
     rows.sort(
         key=lambda r: (r["last_seen"] or "", r["session_id"]),
         reverse=True,
@@ -162,7 +165,8 @@ def _project_rows(agg: Aggregator) -> list[dict]:
         if e.cwd is None and sess.cwd:
             e.cwd = sess.cwd
         for ts, kind in (
-            (sess.first_seen, "first"), (sess.last_seen, "last"),
+            (sess.first_seen, "first"),
+            (sess.last_seen, "last"),
         ):
             if ts is None:
                 continue
@@ -188,24 +192,26 @@ def _project_rows(agg: Aggregator) -> list[dict]:
     for slug, e in by_slug.items():
         cwd = e.cwd or decode_project_path(slug) or ""
         exists = bool(cwd) and Path(cwd).is_dir()
-        rows.append({
-            "project_slug": slug,
-            "cwd": cwd,
-            "exists": exists,
-            "sessions_count": e.sessions,
-            "first_seen": _iso(e.first_seen),
-            "last_seen": _iso(e.last_seen),
-            "turns": e.sums.turns,
-            "input_tokens": e.sums.input,
-            "output_tokens": e.sums.output,
-            "cache_read_tokens": e.sums.cache_read,
-            "cache_write_5m_tokens": e.sums.cache_write_5m,
-            "cache_write_1h_tokens": e.sums.cache_write_1h,
-            "total_tokens": e.sums.total_tokens,
-            "cost_usd": round(e.sums.cost_usd, 6),
-            "cost_last_7d": round(last_7d.get(slug, 0.0), 6),
-            "models": ";".join(sorted(e.models)),
-        })
+        rows.append(
+            {
+                "project_slug": slug,
+                "cwd": cwd,
+                "exists": exists,
+                "sessions_count": e.sessions,
+                "first_seen": _iso(e.first_seen),
+                "last_seen": _iso(e.last_seen),
+                "turns": e.sums.turns,
+                "input_tokens": e.sums.input,
+                "output_tokens": e.sums.output,
+                "cache_read_tokens": e.sums.cache_read,
+                "cache_write_5m_tokens": e.sums.cache_write_5m,
+                "cache_write_1h_tokens": e.sums.cache_write_1h,
+                "total_tokens": e.sums.total_tokens,
+                "cost_usd": round(e.sums.cost_usd, 6),
+                "cost_last_7d": round(last_7d.get(slug, 0.0), 6),
+                "models": ";".join(sorted(e.models)),
+            }
+        )
     rows.sort(key=lambda r: r["cost_usd"], reverse=True)
     return rows
 
@@ -225,19 +231,21 @@ def _model_rows(agg: Aggregator) -> list[dict]:
     rows: list[dict] = []
     for model, s in per_model.items():
         per_turn = s.cost_usd / s.turns if s.turns else 0.0
-        rows.append({
-            "model_id": model,
-            "model_name": humanize_model_name(model) or model,
-            "turns": s.turns,
-            "input_tokens": s.input,
-            "output_tokens": s.output,
-            "cache_read_tokens": s.cache_read,
-            "cache_write_5m_tokens": s.cache_write_5m,
-            "cache_write_1h_tokens": s.cache_write_1h,
-            "total_tokens": s.total_tokens,
-            "cost_usd": round(s.cost_usd, 6),
-            "cost_per_turn": round(per_turn, 6),
-        })
+        rows.append(
+            {
+                "model_id": model,
+                "model_name": humanize_model_name(model) or model,
+                "turns": s.turns,
+                "input_tokens": s.input,
+                "output_tokens": s.output,
+                "cache_read_tokens": s.cache_read,
+                "cache_write_5m_tokens": s.cache_write_5m,
+                "cache_write_1h_tokens": s.cache_write_1h,
+                "total_tokens": s.total_tokens,
+                "cost_usd": round(s.cost_usd, 6),
+                "cost_per_turn": round(per_turn, 6),
+            }
+        )
     rows.sort(key=lambda r: r["cost_usd"], reverse=True)
     return rows
 

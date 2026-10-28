@@ -11,6 +11,7 @@ header. Returns one of:
 The caller (UsageMonitorApp.action_open_sort_picker) wires the result
 into _apply_sort_for / _reset_sort_for.
 """
+
 from __future__ import annotations
 
 from typing import Sequence
@@ -127,7 +128,8 @@ class SortPickerScreen(ModalScreen):
             with RadioSet(id="sort-col-radio"):
                 for label, key in self._columns:
                     yield RadioButton(
-                        label, value=(key == self._current_col),
+                        label,
+                        value=(key == self._current_col),
                         name=key,
                     )
             yield Static("Direction", classes="sort-section")
@@ -144,10 +146,14 @@ class SortPickerScreen(ModalScreen):
                 )
             with Horizontal(id="sort-buttons"):
                 yield Button(
-                    "Apply", id="sort-apply", variant="primary",
+                    "Apply",
+                    id="sort-apply",
+                    variant="primary",
                 )
                 yield Button(
-                    "Reset", id="sort-reset", variant="warning",
+                    "Reset",
+                    id="sort-reset",
+                    variant="warning",
                 )
                 yield Button("Cancel", id="sort-cancel")
             yield Static(

@@ -157,7 +157,9 @@ def main() -> None:
         tailer.restore(snap.tailer)
 
     run_app(
-        aggregator, tailer, queue,
+        aggregator,
+        tailer,
+        queue,
         auto_limits=auto_limits,
         use_api=use_api,
         has_oauth=has_oauth,

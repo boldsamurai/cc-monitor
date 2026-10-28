@@ -1,4 +1,5 @@
 """Unit tests for version_check helpers (parse, compare, cache)."""
+
 from __future__ import annotations
 
 import json
@@ -84,7 +85,8 @@ def test_detect_installer_returns_none_when_nothing_on_path(monkeypatch):
 
 def test_detect_installer_prefers_uv(monkeypatch):
     monkeypatch.setattr(
-        vc.shutil, "which",
+        vc.shutil,
+        "which",
         lambda name: f"/usr/bin/{name}" if name in ("uv", "pipx", "pip") else None,
     )
     result = vc.detect_installer()
@@ -92,13 +94,19 @@ def test_detect_installer_prefers_uv(monkeypatch):
     name, cmd = result
     assert name == "uv"
     assert cmd == [
-        "uv", "tool", "install", "--no-cache", "--reinstall", "cc-monitor",
+        "uv",
+        "tool",
+        "install",
+        "--no-cache",
+        "--reinstall",
+        "cc-monitor",
     ]
 
 
 def test_detect_installer_falls_back_to_pipx(monkeypatch):
     monkeypatch.setattr(
-        vc.shutil, "which",
+        vc.shutil,
+        "which",
         lambda name: f"/usr/bin/{name}" if name in ("pipx", "pip") else None,
     )
     result = vc.detect_installer()
@@ -110,7 +118,8 @@ def test_detect_installer_falls_back_to_pipx(monkeypatch):
 
 def test_detect_installer_falls_back_to_pip(monkeypatch):
     monkeypatch.setattr(
-        vc.shutil, "which",
+        vc.shutil,
+        "which",
         lambda name: "/usr/bin/pip" if name == "pip" else None,
     )
     result = vc.detect_installer()
@@ -118,7 +127,11 @@ def test_detect_installer_falls_back_to_pip(monkeypatch):
     name, cmd = result
     assert name == "pip"
     assert cmd == [
-        "pip", "install", "--upgrade", "--no-cache-dir", "cc-monitor",
+        "pip",
+        "install",
+        "--upgrade",
+        "--no-cache-dir",
+        "cc-monitor",
     ]
 
 

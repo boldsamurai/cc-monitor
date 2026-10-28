@@ -5,6 +5,7 @@ Reads a hook payload from stdin and appends one event line to
 ~/.claude/usagemonitor-events.jsonl. Stdlib only — must run under any Python
 present on the system, no venv.
 """
+
 from __future__ import annotations
 
 import json

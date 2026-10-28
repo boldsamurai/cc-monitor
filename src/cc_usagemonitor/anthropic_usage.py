@@ -232,7 +232,9 @@ def _parse_iso8601(value: str) -> datetime | None:
         return None
 
 
-def _parse_usage_response(data: dict[str, Any]) -> tuple[UsageWindow | None, UsageWindow | None]:
+def _parse_usage_response(
+    data: dict[str, Any],
+) -> tuple[UsageWindow | None, UsageWindow | None]:
     def parse_window(d: Any) -> UsageWindow | None:
         if not isinstance(d, dict):
             return None
@@ -281,7 +283,8 @@ def fetch_usage(access_token: str) -> tuple[UsageData | None, str | None, float 
                 retry = _retry_after(resp.headers)
                 log.warning(
                     "Anthropic API non-200: status=%s retry=%s",
-                    resp.status, retry,
+                    resp.status,
+                    retry,
                 )
                 return None, f"http-{resp.status}", retry
             body = resp.read().decode("utf-8")
@@ -349,6 +352,7 @@ def _retry_after(headers: Any) -> float | None:
     # HTTP-date form: parse with email.utils.
     try:
         from email.utils import parsedate_to_datetime
+
         dt = parsedate_to_datetime(raw)
         delta = (dt - datetime.now(tz=timezone.utc)).total_seconds()
         return max(0.0, delta)
@@ -398,7 +402,9 @@ def _read_cache() -> UsageData | None:
     elif api_unavailable:
         # Exponential backoff: 15s * 2^(failure_count-1), capped at 5min.
         backoff = CACHE_TTL_FAILURE_S * (2 ** max(0, failure_count - 1))
-        ttl_remaining = min(backoff, CACHE_TTL_FAILURE_MAX_S) - (time.time() - fetched_at)
+        ttl_remaining = min(backoff, CACHE_TTL_FAILURE_MAX_S) - (
+            time.time() - fetched_at
+        )
         if ttl_remaining <= 0:
             return None
     else:

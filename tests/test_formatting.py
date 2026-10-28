@@ -6,6 +6,7 @@ than trying to pin TZ via env. Pinning TZ via monkeypatch + os.tzset
 is unreliable across environments where Python has already cached the
 local zone.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ def _reset_format_each_test():
 
 
 # ----- apply_config -----
+
 
 def test_apply_config_accepts_known_formats():
     formatting.apply_config(date_format="YYYY-MM-DD")
@@ -55,11 +57,14 @@ def test_apply_config_none_is_a_noop():
 # fighting Python's cached local zone.
 
 
-@pytest.mark.parametrize("fmt_key,expected_pattern", [
-    ("DD-MM-YYYY", "%d-%m-%Y %H:%M"),
-    ("YYYY-MM-DD", "%Y-%m-%d %H:%M"),
-    ("MM/DD/YYYY", "%m/%d/%Y %H:%M"),
-])
+@pytest.mark.parametrize(
+    "fmt_key,expected_pattern",
+    [
+        ("DD-MM-YYYY", "%d-%m-%Y %H:%M"),
+        ("YYYY-MM-DD", "%Y-%m-%d %H:%M"),
+        ("MM/DD/YYYY", "%m/%d/%Y %H:%M"),
+    ],
+)
 def test_format_datetime_uses_active_format(fmt_key, expected_pattern):
     formatting.apply_config(date_format=fmt_key)
     ts = datetime(2026, 4, 30, 13, 45, tzinfo=timezone.utc)
@@ -67,11 +72,14 @@ def test_format_datetime_uses_active_format(fmt_key, expected_pattern):
     assert formatting.format_datetime(ts) == expected
 
 
-@pytest.mark.parametrize("fmt_key,expected_pattern", [
-    ("DD-MM-YYYY", "%d-%m-%Y %H:%M:%S"),
-    ("YYYY-MM-DD", "%Y-%m-%d %H:%M:%S"),
-    ("MM/DD/YYYY", "%m/%d/%Y %H:%M:%S"),
-])
+@pytest.mark.parametrize(
+    "fmt_key,expected_pattern",
+    [
+        ("DD-MM-YYYY", "%d-%m-%Y %H:%M:%S"),
+        ("YYYY-MM-DD", "%Y-%m-%d %H:%M:%S"),
+        ("MM/DD/YYYY", "%m/%d/%Y %H:%M:%S"),
+    ],
+)
 def test_format_datetime_full_uses_active_format(fmt_key, expected_pattern):
     formatting.apply_config(date_format=fmt_key)
     ts = datetime(2026, 4, 30, 13, 45, 23, tzinfo=timezone.utc)
@@ -95,10 +103,13 @@ def test_format_naive_datetime_treated_as_utc():
     assert formatting.format_datetime(naive) == formatting.format_datetime(aware)
 
 
-@pytest.mark.parametrize("fn", [
-    formatting.format_datetime,
-    formatting.format_datetime_full,
-    formatting.format_time,
-])
+@pytest.mark.parametrize(
+    "fn",
+    [
+        formatting.format_datetime,
+        formatting.format_datetime_full,
+        formatting.format_time,
+    ],
+)
 def test_format_none_returns_dash(fn):
     assert fn(None) == "-"
